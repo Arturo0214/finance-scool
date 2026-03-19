@@ -1,0 +1,21 @@
+# ═══════════════════════════════════════
+# FINANCE SCOOL — Netlify Deploy Config
+# ═══════════════════════════════════════
+
+[build]
+  base = "client"
+  command = "npm install && npm run build"
+  publish = "dist"
+
+# Proxy API calls to Railway backend
+[[redirects]]
+  from = "/api/*"
+  to = "https://YOUR_RAILWAY_URL.up.railway.app/api/:splat"
+  status = 200
+  force = true
+
+# SPA routing — send all routes to index.html
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
