@@ -1,0 +1,359 @@
+/* ==================== CSS Variables & Theme ==================== */
+:root {
+  /* Prudential Brand Colors */
+  --color-primary-blue: #003DA5;
+  --color-secondary-blue: #0067C5;
+  --color-blue-light: #E8F1FF;
+  --color-blue-lighter: #F7F8FC;
+  --color-blue-very-light: #EEF1F8;
+  --color-accent-gold: #C9A84C;
+  --color-gold-light: #D9B86C;
+  --color-gold-dark: #B99830;
+
+  /* Neutrals */
+  --color-white: #FFFFFF;
+  --color-gray-light: #F0F2F5;
+  --color-gray-lighter: #F7F7FA;
+  --color-gray-medium: #9CA3AF;
+  --color-gray-dark: #4B5563;
+  --color-black-light: #2D3436;
+
+  /* Semantic Colors */
+  --color-success: #10B981;
+  --color-success-light: #D1FAE5;
+  --color-warning: #F59E0B;
+  --color-warning-light: #FEF3C7;
+  --color-danger: #EF4444;
+  --color-danger-light: #FEE2E2;
+  --color-info: #3B82F6;
+
+  /* WhatsApp Green */
+  --color-whatsapp: #25D366;
+
+  /* Typography */
+  --font-inter: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  /* Spacing */
+  --spacing-xs: 0.25rem;
+  --spacing-sm: 0.5rem;
+  --spacing-md: 1rem;
+  --spacing-lg: 1.5rem;
+  --spacing-xl: 2rem;
+  --spacing-2xl: 3rem;
+  --spacing-3xl: 4rem;
+  --spacing-4xl: 6rem;
+  --spacing-5xl: 8rem;
+
+  /* Border Radius */
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-2xl: 1.25rem;
+  --radius-3xl: 1.5rem;
+  --radius-full: 9999px;
+
+  /* Shadows - Blue-tinted for fintech feel */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 61, 165, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 61, 165, 0.08);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 61, 165, 0.12);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 61, 165, 0.15);
+  --shadow-2xl: 0 25px 50px -12px rgba(0, 61, 165, 0.2);
+  --shadow-accent: 0 8px 16px rgba(201, 168, 76, 0.12);
+
+  /* Transitions */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-base: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 500ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Z-Index */
+  --z-dropdown: 1000;
+  --z-sticky: 1020;
+  --z-fixed: 1030;
+  --z-modal-backdrop: 1040;
+  --z-modal: 1050;
+  --z-popover: 1060;
+  --z-tooltip: 1070;
+}
+
+/* ==================== Reset & Base Styles ==================== */
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font-inter);
+  background-color: var(--color-white);
+  color: var(--color-black-light);
+  line-height: 1.6;
+  font-size: 1rem;
+  overflow-x: hidden;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-sans);
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--color-primary-blue);
+}
+
+h1 { font-size: clamp(2rem, 5vw, 3.5rem); letter-spacing: -0.02em; }
+h2 { font-size: clamp(1.75rem, 4vw, 3rem); letter-spacing: -0.01em; }
+h3 { font-size: clamp(1.5rem, 3vw, 2rem); letter-spacing: -0.01em; }
+h4 { font-size: 1.25rem; font-weight: 600; }
+h5 { font-size: 1.1rem; font-weight: 600; }
+h6 { font-size: 1rem; font-weight: 600; }
+
+p {
+  color: var(--color-gray-dark);
+  margin-bottom: var(--spacing-md);
+}
+
+a {
+  color: var(--color-accent-gold);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+
+a:hover {
+  color: var(--color-gold-light);
+}
+
+button {
+  font-family: var(--font-inter);
+  border: none;
+  cursor: pointer;
+  transition: all var(--transition-base);
+}
+
+input,
+textarea,
+select {
+  font-family: var(--font-inter);
+  border: 2px solid var(--color-gray-light);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-md);
+  font-size: 1rem;
+  transition: all var(--transition-base);
+  background-color: var(--color-white);
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: var(--color-primary-blue);
+  box-shadow: 0 0 0 3px rgba(0, 61, 165, 0.1);
+}
+
+/* ==================== Animations ==================== */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -1000px 0;
+  }
+  100% {
+    background-position: 1000px 0;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.fade-in { animation: fadeIn var(--transition-slow) ease-out; }
+.slide-up { animation: slideInUp var(--transition-slow) ease-out; }
+.slide-down { animation: slideInDown var(--transition-slow) ease-out; }
+.slide-left { animation: slideInLeft var(--transition-slow) ease-out; }
+.slide-right { animation: slideInRight var(--transition-slow) ease-out; }
+.scale-in { animation: scaleIn var(--transition-slow) ease-out; }
+
+/* ==================== Global Utility Classes ==================== */
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 var(--spacing-lg);
+}
+
+.section {
+  scroll-margin-top: 100px;
+}
+
+.section-padding {
+  padding: var(--spacing-4xl) var(--spacing-lg);
+}
+
+.section-padding-small {
+  padding: var(--spacing-2xl) var(--spacing-lg);
+}
+
+.text-center { text-align: center; }
+.text-navy { color: var(--color-primary-blue); }
+.text-gold { color: var(--color-accent-gold); }
+.text-white { color: var(--color-white); }
+.text-gray { color: var(--color-gray-dark); }
+.text-bold { font-weight: 700; }
+.text-small { font-size: 0.875rem; }
+
+.mt-md { margin-top: var(--spacing-md); }
+.mt-lg { margin-top: var(--spacing-lg); }
+.mt-xl { margin-top: var(--spacing-xl); }
+.mb-md { margin-bottom: var(--spacing-md); }
+.mb-lg { margin-bottom: var(--spacing-lg); }
+.mb-xl { margin-bottom: var(--spacing-xl); }
+
+.flex { display: flex; }
+.flex-col { flex-direction: column; }
+.items-center { align-items: center; }
+.justify-center { justify-content: center; }
+.justify-between { justify-content: space-between; }
+.gap-md { gap: var(--spacing-md); }
+.gap-lg { gap: var(--spacing-lg); }
+.gap-xl { gap: var(--spacing-xl); }
+
+.grid { display: grid; gap: var(--spacing-xl); }
+.grid-cols-1 { grid-template-columns: 1fr; }
+.grid-cols-2 { grid-template-columns: repeat(2, 1fr); }
+.grid-cols-3 { grid-template-columns: repeat(3, 1fr); }
+.grid-cols-4 { grid-template-columns: repeat(4, 1fr); }
+
+/* ==================== Responsive Utilities ==================== */
+.hide-mobile { display: none; }
+
+@media (max-width: 768px) {
+  .grid-cols-3 { grid-template-columns: repeat(2, 1fr); }
+  .grid-cols-4 { grid-template-columns: repeat(2, 1fr); }
+  .grid-cols-2 { grid-template-columns: 1fr; }
+  .hide-mobile { display: none; }
+  .section-padding { padding: var(--spacing-2xl) var(--spacing-lg); }
+}
+
+@media (max-width: 480px) {
+  .grid-cols-2,
+  .grid-cols-3,
+  .grid-cols-4 { grid-template-columns: 1fr; }
+}
+
+/* ==================== Accessibility ==================== */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ==================== Print Styles ==================== */
+@media print {
+  .landing-navbar,
+  .landing-whatsapp-button,
+  .landing-cta-section {
+    display: none;
+  }
+
+  body {
+    background: white;
+    color: black;
+  }
+
+  a {
+    color: #003DA5;
+    text-decoration: underline;
+  }
+}

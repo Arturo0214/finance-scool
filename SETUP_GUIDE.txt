@@ -1,0 +1,255 @@
+════════════════════════════════════════════════════════════════════════════════
+                    FINANCE SCOOL - QUICK SETUP GUIDE
+════════════════════════════════════════════════════════════════════════════════
+
+FILES CREATED:
+────────────────────────────────────────────────────────────────────────────────
+1. /src/index.css                   (382 lines, 27 KB)
+2. /src/pages/Landing.jsx           (659 lines, 28 KB)
+3. /src/pages/Login.jsx             (505 lines, 14 KB)
+
+TOTAL: 1,546 lines, 69 KB
+
+
+STEP 1: ADD GOOGLE FONTS
+────────────────────────────────────────────────────────────────────────────────
+Add this to your public/index.html <head> section:
+
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+
+
+STEP 2: UPDATE YOUR ROUTER (src/App.jsx or src/index.jsx)
+────────────────────────────────────────────────────────────────────────────────
+
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import Landing from './pages/Landing';
+import Login from './pages/Login';
+import './index.css';
+
+function App() {
+  return (
+    <Router>
+      <Routes>
+        <Route path="/" element={<Landing />} />
+        <Route path="/login" element={<Login />} />
+        {/* Add other routes here */}
+      </Routes>
+    </Router>
+  );
+}
+
+export default App;
+
+
+STEP 3: ENSURE API FUNCTIONS EXIST
+────────────────────────────────────────────────────────────────────────────────
+
+In your src/utils/api.js (or wherever you keep API functions):
+
+export const api = {
+  login: async ({ email, password }) => {
+    const response = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    return response.json();
+    // Expected response: { success: boolean, token: string, message: string }
+  },
+};
+
+
+STEP 4: ENSURE useAuth HOOK EXISTS
+────────────────────────────────────────────────────────────────────────────────
+
+In your src/hooks/useAuth.js:
+
+import { createContext, useContext, useState } from 'react';
+
+const AuthContext = createContext();
+
+export function useAuth() {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within AuthProvider');
+  }
+  return context;
+}
+
+export function AuthProvider({ children }) {
+  const [authToken, setAuthToken] = useState(() => {
+    return localStorage.getItem('authToken');
+  });
+
+  return (
+    <AuthContext.Provider value={{ authToken, setAuthToken }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+
+STEP 5: ENSURE API ENDPOINTS EXIST
+────────────────────────────────────────────────────────────────────────────────
+
+Backend should have:
+
+POST /api/login
+  Input: { email, password }
+  Output: { success: boolean, token: string, message: string }
+
+POST /api/leads
+  Input: { name, email, phone, message }
+  Output: { success: boolean, message: string }
+
+
+COLOR PALETTE (for reference):
+────────────────────────────────────────────────────────────────────────────────
+Navy:          #0A1628
+Navy Light:    #1a2a3a
+Gold:          #C9A84C
+Gold Light:    #D9B86C
+Gold Dark:     #B99830
+White:         #FFFFFF
+Off-white:     #F8F9FA
+Gray Light:    #E8E8E8
+Gray Medium:   #B0B0B0
+Gray Dark:     #606060
+Success:       #10B981
+Warning:       #F59E0B
+Danger:        #EF4444
+Info:          #3B82F6
+
+
+RESPONSIVE BREAKPOINTS:
+────────────────────────────────────────────────────────────────────────────────
+Desktop:  1200px+ (default)
+Tablet:   769px - 1199px
+Mobile:   480px - 768px
+
+
+OPTIONAL ENHANCEMENTS:
+────────────────────────────────────────────────────────────────────────────────
+1. Add Google Analytics for landing page tracking
+2. Implement Hotjar for user behavior analysis
+3. Add form spam protection (reCAPTCHA)
+4. Implement email verification
+5. Add SMS notifications for demo login requests
+6. Create admin dashboard for leads management
+7. Add newsletter signup in footer
+8. Implement dark mode toggle
+
+
+WHATSAPP INTEGRATION:
+────────────────────────────────────────────────────────────────────────────────
+Update the WhatsApp number in Landing.jsx:
+
+<a
+  href="https://wa.me/YOUR_PHONE_NUMBER_HERE"
+  target="_blank"
+  rel="noopener noreferrer"
+  className="whatsapp-button"
+>
+  <MessageCircle size={28} />
+</a>
+
+Format: https://wa.me/52 (country code) + phone number
+
+
+CONTACT FORM CUSTOMIZATION:
+────────────────────────────────────────────────────────────────────────────────
+To customize the contact form fields, edit the form in Landing.jsx:
+- Look for "Cuéntanos tu Situación" section
+- Add/remove form fields as needed
+- Update the formData state accordingly
+
+
+FAQ CUSTOMIZATION:
+────────────────────────────────────────────────────────────────────────────────
+To add/edit FAQ items, modify the faqItems array in Landing.jsx.
+Current 6 questions:
+1. Qué es un PPR?
+2. Ventajas de Estrategia Fiscal?
+3. Prudencial es seguro?
+4. Cuánto puedo deducir?
+5. Necesito asesoría personalizada?
+6. Cómo es el proceso de inversión?
+
+
+CALCULATOR CUSTOMIZATION:
+────────────────────────────────────────────────────────────────────────────────
+To adjust calculator ranges, edit the input[type='range'] attributes:
+- Age: min="20" max="60"
+- Salary: min="30000" max="500000"
+- Years: min="5" max="40"
+- Growth: min="3" max="12"
+
+
+TESTIMONIALS CUSTOMIZATION:
+────────────────────────────────────────────────────────────────────────────────
+Edit the testimonials array in Landing.jsx. Format:
+{
+  name: 'Client Name',
+  role: 'Occupation',
+  text: 'Testimonial text...',
+  stars: 5,
+  initials: 'CN'
+}
+
+
+PERFORMANCE TIPS:
+────────────────────────────────────────────────────────────────────────────────
+1. Lazy load images using <img loading="lazy">
+2. Use React.memo() for expensive components
+3. Implement code splitting for login page
+4. Compress SVG charts
+5. Enable gzip compression on server
+6. Use CSS minification in production
+7. Implement CDN for assets
+8. Cache static pages with service worker
+
+
+SEO OPTIMIZATION:
+────────────────────────────────────────────────────────────────────────────────
+Update these meta tags in public/index.html:
+
+<title>Finance SCool - Estrategia Fiscal + PPR Premium en México</title>
+<meta name="description" content="Planifica tu retiro con PPR Prudencial y optimización fiscal integral. Deducciones hasta $198,000 MXN/año. Asesoría 1:1 personalizada.">
+<meta name="keywords" content="PPR México, Art. 151 LISR, Estrategia Fiscal, Retiro, Prudencial">
+<meta name="author" content="Finance SCool">
+<meta property="og:title" content="Finance SCool - Tu Retiro Premium">
+<meta property="og:description" content="Planifica tu retiro con PPR y estrategia fiscal integral">
+<meta property="og:type" content="website">
+
+
+TESTING CHECKLIST:
+────────────────────────────────────────────────────────────────────────────────
+[ ] Navbar scrolls smoothly
+[ ] Mobile hamburger menu works
+[ ] All links scroll to correct sections
+[ ] Calculator updates in real-time
+[ ] FAQ accordion opens/closes
+[ ] Contact form validates input
+[ ] Contact form submits to API
+[ ] Login form validates email
+[ ] WhatsApp button opens correctly
+[ ] All animations play smoothly
+[ ] Responsive layout on mobile (320px)
+[ ] Responsive layout on tablet (768px)
+[ ] Responsive layout on desktop (1200px)
+[ ] Form error messages appear
+[ ] Form success messages appear
+[ ] Demo login fills fields
+[ ] All buttons have proper hover states
+
+
+════════════════════════════════════════════════════════════════════════════════
+
+Need help? Check:
+- Landing.jsx for all section code
+- Login.jsx for authentication flow
+- index.css for all styling and animations
+
+Ready to launch? You're all set! 🚀
+
+════════════════════════════════════════════════════════════════════════════════
