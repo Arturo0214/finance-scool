@@ -950,48 +950,102 @@ export default function Landing() {
     /* ==================== Closing / CTA ==================== */
     .landing-cta-section {
       max-width: 1200px; margin: 0 auto;
-      background: linear-gradient(160deg, #001233, #001845, #002B75, #003DA5); background-size: 300% 300%;
-      animation: gradientShift 8s ease infinite;
-      color: white; text-align: center; padding: 4.5rem 3rem; border-radius: 2rem;
+      background: linear-gradient(160deg, #001233, #001845, #002B75, #003DA5); background-size: 400% 400%;
+      animation: gradientShift 10s ease infinite;
+      color: white; text-align: center; padding: 5rem 3rem; border-radius: 2rem;
       position: relative; overflow: hidden;
-      box-shadow: 0 30px 60px rgba(0,18,51,0.4);
+      box-shadow: 0 30px 60px rgba(0,18,51,0.5);
     }
     .landing-cta-section::before {
-      content: ''; position: absolute; top: -30%; right: -5%; width: 500px; height: 500px;
-      background: radial-gradient(circle, rgba(212,175,55,0.18) 0%, transparent 60%); border-radius: 50%;
-      animation: ctaFloat 6s ease-in-out infinite;
+      content: ''; position: absolute; top: -40%; right: -10%; width: 600px; height: 600px;
+      background: radial-gradient(circle, rgba(212,175,55,0.2) 0%, transparent 55%); border-radius: 50%;
+      animation: ctaOrbit1 12s ease-in-out infinite;
     }
     .landing-cta-section::after {
-      content: ''; position: absolute; bottom: -20%; left: -5%; width: 400px; height: 400px;
-      background: radial-gradient(circle, rgba(0,103,197,0.15) 0%, transparent 60%); border-radius: 50%;
-      animation: ctaFloat 8s ease-in-out infinite reverse;
+      content: ''; position: absolute; bottom: -30%; left: -10%; width: 500px; height: 500px;
+      background: radial-gradient(circle, rgba(0,103,197,0.2) 0%, transparent 55%); border-radius: 50%;
+      animation: ctaOrbit2 15s ease-in-out infinite;
     }
-    @keyframes ctaFloat { 0%,100% { transform: translate(0,0); } 50% { transform: translate(20px, -20px); } }
+    @keyframes ctaOrbit1 { 0% { transform: translate(0,0) scale(1); } 33% { transform: translate(30px,-40px) scale(1.1); } 66% { transform: translate(-20px, 20px) scale(0.95); } 100% { transform: translate(0,0) scale(1); } }
+    @keyframes ctaOrbit2 { 0% { transform: translate(0,0) scale(1); } 33% { transform: translate(-25px,30px) scale(1.05); } 66% { transform: translate(30px,-15px) scale(0.9); } 100% { transform: translate(0,0) scale(1); } }
+
+    /* Floating particles */
+    .cta-particles { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+    .cta-particle {
+      position: absolute; width: 3px; height: 3px; background: rgba(212,175,55,0.5);
+      border-radius: 50%; animation: particleRise linear infinite;
+    }
+    @keyframes particleRise {
+      0% { transform: translateY(100%) scale(0); opacity: 0; }
+      10% { opacity: 1; }
+      90% { opacity: 1; }
+      100% { transform: translateY(-100vh) scale(1.5); opacity: 0; }
+    }
+
     .landing-cta-content { position: relative; z-index: 1; }
-    .landing-cta-section h2 {
-      color: white; margin-bottom: 1rem; font-size: clamp(1.75rem, 3.5vw, 2.75rem);
-      font-weight: 700; font-family: 'Playfair Display', serif;
+
+    /* Header = "Imagina un retiro..." (the blue subtext becomes the big header) */
+    .cta-main-headline {
+      font-size: clamp(2rem, 5vw, 3.25rem); font-weight: 700;
+      font-family: 'Playfair Display', serif; color: white;
+      margin-bottom: 1rem; line-height: 1.15;
+      animation: ctaHeadlineIn 1s ease-out both;
     }
-    .landing-cta-section h2 .cta-highlight {
-      background: linear-gradient(90deg, #D4AF37, #F0D060, #D4AF37); background-size: 200%;
+    @keyframes ctaHeadlineIn { from { opacity: 0; transform: translateY(30px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
+
+    /* Subheader = "Retírate joven..." (gold shimmer) */
+    .cta-sub-headline {
+      font-size: clamp(1.1rem, 2.5vw, 1.6rem); font-weight: 600;
+      margin-bottom: 2rem;
+      background: linear-gradient(90deg, #D4AF37, #F0D060, #E8C84A, #D4AF37); background-size: 300%;
       -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-      animation: shimmer 3s ease infinite;
+      animation: shimmer 4s ease infinite, ctaSubIn 1s 0.3s ease-out both;
+      letter-spacing: 0.02em;
     }
-    .landing-cta-section p { color: rgba(255,255,255,0.95); font-size: 1.1rem; margin-bottom: 1.5rem; max-width: 650px; margin-left: auto; margin-right: auto; line-height: 1.7; }
-    .brand-tagline { text-align: center; margin-top: 1rem; margin-bottom: 0.5rem; }
-    .brand-tagline p { color: rgba(255,255,255,0.7); font-size: 0.9rem; }
-    .brand-tagline strong { color: white; font-size: 1.15rem; }
+    @keyframes ctaSubIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+
+    .cta-body-text {
+      color: rgba(255,255,255,0.9); font-size: 1.05rem; margin-bottom: 1.5rem;
+      max-width: 620px; margin-left: auto; margin-right: auto; line-height: 1.7;
+      animation: ctaBodyIn 1s 0.5s ease-out both;
+    }
+    @keyframes ctaBodyIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* Divider line */
+    .cta-divider {
+      width: 80px; height: 3px; margin: 0 auto 2rem;
+      background: linear-gradient(90deg, transparent, #D4AF37, transparent);
+      animation: ctaDividerIn 1s 0.6s ease-out both;
+    }
+    @keyframes ctaDividerIn { from { width: 0; opacity: 0; } to { width: 80px; opacity: 1; } }
+
+    .brand-tagline {
+      text-align: center; margin-top: 1.5rem; margin-bottom: 1.5rem;
+      animation: ctaBrandIn 1s 0.7s ease-out both;
+    }
+    @keyframes ctaBrandIn { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+    .brand-tagline p { color: rgba(255,255,255,0.6); font-size: 0.9rem; }
+    .brand-tagline strong { color: white; font-size: 1.3rem; display: block; margin-bottom: 0.25rem; }
+
+    /* CTA button */
     .cta-btn-pulse {
-      animation: ctaPulse 2.5s ease-in-out infinite;
-      position: relative;
+      animation: ctaPulse 3s ease-in-out infinite, ctaBtnIn 1s 0.9s ease-out both;
+      position: relative; overflow: hidden;
+    }
+    .cta-btn-pulse::before {
+      content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+      animation: btnSweep 3s ease-in-out infinite;
     }
     .cta-btn-pulse::after {
-      content: ''; position: absolute; inset: -4px; border-radius: inherit;
-      background: linear-gradient(135deg, rgba(212,175,55,0.4), transparent, rgba(212,175,55,0.4));
-      z-index: -1; filter: blur(8px); opacity: 0; animation: ctaGlow 2.5s ease-in-out infinite;
+      content: ''; position: absolute; inset: -6px; border-radius: inherit;
+      background: linear-gradient(135deg, rgba(212,175,55,0.5), transparent, rgba(212,175,55,0.5));
+      z-index: -1; filter: blur(12px); opacity: 0; animation: ctaGlow 3s ease-in-out infinite;
     }
-    @keyframes ctaPulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.04); } }
+    @keyframes ctaPulse { 0%,100% { transform: scale(1); box-shadow: 0 8px 24px rgba(212,175,55,0.3); } 50% { transform: scale(1.05); box-shadow: 0 16px 40px rgba(212,175,55,0.5); } }
     @keyframes ctaGlow { 0%,100% { opacity: 0; } 50% { opacity: 1; } }
+    @keyframes ctaBtnIn { from { opacity: 0; transform: translateY(20px) scale(0.9); } to { opacity: 1; transform: translateY(0) scale(1); } }
+    @keyframes btnSweep { 0% { left: -100%; } 50%,100% { left: 200%; } }
 
     /* ==================== FAQ ==================== */
     .landing-faq-container { max-width: 800px; margin: 0 auto; display: flex; flex-direction: column; gap: 0.75rem; }
@@ -1702,12 +1756,29 @@ export default function Landing() {
       {/* ==================== 12. CIERRE FINAL ==================== */}
       <section className="landing-section landing-section-light landing-section-padding">
         <div className="landing-cta-section">
+          {/* Floating particles */}
+          <div className="cta-particles">
+            {[...Array(12)].map((_, i) => (
+              <div key={i} className="cta-particle" style={{
+                left: `${8 + (i * 7.5)}%`,
+                animationDuration: `${4 + Math.random() * 6}s`,
+                animationDelay: `${Math.random() * 5}s`,
+                width: `${2 + Math.random() * 3}px`,
+                height: `${2 + Math.random() * 3}px`,
+                background: i % 3 === 0 ? 'rgba(212,175,55,0.6)' : 'rgba(255,255,255,0.15)',
+              }} />
+            ))}
+          </div>
+
           <div className="landing-cta-content">
-            <h2><span className="cta-highlight">Retírate joven, comienza ahora.</span></h2>
-            <p style={{ fontSize: '1.15rem', marginBottom: '0.5rem' }}>
-              Imagina un retiro donde tú pongas las reglas. Comienza ahora.
+            <h2 className="cta-main-headline">
+              Imagina un retiro donde tú pongas las reglas.
+            </h2>
+            <p className="cta-sub-headline">
+              Retírate joven, comienza ahora.
             </p>
-            <p>
+            <div className="cta-divider"></div>
+            <p className="cta-body-text">
               Cuando entiendes cómo conectar estrategia fiscal, ahorro y retiro, las decisiones cambian.
               Y cuando alguien por fin te lo explica fácil, también cambia tu forma de verlo.
             </p>
@@ -1715,7 +1786,7 @@ export default function Landing() {
               <strong>Finance S C<span className="oo-infinity">oo</span>l</strong>
               <p>Porque las finanzas también se pueden entender cool.</p>
             </div>
-            <button className="landing-btn landing-btn-gold cta-btn-pulse" onClick={() => scrollToSection('contacto')} style={{ marginTop: '1.5rem', fontSize: '1.1rem', padding: '1.1rem 2.5rem', letterSpacing: '0.02em' }}>
+            <button className="landing-btn landing-btn-gold cta-btn-pulse" onClick={() => scrollToSection('contacto')} style={{ marginTop: '0.5rem', fontSize: '1.15rem', padding: '1.15rem 3rem', letterSpacing: '0.03em' }}>
               Agenda tu consultoría fiscal y financiera AHORA
             </button>
           </div>
