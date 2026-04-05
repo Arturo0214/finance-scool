@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronDown, Menu, X, MessageCircle, BarChart3, Lightbulb, Target, Wallet, Clock, Landmark, TrendingUp, GraduationCap, Briefcase, FileText, Shield, Brain, Users, CheckCircle, Camera, Linkedin, Volume2, VolumeX } from 'lucide-react';
+import { ChevronDown, Menu, X, MessageCircle, BarChart3, Lightbulb, Target, Wallet, Clock, Landmark, TrendingUp, GraduationCap, Briefcase, FileText, Shield, Brain, Users, CheckCircle, Camera, Linkedin, Volume2, VolumeX, Heart, PiggyBank, HandCoins } from 'lucide-react';
 import Logo from '../components/Logo';
 
 // ==================== ISR 2026 Tax Calculator Logic ====================
@@ -852,7 +852,7 @@ export default function Landing() {
     /* ==================== About Full ==================== */
     .about-full { max-width: 1200px; margin: 0 auto; }
     .about-pillars {
-      display: grid; grid-template-columns: repeat(5, 1fr); gap: 1.5rem; margin-bottom: 2.5rem;
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; margin-bottom: 2.5rem;
     }
     .about-pillar-card {
       text-align: center; padding: 2rem 1.25rem; border-radius: 1.25rem;
@@ -1550,31 +1550,39 @@ export default function Landing() {
             <p>En Finance S C<span className="oo-infinity">oo</span>l creemos que la verdadera inteligencia está en hacer entendible lo importante. Por eso acompañamos a personas y familias a tomar mejores decisiones sobre:</p>
           </div>
 
+          <div className="landing-section-header" style={{ marginBottom: '2rem' }}>
+            <h3 style={{ fontSize: '1.5rem', color: '#003DA5' }}>Prioridades financieras</h3>
+          </div>
           <div className="about-pillars">
             <div className="about-pillar-card">
-              <div className="about-pillar-icon"><Landmark size={28} strokeWidth={1.5} /></div>
-              <h4>Retiro</h4>
-              <p>Planeación para que tu futuro no dependa de la improvisación.</p>
-            </div>
-            <div className="about-pillar-card">
-              <div className="about-pillar-icon"><TrendingUp size={28} strokeWidth={1.5} /></div>
-              <h4>Patrimonio</h4>
-              <p>Estrategias para crecer lo que ya construiste con visión a largo plazo.</p>
+              <div className="about-pillar-icon"><Shield size={28} strokeWidth={1.5} /></div>
+              <h4>Reservas para contingencias</h4>
+              <p>Protege lo que ya tienes ante lo inesperado.</p>
             </div>
             <div className="about-pillar-card">
               <div className="about-pillar-icon"><Wallet size={28} strokeWidth={1.5} /></div>
-              <h4>Ahorro</h4>
-              <p>No cualquier ahorro: ahorro con intención y dirección clara.</p>
+              <h4>Respaldo de gasto fijo</h4>
+              <p>Asegura que tu estilo de vida no dependa de un solo ingreso.</p>
             </div>
             <div className="about-pillar-card">
-              <div className="about-pillar-icon"><Shield size={28} strokeWidth={1.5} /></div>
-              <h4>Seguros</h4>
-              <p>Protección real para ti y tu familia, sin letra chiquita.</p>
+              <div className="about-pillar-icon"><TrendingUp size={28} strokeWidth={1.5} /></div>
+              <h4>Construcción de Ingresos Pasivos</h4>
+              <p>Haz que tu dinero trabaje por ti, no al revés.</p>
             </div>
             <div className="about-pillar-card">
-              <div className="about-pillar-icon"><Brain size={28} strokeWidth={1.5} /></div>
-              <h4>Inteligencia Fiscal</h4>
-              <p>Usar las reglas del juego a tu favor, no en tu contra.</p>
+              <div className="about-pillar-icon"><HandCoins size={28} strokeWidth={1.5} /></div>
+              <h4>Incentivos Fiscales para personas físicas</h4>
+              <p>Aprovecha las herramientas legales que el SAT pone a tu disposición.</p>
+            </div>
+            <div className="about-pillar-card">
+              <div className="about-pillar-icon"><Heart size={28} strokeWidth={1.5} /></div>
+              <h4>Apoyar el sueño de alguien más</h4>
+              <p>Construye un legado que trascienda más allá de ti.</p>
+            </div>
+            <div className="about-pillar-card">
+              <div className="about-pillar-icon"><Landmark size={28} strokeWidth={1.5} /></div>
+              <h4>Jubilación / Retiro</h4>
+              <p>Planea hoy para que mañana tú pongas las reglas.</p>
             </div>
           </div>
 
