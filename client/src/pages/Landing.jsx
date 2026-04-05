@@ -90,7 +90,7 @@ function LazyVideo({ src, className, style, globalMuted = true }) {
   );
 }
 
-// ==================== Animated Counter Hook ====================
+// ==================== Animated Counter Hook (rAF optimized) ====================
 function useCountUp(end, duration = 2000, startOnView = true) {
   const [count, setCount] = useState(0);
   const [started, setStarted] = useState(false);
@@ -103,9 +103,17 @@ function useCountUp(end, duration = 2000, startOnView = true) {
   }, [started]);
   useEffect(() => {
     if (!started) return;
-    let start = 0; const step = end / (duration / 16);
-    const timer = setInterval(() => { start += step; if (start >= end) { setCount(end); clearInterval(timer); } else setCount(Math.floor(start)); }, 16);
-    return () => clearInterval(timer);
+    let startTime = null;
+    let rafId;
+    const animate = (timestamp) => {
+      if (!startTime) startTime = timestamp;
+      const progress = Math.min((timestamp - startTime) / duration, 1);
+      setCount(Math.floor(progress * end));
+      if (progress < 1) { rafId = requestAnimationFrame(animate); }
+      else { setCount(end); }
+    };
+    rafId = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(rafId);
   }, [started, end, duration]);
   return [count, ref];
 }
@@ -293,10 +301,19 @@ export default function Landing() {
 
   const taxResults = calcTaxResults();
 
-  // Scroll effects
+  // Scroll effects (throttled + passive)
   useEffect(() => {
-    const handleScroll = () => setIsNavScrolled(window.scrollY > 50);
-    window.addEventListener('scroll', handleScroll);
+    let ticking = false;
+    const handleScroll = () => {
+      if (!ticking) {
+        requestAnimationFrame(() => {
+          setIsNavScrolled(window.scrollY > 50);
+          ticking = false;
+        });
+        ticking = true;
+      }
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
@@ -315,6 +332,18 @@ export default function Landing() {
     Object.values(sectionRefs.current).forEach((ref) => { if (ref) observer.observe(ref); });
 
     return () => observer.disconnect();
+  }, []);
+
+  // Pause infinite animations when sections are out of viewport
+  useEffect(() => {
+    const animObserver = new IntersectionObserver(
+      (entries) => entries.forEach((entry) => {
+        entry.target.classList.toggle('anim-paused', !entry.isIntersecting);
+      }),
+      { rootMargin: '100px 0px' }
+    );
+    document.querySelectorAll('.landing-section').forEach((s) => animObserver.observe(s));
+    return () => animObserver.disconnect();
   }, []);
 
   const scrollToSection = (id) => {
@@ -361,6 +390,7 @@ export default function Landing() {
       backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
       z-index: 1030; transition: all 400ms cubic-bezier(0.4,0,0.2,1);
       box-shadow: 0 1px 0 rgba(0,18,51,0.06);
+      transform: translateZ(0);
     }
     .landing-navbar.scrolled {
       box-shadow: 0 4px 20px rgba(0,18,51,0.1);
@@ -421,7 +451,7 @@ export default function Landing() {
       background: radial-gradient(circle, rgba(0,103,197,0.08) 0%, transparent 60%);
       border-radius: 50%; animation: float 10s ease-in-out infinite reverse;
     }
-    @keyframes float { 0%,100% { transform: translateY(0px); } 50% { transform: translateY(-20px); } }
+    @keyframes float { 0%,100% { transform: translate3d(0,0,0); } 50% { transform: translate3d(0,-20px,0); } }
     .landing-hero-content {
       max-width: 1200px; width: 100%; padding: 2rem 1.5rem;
       display: grid; grid-template-columns: 1fr 1fr; gap: 3rem;
@@ -484,31 +514,35 @@ export default function Landing() {
     @keyframes pulseGlow { 0%,100% { box-shadow: 0 0 20px rgba(212,175,55,0.2); } 50% { box-shadow: 0 0 40px rgba(212,175,55,0.4); } }
     @keyframes gradientShift { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
 
-    /* ===== Apple-style scroll reveal system ===== */
-    .reveal-up { opacity: 0; transform: translateY(32px); filter: blur(3px); transition: opacity 0.55s cubic-bezier(0.25,0.46,0.45,0.94), transform 0.55s cubic-bezier(0.25,0.46,0.45,0.94), filter 0.55s cubic-bezier(0.25,0.46,0.45,0.94); }
-    .reveal-left { opacity: 0; transform: translateX(-32px); filter: blur(3px); transition: opacity 0.55s cubic-bezier(0.25,0.46,0.45,0.94), transform 0.55s cubic-bezier(0.25,0.46,0.45,0.94), filter 0.55s cubic-bezier(0.25,0.46,0.45,0.94); }
-    .reveal-right { opacity: 0; transform: translateX(32px); filter: blur(3px); transition: opacity 0.55s cubic-bezier(0.25,0.46,0.45,0.94), transform 0.55s cubic-bezier(0.25,0.46,0.45,0.94), filter 0.55s cubic-bezier(0.25,0.46,0.45,0.94); }
-    .reveal-scale { opacity: 0; transform: scale(0.92); filter: blur(3px); transition: opacity 0.55s cubic-bezier(0.25,0.46,0.45,0.94), transform 0.55s cubic-bezier(0.25,0.46,0.45,0.94), filter 0.55s cubic-bezier(0.25,0.46,0.45,0.94); }
-    .revealed { opacity: 1 !important; transform: translateY(0) translateX(0) scale(1) !important; filter: blur(0) !important; }
+    /* ===== Apple-style scroll reveal system (GPU composited) ===== */
+    .reveal-up { opacity: 0; transform: translate3d(0,32px,0); filter: blur(3px); will-change: opacity, transform, filter; transition: opacity 0.55s cubic-bezier(0.25,0.46,0.45,0.94), transform 0.55s cubic-bezier(0.25,0.46,0.45,0.94), filter 0.55s cubic-bezier(0.25,0.46,0.45,0.94); }
+    .reveal-left { opacity: 0; transform: translate3d(-32px,0,0); filter: blur(3px); will-change: opacity, transform, filter; transition: opacity 0.55s cubic-bezier(0.25,0.46,0.45,0.94), transform 0.55s cubic-bezier(0.25,0.46,0.45,0.94), filter 0.55s cubic-bezier(0.25,0.46,0.45,0.94); }
+    .reveal-right { opacity: 0; transform: translate3d(32px,0,0); filter: blur(3px); will-change: opacity, transform, filter; transition: opacity 0.55s cubic-bezier(0.25,0.46,0.45,0.94), transform 0.55s cubic-bezier(0.25,0.46,0.45,0.94), filter 0.55s cubic-bezier(0.25,0.46,0.45,0.94); }
+    .reveal-scale { opacity: 0; transform: scale3d(0.92,0.92,1); filter: blur(3px); will-change: opacity, transform, filter; transition: opacity 0.55s cubic-bezier(0.25,0.46,0.45,0.94), transform 0.55s cubic-bezier(0.25,0.46,0.45,0.94), filter 0.55s cubic-bezier(0.25,0.46,0.45,0.94); }
+    .revealed { opacity: 1 !important; transform: translate3d(0,0,0) scale3d(1,1,1) !important; filter: blur(0) !important; will-change: auto; }
     .stagger-1 { transition-delay: 0ms; } .stagger-2 { transition-delay: 80ms; } .stagger-3 { transition-delay: 160ms; }
     .stagger-4 { transition-delay: 240ms; } .stagger-5 { transition-delay: 320ms; }
 
-    /* Section-level reveal: headers, text blocks, grids */
-    .landing-section-header { opacity: 0; transform: translateY(28px); filter: blur(3px); transition: opacity 0.5s cubic-bezier(0.25,0.46,0.45,0.94), transform 0.5s cubic-bezier(0.25,0.46,0.45,0.94), filter 0.5s cubic-bezier(0.25,0.46,0.45,0.94); }
-    .landing-section-header.revealed { opacity: 1; transform: translateY(0); filter: blur(0); }
-    .brand-grid { opacity: 0; transform: translateY(24px); filter: blur(3px); transition: opacity 0.55s cubic-bezier(0.25,0.46,0.45,0.94) 0.1s, transform 0.55s cubic-bezier(0.25,0.46,0.45,0.94) 0.1s, filter 0.55s cubic-bezier(0.25,0.46,0.45,0.94) 0.1s; }
-    .brand-grid.revealed { opacity: 1; transform: translateY(0); filter: blur(0); }
-    .emotion-grid { opacity: 0; transform: translateY(24px); filter: blur(3px); transition: opacity 0.55s cubic-bezier(0.25,0.46,0.45,0.94) 0.1s, transform 0.55s cubic-bezier(0.25,0.46,0.45,0.94) 0.1s, filter 0.55s cubic-bezier(0.25,0.46,0.45,0.94) 0.1s; }
-    .emotion-grid.revealed { opacity: 1; transform: translateY(0); filter: blur(0); }
+    /* Section-level reveal (GPU composited) */
+    .landing-section-header { opacity: 0; transform: translate3d(0,28px,0); filter: blur(3px); will-change: opacity, transform, filter; transition: opacity 0.5s cubic-bezier(0.25,0.46,0.45,0.94), transform 0.5s cubic-bezier(0.25,0.46,0.45,0.94), filter 0.5s cubic-bezier(0.25,0.46,0.45,0.94); }
+    .landing-section-header.revealed { opacity: 1; transform: translate3d(0,0,0); filter: blur(0); will-change: auto; }
+    .brand-grid { opacity: 0; transform: translate3d(0,24px,0); filter: blur(3px); will-change: opacity, transform, filter; transition: opacity 0.55s cubic-bezier(0.25,0.46,0.45,0.94) 0.1s, transform 0.55s cubic-bezier(0.25,0.46,0.45,0.94) 0.1s, filter 0.55s cubic-bezier(0.25,0.46,0.45,0.94) 0.1s; }
+    .brand-grid.revealed { opacity: 1; transform: translate3d(0,0,0); filter: blur(0); will-change: auto; }
+    .emotion-grid { opacity: 0; transform: translate3d(0,24px,0); filter: blur(3px); will-change: opacity, transform, filter; transition: opacity 0.55s cubic-bezier(0.25,0.46,0.45,0.94) 0.1s, transform 0.55s cubic-bezier(0.25,0.46,0.45,0.94) 0.1s, filter 0.55s cubic-bezier(0.25,0.46,0.45,0.94) 0.1s; }
+    .emotion-grid.revealed { opacity: 1; transform: translate3d(0,0,0); filter: blur(0); will-change: auto; }
+
+    /* Pause infinite animations when out of viewport */
+    .anim-paused * { animation-play-state: paused !important; }
 
     /* ==================== Section Base ==================== */
-    .landing-section { scroll-margin-top: 80px; }
+    .landing-section { scroll-margin-top: 80px; contain: layout style; }
     .landing-section-padding {
       padding: 3rem 1.5rem;
       min-height: 100vh;
       display: flex;
       flex-direction: column;
       justify-content: center;
+      contain: layout style;
     }
     .landing-section-compact {
       padding: 2rem 1.5rem;
@@ -1313,7 +1347,7 @@ export default function Landing() {
     .landing-sound-toggle:hover { background: rgba(0,61,165,0.9); transform: scale(1.1); }
 
     /* ==================== Animations ==================== */
-    @keyframes slideInUp { from { opacity: 0; transform: translateY(24px); filter: blur(2px); } to { opacity: 1; transform: translateY(0); filter: blur(0); } }
+    @keyframes slideInUp { from { opacity: 0; transform: translate3d(0,24px,0); filter: blur(2px); } to { opacity: 1; transform: translate3d(0,0,0); filter: blur(0); } }
     .slide-up { animation: slideInUp 0.5s cubic-bezier(0.25,0.46,0.45,0.94); }
 
     /* ==================== Responsive ==================== */
