@@ -535,14 +535,13 @@ export default function Landing() {
     .anim-paused * { animation-play-state: paused !important; }
 
     /* ==================== Section Base ==================== */
-    .landing-section { scroll-margin-top: 80px; contain: layout style; }
+    .landing-section { scroll-margin-top: 80px; }
     .landing-section-padding {
       padding: 3rem 1.5rem;
       min-height: 100vh;
       display: flex;
       flex-direction: column;
       justify-content: center;
-      contain: layout style;
     }
     .landing-section-compact {
       padding: 2rem 1.5rem;
@@ -553,7 +552,7 @@ export default function Landing() {
     }
     .landing-section-light { background: #fff; }
     .landing-section-gray { background: linear-gradient(180deg, #F8F9FC, #F0F2F7); }
-    .landing-section-blue { background: linear-gradient(160deg, #001233, #001845, #002B75); color: white; position: relative; overflow: hidden; min-height: 100vh; display: flex; flex-direction: column; justify-content: center; }
+    .landing-section-blue { background: linear-gradient(160deg, #001233, #001845, #002B75); color: white; position: relative; overflow: hidden; display: flex; flex-direction: column; justify-content: center; }
     .landing-section-blue::before {
       content: ''; position: absolute; top: -50%; right: -20%; width: 500px; height: 500px;
       background: radial-gradient(circle, rgba(212,175,55,0.08) 0%, transparent 60%); border-radius: 50%;
@@ -1350,46 +1349,209 @@ export default function Landing() {
     @keyframes slideInUp { from { opacity: 0; transform: translate3d(0,24px,0); filter: blur(2px); } to { opacity: 1; transform: translate3d(0,0,0); filter: blur(0); } }
     .slide-up { animation: slideInUp 0.5s cubic-bezier(0.25,0.46,0.45,0.94); }
 
-    /* ==================== Responsive ==================== */
+    /* ==================== Responsive — Tablet (≤1024px) ==================== */
+    @media (max-width: 1024px) {
+      .landing-hero-content { gap: 2rem; }
+      .landing-problems-grid, .landing-services-grid { grid-template-columns: repeat(2, 1fr); gap: 1.5rem; }
+      .about-pillars { grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+      .landing-cta-section { padding: 4rem 2rem; }
+      .tax-calc-grid { gap: 1rem; }
+    }
+
+    /* ==================== Responsive — Mobile (≤768px) ==================== */
     @media (max-width: 768px) {
+      /* — Navbar — */
       .landing-navbar-menu {
         display: none; position: absolute; top: 56px; left: 0; right: 0;
         flex-direction: column; gap: 0; background: rgba(255,255,255,0.98);
         backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-        padding: 1.5rem; box-shadow: 0 16px 32px rgba(0,18,51,0.12);
+        padding: 1rem 1.5rem; box-shadow: 0 16px 32px rgba(0,18,51,0.12);
+        border-radius: 0 0 1rem 1rem; z-index: 1040;
       }
       .landing-navbar-menu.active { display: flex; }
-      .landing-navbar-menu li { border-bottom: 1px solid rgba(0,18,51,0.06); padding: 1rem 0; }
+      .landing-navbar-menu li { border-bottom: 1px solid rgba(0,18,51,0.06); padding: 0.85rem 0; }
       .landing-navbar-menu li:last-child { border-bottom: none; }
+      .landing-navbar-menu a { font-size: 1rem; }
       .landing-hamburger { display: flex; }
       .landing-navbar-cta { display: none; }
-      .landing-hero-content { grid-template-columns: 1fr; gap: 1.5rem; }
-      .landing-hero { padding-top: 56px; min-height: 100vh; }
-      .landing-problems-grid, .landing-services-grid { grid-template-columns: 1fr; }
-      .tax-calc-grid { grid-template-columns: 1fr; }
-      .landing-trust-content { grid-template-columns: repeat(2, 1fr); }
-      .landing-footer-content { grid-template-columns: 1fr; }
-      .landing-section-padding { padding: 2rem 1rem; min-height: auto; }
-      .landing-form-row { grid-template-columns: 1fr; }
-      .tax-scenarios { grid-template-columns: 1fr; }
-      .about-grid { grid-template-columns: repeat(3, 1fr); }
-      .about-highlight p { font-size: 1.1rem; }
-      .brand-grid { grid-template-columns: 1fr; }
+
+      /* — Sections base — */
+      .landing-section-padding { padding: 2.5rem 1rem; min-height: auto; }
+      .landing-section-compact { padding: 2rem 1rem; }
+      .landing-section-header { margin-bottom: 2rem; }
+      .landing-section-header h2 { font-size: clamp(1.5rem, 5vw, 2rem); }
+      .landing-section-header p { font-size: 0.95rem; }
+
+      /* — Hero — */
+      .landing-hero { padding-top: 56px; min-height: auto; padding-bottom: 2rem; }
+      .landing-hero-content { grid-template-columns: 1fr; gap: 1.5rem; padding: 1.5rem 1rem; }
+      .landing-hero-text { text-align: center; }
+      .landing-hero-text h1 { font-size: clamp(1.6rem, 6vw, 2.2rem); }
+      .landing-hero-text p { font-size: 0.95rem; text-align: center !important; }
+      .landing-hero-cta { justify-content: center; }
+      .landing-hero-cta .landing-btn { padding: 0.75rem 1.5rem; font-size: 0.9rem; min-height: 44px; }
+      .hero-carousel { min-height: 280px; border-radius: 1rem; }
+      .hero-carousel-video { border-radius: 1rem; }
+      .hero-carousel-overlay { border-radius: 1rem; }
+      .hero-slide-content { padding: 1.25rem; }
+      .hero-slide-title { font-size: 1.1rem; }
+      .hero-slide-subtitle { font-size: 0.8rem; }
+      .hero-slide-stat { padding: 0.5rem 1rem; }
+      .hero-slide-stat-value { font-size: 1.2rem; }
+      .hero-slide-stat-label { font-size: 0.7rem; }
+      .landing-hero::before { width: 350px; height: 350px; top: -10%; right: -20%; }
+      .landing-hero::after { width: 300px; height: 300px; bottom: -20%; left: -20%; }
+
+      /* — Brand section — */
+      .brand-grid { grid-template-columns: 1fr; gap: 2rem; }
+      .brand-video-wrapper { max-height: 280px; aspect-ratio: 16/9; }
+      .brand-name-highlight { font-size: 1.15rem; padding: 0.5rem 1.25rem; }
+      .brand-quote { padding: 1.25rem; font-size: 0.95rem; }
+      .brand-text { font-size: 0.95rem; }
+
+      /* — Emotion section — */
       .emotion-grid { grid-template-columns: 1fr; gap: 2rem; }
+      .emotion-list li { font-size: 0.95rem; }
+      .emotion-combo { gap: 0.5rem; }
+      .emotion-combo-item { padding: 0.65rem 1.25rem; font-size: 0.85rem; }
+      .emotion-badge { font-size: 0.75rem; padding: 0.35rem 0.8rem; }
+      .emotion-cta { font-size: 1rem; padding: 0.9rem 1.75rem; border-radius: 0.75rem; }
+      .emotion-mini { font-size: 1rem; }
+
+      /* — Problem cards — */
+      .landing-problems-grid { grid-template-columns: 1fr; gap: 1.5rem; }
+      .landing-problem-card { padding: 2rem 1.5rem; }
+      .problem-number { font-size: 4.5rem; }
+
+      /* — Solution cards — */
+      .landing-services-grid { grid-template-columns: 1fr; gap: 1.5rem; }
+      .landing-services-grid::before { display: none; }
+      .landing-service-card { padding: 2rem 1.5rem; }
+
+      /* — SAT / PPR section — */
       .sat-grid { grid-template-columns: 1fr; gap: 2rem; }
+      .sat-video-wrapper { max-height: 320px; aspect-ratio: 3/4; margin: 0 auto; max-width: 280px; }
+      .sat-badge-row { flex-wrap: wrap; justify-content: center; }
+      .sat-ppr-badge { font-size: 0.8rem; }
+
+      /* — Tax Calculator — */
+      .tax-calc-container { padding: 1rem; }
+      .tax-calc-grid { grid-template-columns: 1fr; }
+      .tax-results { padding: 1rem; margin-top: 1rem; }
+      .tax-results h3 { font-size: 0.9rem; }
+      .tax-stat-card { padding: 0.5rem; }
+      .tax-stat-card .stat-value { font-size: 1.25rem; }
+      .tax-stat-card .stat-label { font-size: 0.55rem; }
+      .tax-hero-card { padding: 0.65rem; }
+      .tax-result-highlight { padding: 0.75rem; }
+      .tax-result-highlight .tax-result-value { font-size: 1.4rem; }
+      .tax-result-row { padding: 0.3rem 0; }
+      .tax-result-label { font-size: 0.7rem; }
+      .tax-result-value { font-size: 0.9rem; }
+      .tax-scenarios { grid-template-columns: 1fr; gap: 0.75rem; }
+      .tax-toggle-advanced { font-size: 0.85rem; }
+      .tax-input-group label { font-size: 0.75rem; }
+      .tax-input-group input, .tax-input-group select { font-size: 0.8rem; padding: 0.4rem 0.6rem; }
+
+      /* — Para Quién + Trust — */
       .paraquien-grid { grid-template-columns: 1fr; gap: 2rem; }
-      .paraquien-stats-col { grid-template-columns: repeat(2, 1fr); }
-      .about-pillars { grid-template-columns: repeat(2, 1fr); gap: 1rem; }
+      .pq-card { padding: 0.75rem 1rem; font-size: 0.9rem; gap: 0.65rem; }
+      .paraquien-stats-col { grid-template-columns: repeat(2, 1fr); gap: 0.65rem; }
+      .trust-stat-card { padding: 1.25rem 1rem; }
+      .trust-stat-number { font-size: 1.85rem; }
+      .trust-stat-label { font-size: 0.75rem; }
+      .pq-cta-text { font-size: 0.85rem; }
+
+      /* — Live Banner — */
+      .live-banner { padding: 0.65rem 1.25rem; gap: 0.5rem; }
+      .live-text { font-size: 0.82rem; }
+      .live-count { font-size: 0.95rem; }
+
+      /* — About / Pillars — */
+      .about-full { padding: 0 0.25rem; }
+      .about-pillars { grid-template-columns: repeat(2, 1fr); gap: 0.85rem; }
       .about-pillar-card { padding: 1.5rem 1rem; }
-      .about-highlight-bar { padding: 1.25rem 1.5rem; }
+      .about-pillar-icon { width: 50px; height: 50px; }
+      .about-pillar-card h4 { font-size: 0.9rem; }
+      .about-pillar-card p { font-size: 0.8rem; }
+      .about-highlight-bar { padding: 1.25rem 1.25rem; border-radius: 0.75rem; }
       .about-highlight-bar p { font-size: 1rem; }
-      .hero-carousel { min-height: 300px; }
-      .landing-whatsapp-button { bottom: 20px; right: 20px; width: 55px; height: 55px; }
+
+      /* — FAQ — */
+      .landing-faq-container { gap: 0.5rem; }
+      .landing-faq-question { padding: 0.9rem 1rem; font-size: 0.9rem; gap: 0.75rem; }
+      .landing-faq-answer { font-size: 0.9rem; }
+      .landing-faq-item.open .landing-faq-answer { padding: 0 1rem 1rem; }
+
+      /* — Contact Form — */
+      .landing-contact-form-container { padding: 1.5rem 1rem; }
+      .landing-contact-form-container h2 { font-size: clamp(1.3rem, 4.5vw, 1.75rem); }
+      .form-subcopy { font-size: 0.85rem; }
+      .landing-form-row { grid-template-columns: 1fr; gap: 0.5rem; }
+      .landing-form-group { margin-bottom: 0.5rem; }
+      .landing-form-submit { font-size: 0.95rem; padding: 0.95rem 1.5rem; }
+
+      /* — CTA Section — */
+      .landing-cta-section { padding: 3rem 1.5rem; border-radius: 1.25rem; margin: 0 0.25rem; }
+      .landing-cta-section::before { width: 300px; height: 300px; top: -20%; right: -15%; }
+      .landing-cta-section::after { width: 250px; height: 250px; bottom: -20%; left: -15%; }
+      .cta-main-headline { font-size: clamp(1.5rem, 5vw, 2rem); }
+      .cta-sub-headline { font-size: clamp(0.95rem, 3vw, 1.3rem); margin-bottom: 1.25rem; }
+      .cta-body-text { font-size: 0.9rem; line-height: 1.6; margin-bottom: 1rem; }
+      .cta-divider { margin-bottom: 1.25rem; }
+      .cta-particles { display: none; }
+      .cta-btn-pulse { font-size: 0.95rem !important; padding: 1rem 1.75rem !important; }
+      .brand-tagline p { font-size: 0.8rem; }
+
+      /* — Footer — */
+      .landing-footer { padding: 2.5rem 1rem 1.25rem; }
+      .landing-footer-content { grid-template-columns: 1fr; gap: 1.5rem; text-align: center; }
+      .landing-footer-column h3 { margin-bottom: 0.75rem; }
+      .landing-footer-column p { font-size: 0.9rem; }
+      .landing-footer-column a { font-size: 0.9rem; margin-bottom: 0.65rem; }
+      .landing-social-links { justify-content: center; }
+      .landing-footer-bottom { font-size: 0.8rem; padding-top: 1.25rem; }
+
+      /* — Fixed buttons — */
+      .landing-whatsapp-button { bottom: 20px; right: 16px; width: 52px; height: 52px; }
+      .landing-sound-toggle { bottom: 20px; left: 16px; width: 42px; height: 42px; }
     }
+
+    /* ==================== Responsive — Small Mobile (≤480px) ==================== */
     @media (max-width: 480px) {
-      .landing-trust-content { grid-template-columns: 1fr; }
+      .landing-hero-text h1 { font-size: clamp(1.35rem, 5.5vw, 1.8rem); }
+      .landing-hero-cta { flex-direction: column; align-items: stretch; }
+      .landing-hero-cta .landing-btn { text-align: center; }
       .hero-carousel { min-height: 220px; }
-      .about-grid { grid-template-columns: repeat(2, 1fr); }
+      .hero-slide-stat { flex-direction: column; gap: 0.25rem; text-align: center; }
+
+      .landing-problem-card { padding: 1.5rem 1.25rem; }
+      .problem-number { font-size: 3.5rem; }
+
+      .about-pillars { grid-template-columns: 1fr; gap: 0.75rem; }
+      .about-pillar-card { flex-direction: row; text-align: left; padding: 1.25rem; gap: 1rem; }
+      .about-pillar-icon { margin: 0; width: 48px; height: 48px; flex-shrink: 0; }
+      .about-pillar-card h4 { font-size: 0.85rem; margin-bottom: 0.2rem; }
+      .about-pillar-card p { font-size: 0.8rem; }
+
+      .paraquien-stats-col { grid-template-columns: 1fr; }
+      .trust-stat-card { display: flex; align-items: center; gap: 1rem; text-align: left; padding: 1rem 1.25rem; }
+      .trust-stat-number { font-size: 1.5rem; margin-bottom: 0; }
+      .trust-stat-bg-icon { display: none; }
+
+      .landing-cta-section { padding: 2.5rem 1rem; border-radius: 1rem; }
+      .cta-btn-pulse { font-size: 0.85rem !important; padding: 0.9rem 1.25rem !important; letter-spacing: 0 !important; }
+
+      .tax-stat-card .stat-value { font-size: 1.1rem; }
+      .tax-result-highlight .tax-result-value { font-size: 1.2rem; }
+
+      .landing-contact-form-container h2 { font-size: 1.25rem; }
+      .landing-form-submit { font-size: 0.9rem; }
+
+      .sat-video-wrapper { max-width: 220px; max-height: 280px; }
+
+      .brand-video-wrapper { max-height: 220px; }
+      .brand-name-highlight { font-size: 1rem; }
     }
   `;
 
@@ -1642,7 +1804,7 @@ export default function Landing() {
       </section>
 
       {/* ==================== 7. CALCULADORA ISR 2026 ==================== */}
-      <section id="simulador" className="landing-section landing-section-light" style={{ minHeight: 'calc(100vh - 80px)', display: 'flex', alignItems: 'center', padding: '2rem 1.5rem' }} data-section="simulador" ref={(el) => (sectionRefs.current.simulador = el)}>
+      <section id="simulador" className="landing-section landing-section-light landing-section-padding" data-section="simulador" ref={(el) => (sectionRefs.current.simulador = el)}>
         <div style={{ maxWidth: '1100px', margin: '0 auto', width: '100%' }}>
           <div style={{ textAlign: 'center', marginBottom: '0.75rem' }}>
             <span className="landing-section-subtitle" style={{ marginBottom: '0.25rem' }}>Simulador Fiscal 2026</span>
@@ -1813,7 +1975,7 @@ export default function Landing() {
       </section>
 
       {/* ==================== 10. QUIENES SOMOS ==================== */}
-      <section className="landing-section landing-section-light" style={{ minHeight: 'calc(100vh - 80px)', display: 'flex', alignItems: 'center', padding: '2rem 1.5rem' }} data-section="about" ref={(el) => (sectionRefs.current.about = el)}>
+      <section className="landing-section landing-section-light landing-section-padding" data-section="about" ref={(el) => (sectionRefs.current.about = el)}>
         <div className="about-full" ref={(el) => (observerRefs.current[9] = el)}>
           <div className={`landing-section-header ${visibleSections.about ? 'revealed' : ''}`} style={{ marginBottom: '1.5rem' }}>
             <span className="landing-section-subtitle">Quiénes Somos</span>
