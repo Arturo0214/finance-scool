@@ -265,6 +265,12 @@ export default function Landing() {
     const mensual = ingresoReal / 12;
     const pctRecup = totalIngresos > 0 ? getMarginalRate(totalIngresos) * 100 : 0;
 
+    // What they're losing by not using deductions
+    const maxDeduciblePersonal = capPersonalTotal;
+    const maxDeducibleRetiro = capPPR + capArt185;
+    const deduciblesNoUsados = (maxDeduciblePersonal - totalPersonal) + (maxDeducibleRetiro - totalRetiro);
+    const impuestosPerdidos = isrSinDed - isrConDedConRetiro; // what they could save
+
     return {
       totalIngresos,
       totalPersonal,
@@ -278,6 +284,11 @@ export default function Landing() {
       ingresoRealSinDed: totalIngresos - isrSinDed,
       mensual,
       pctRecup,
+      maxDeduciblePersonal,
+      maxDeducibleRetiro,
+      deduciblesNoUsados,
+      impuestosPerdidos,
+      capPPR,
     };
   };
 
@@ -1358,6 +1369,7 @@ export default function Landing() {
           </div>
           <div className="tax-calc-container">
             <div className="tax-calc-grid">
+              {/* LEFT: Input + Deducciones fijas */}
               <div className="tax-calc-inputs">
                 <div className="tax-input-group">
                   <label>Ingreso Anual Bruto</label>
@@ -1375,84 +1387,84 @@ export default function Landing() {
                     onChange={(e) => setTaxCalc({ ...taxCalc, otrosIngresos: Number(e.target.value) })}
                   />
                 </div>
-                <div className="tax-input-group">
-                  <label>Aportación a PPR (Plan Personal de Retiro)</label>
-                  <input
-                    type="number" placeholder="Ej: 100,000"
-                    value={taxCalc.ppr || ''}
-                    onChange={(e) => setTaxCalc({ ...taxCalc, ppr: Number(e.target.value) })}
-                  />
-                  <span style={{ fontSize: '0.8rem', color: '#9CA3AF' }}>
-                    Tope: {formatMXN(Math.min((taxCalc.ingresoAnual + taxCalc.otrosIngresos) * 0.10, CINCO_UMAS_ANUALES))} (10% ingreso o 5 UMAs)
-                  </span>
-                </div>
-                <div className="tax-input-group">
-                  <label>Primas Seguro Retiro (Art. 185 LISR)</label>
-                  <input
-                    type="number" placeholder="Ej: 0"
-                    value={taxCalc.art185 || ''}
-                    onChange={(e) => setTaxCalc({ ...taxCalc, art185: Number(e.target.value) })}
-                  />
-                  <span style={{ fontSize: '0.8rem', color: '#9CA3AF' }}>Tope: $152,000</span>
+
+                {/* Deducciones personales - INFO FIJA */}
+                <div style={{ background: '#F7F8FC', borderRadius: '1rem', padding: '1.25rem', marginTop: '0.5rem', border: '1px solid rgba(0,61,165,0.08)' }}>
+                  <h4 style={{ color: '#003DA5', fontSize: '0.95rem', marginBottom: '0.75rem', fontWeight: 700 }}>Deducciones personales autorizadas</h4>
+                  <p style={{ fontSize: '0.8rem', color: '#4B5563', marginBottom: '0.75rem', lineHeight: 1.5 }}>Estas son las deducciones que puedes aplicar cada año. El tope total es el menor entre 15% de tu ingreso o 5 UMAs anuales.</p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                    {[
+                      { name: 'Honorarios médicos y dentales', limit: 'Hasta 15% de ingreso' },
+                      { name: 'Gastos funerarios', limit: 'Hasta $42,795' },
+                      { name: 'Donativos', limit: 'Hasta 7% de ingreso' },
+                      { name: 'Intereses créditos hipotecarios', limit: 'Hasta 750 mil UDIs' },
+                      { name: 'Seguro de Gastos Médicos Mayores', limit: 'Sin tope individual' },
+                      { name: 'Transporte escolar obligatorio', limit: 'Sin tope individual' },
+                    ].map((d, i) => (
+                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.35rem 0', borderBottom: i < 5 ? '1px solid rgba(0,61,165,0.06)' : 'none' }}>
+                        <span style={{ fontSize: '0.8rem', color: '#2D3436', fontWeight: 500 }}>{d.name}</span>
+                        <span style={{ fontSize: '0.75rem', color: '#003DA5', fontWeight: 600, whiteSpace: 'nowrap', marginLeft: '0.5rem' }}>{d.limit}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ marginTop: '0.75rem', background: 'linear-gradient(135deg, rgba(0,61,165,0.06), rgba(0,61,165,0.02))', borderRadius: '0.5rem', padding: '0.6rem 0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.8rem', color: '#003DA5', fontWeight: 700 }}>Tope máximo deducible</span>
+                    <span style={{ fontSize: '1rem', color: '#003DA5', fontWeight: 700 }}>{formatMXN(taxResults.maxDeduciblePersonal)}</span>
+                  </div>
                 </div>
 
-                <button className="tax-toggle-advanced" onClick={() => setShowAdvanced(!showAdvanced)}>
-                  {showAdvanced ? '▲' : '▼'} Deducciones personales (opcional)
-                </button>
-
-                {showAdvanced && (
-                  <>
-                    <div className="tax-input-group">
-                      <label>Honorarios médicos y dentales</label>
-                      <input type="number" value={taxCalc.medicos || ''} onChange={(e) => setTaxCalc({ ...taxCalc, medicos: Number(e.target.value) })} />
-                    </div>
-                    <div className="tax-input-group">
-                      <label>Gastos funerarios</label>
-                      <input type="number" value={taxCalc.funerarios || ''} onChange={(e) => setTaxCalc({ ...taxCalc, funerarios: Number(e.target.value) })} />
-                      <span style={{ fontSize: '0.8rem', color: '#9CA3AF' }}>Tope: $42,794.64 (1 UMA anual)</span>
-                    </div>
-                    <div className="tax-input-group">
-                      <label>Donativos</label>
-                      <input type="number" value={taxCalc.donativos || ''} onChange={(e) => setTaxCalc({ ...taxCalc, donativos: Number(e.target.value) })} />
-                      <span style={{ fontSize: '0.8rem', color: '#9CA3AF' }}>Tope: 7% de tu ingreso</span>
-                    </div>
-                    <div className="tax-input-group">
-                      <label>Intereses reales créditos hipotecarios</label>
-                      <input type="number" value={taxCalc.hipotecarios || ''} onChange={(e) => setTaxCalc({ ...taxCalc, hipotecarios: Number(e.target.value) })} />
-                    </div>
-                    <div className="tax-input-group">
-                      <label>Seguro de Gastos Médicos Mayores</label>
-                      <input type="number" value={taxCalc.seguroGMM || ''} onChange={(e) => setTaxCalc({ ...taxCalc, seguroGMM: Number(e.target.value) })} />
-                    </div>
-                    <div className="tax-input-group">
-                      <label>Transporte escolar obligatorio</label>
-                      <input type="number" value={taxCalc.transporteEscolar || ''} onChange={(e) => setTaxCalc({ ...taxCalc, transporteEscolar: Number(e.target.value) })} />
-                    </div>
-                  </>
-                )}
+                {/* PPR - APARTE de deducciones personales */}
+                <div style={{ background: 'linear-gradient(135deg, rgba(201,168,76,0.08), rgba(201,168,76,0.02))', borderRadius: '1rem', padding: '1.25rem', border: '1px solid rgba(201,168,76,0.2)' }}>
+                  <h4 style={{ color: '#003DA5', fontSize: '0.95rem', marginBottom: '0.25rem', fontWeight: 700 }}>Plan Personal de Retiro (PPR)</h4>
+                  <p style={{ fontSize: '0.8rem', color: '#C9A84C', fontWeight: 600, marginBottom: '0.75rem' }}>Esto es APARTE de tus deducciones personales</p>
+                  <div className="tax-input-group" style={{ marginBottom: '0.5rem' }}>
+                    <label style={{ fontSize: '0.85rem' }}>¿Cuánto aportas al año a tu PPR?</label>
+                    <input
+                      type="number" placeholder="Ej: 100,000"
+                      value={taxCalc.ppr || ''}
+                      onChange={(e) => setTaxCalc({ ...taxCalc, ppr: Number(e.target.value) })}
+                    />
+                    <span style={{ fontSize: '0.75rem', color: '#9CA3AF' }}>
+                      Tope deducible: {formatMXN(taxResults.capPPR)} (10% ingreso o 5 UMAs, lo menor)
+                    </span>
+                  </div>
+                  <div className="tax-input-group">
+                    <label style={{ fontSize: '0.85rem' }}>Primas Seguro Retiro (Art. 185 LISR)</label>
+                    <input
+                      type="number" placeholder="Ej: 0"
+                      value={taxCalc.art185 || ''}
+                      onChange={(e) => setTaxCalc({ ...taxCalc, art185: Number(e.target.value) })}
+                    />
+                    <span style={{ fontSize: '0.75rem', color: '#9CA3AF' }}>Tope: $152,000</span>
+                  </div>
+                </div>
               </div>
 
+              {/* RIGHT: Resultados */}
               <div className="tax-results">
                 <h3>Tu escenario fiscal 2026</h3>
 
-                <div className="tax-scenarios">
-                  <div className="tax-scenario">
-                    <div className="tax-scenario-label">Impuestos retenidos (sin deducciones)</div>
-                    <div className="tax-scenario-value">{formatMXN(taxResults.isrSinDed)}</div>
-                  </div>
-                  <div className="tax-scenario">
-                    <div className="tax-scenario-label">ISR con ded. personales</div>
-                    <div className="tax-scenario-value">{formatMXN(taxResults.isrConDedSinRetiro)}</div>
-                  </div>
-                  <div className="tax-scenario">
-                    <div className="tax-scenario-label">ISR con retiro + ded.</div>
-                    <div className="tax-scenario-value" style={{ color: '#10B981' }}>{formatMXN(taxResults.isrConDedConRetiro)}</div>
-                  </div>
+                {/* Cuánto estás pagando de impuestos */}
+                <div style={{ background: 'linear-gradient(135deg, rgba(239,68,68,0.06), rgba(239,68,68,0.02))', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '1rem', padding: '1.25rem', textAlign: 'center', marginBottom: '1rem' }}>
+                  <div style={{ fontSize: '0.8rem', color: '#DC2626', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.25rem' }}>Hoy estás pagando de impuestos</div>
+                  <div style={{ fontSize: '2.25rem', fontWeight: 700, color: '#DC2626' }}>{formatMXN(taxResults.isrSinDed)}</div>
+                  <div style={{ fontSize: '0.8rem', color: '#4B5563', marginTop: '0.25rem' }}>al año sin usar deducciones</div>
                 </div>
 
-                <div className="tax-result-highlight">
-                  <div className="tax-result-label">Devolución de impuestos estimada</div>
-                  <div className="tax-result-value">{formatMXN(taxResults.devolucion)}</div>
+                {/* Cuánto estás perdiendo en deducibles */}
+                <div style={{ background: 'linear-gradient(135deg, rgba(245,158,11,0.06), rgba(245,158,11,0.02))', border: '1px solid rgba(245,158,11,0.2)', borderRadius: '1rem', padding: '1.25rem', textAlign: 'center', marginBottom: '1rem' }}>
+                  <div style={{ fontSize: '0.8rem', color: '#D97706', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.25rem' }}>Estás perdiendo en deducibles</div>
+                  <div style={{ fontSize: '2.25rem', fontWeight: 700, color: '#D97706' }}>{formatMXN(taxResults.deduciblesNoUsados)}</div>
+                  <div style={{ fontSize: '0.8rem', color: '#4B5563', marginTop: '0.25rem' }}>en deducciones que podrías aprovechar</div>
+                </div>
+
+                {/* Con estrategia */}
+                <div className="tax-result-highlight" style={{ background: 'linear-gradient(135deg, rgba(16,185,129,0.08), rgba(16,185,129,0.02))', border: '1px solid rgba(16,185,129,0.25)' }}>
+                  <div className="tax-result-label" style={{ color: '#047857' }}>Con estrategia fiscal pagarías</div>
+                  <div className="tax-result-value" style={{ color: '#10B981' }}>{formatMXN(taxResults.isrConDedConRetiro)}</div>
+                  <div style={{ fontSize: '0.8rem', color: '#047857', marginTop: '0.25rem' }}>
+                    Ahorras <strong>{formatMXN(taxResults.impuestosPerdidos)}</strong> en impuestos al año
+                  </div>
                 </div>
 
                 <div className="tax-result-row">
@@ -1470,7 +1482,7 @@ export default function Landing() {
 
                 <div style={{ marginTop: '1.5rem', textAlign: 'center' }}>
                   <button className="landing-btn landing-btn-gold" onClick={() => scrollToSection('contacto')}>
-                    Quiero calcular mi escenario completo
+                    Quiero mi estrategia fiscal personalizada
                   </button>
                 </div>
               </div>
