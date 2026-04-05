@@ -265,11 +265,11 @@ export default function Landing() {
     const mensual = ingresoReal / 12;
     const pctRecup = totalIngresos > 0 ? getMarginalRate(totalIngresos) * 100 : 0;
 
-    // What they're losing by not using deductions
+    // What they're losing by not using deductions (capped to income)
     const maxDeduciblePersonal = capPersonalTotal;
     const maxDeducibleRetiro = capPPR + capArt185;
-    const deduciblesNoUsados = (maxDeduciblePersonal - totalPersonal) + (maxDeducibleRetiro - totalRetiro);
-    const impuestosPerdidos = isrSinDed - isrConDedConRetiro; // what they could save
+    const maxDeducibleTotal = Math.min(maxDeduciblePersonal + maxDeducibleRetiro, totalIngresos);
+    const deduciblesNoUsados = Math.max(0, maxDeducibleTotal - totalPersonal - totalRetiro);
 
     return {
       totalIngresos,
@@ -287,7 +287,6 @@ export default function Landing() {
       maxDeduciblePersonal,
       maxDeducibleRetiro,
       deduciblesNoUsados,
-      impuestosPerdidos,
       capPPR,
     };
   };
@@ -314,6 +313,7 @@ export default function Landing() {
     );
     observerRefs.current.forEach((ref) => { if (ref) observer.observe(ref); });
     Object.values(sectionRefs.current).forEach((ref) => { if (ref) observer.observe(ref); });
+
     return () => observer.disconnect();
   }, []);
 
@@ -480,20 +480,26 @@ export default function Landing() {
     .hero-dot.active { background: #D4AF37; width: 24px; border-radius: 4px; box-shadow: 0 0 12px rgba(212,175,55,0.4); }
 
     /* ==================== Reveal Animations ==================== */
-    @keyframes revealUp { from { opacity: 0; transform: translateY(40px); } to { opacity: 1; transform: translateY(0); } }
-    @keyframes revealLeft { from { opacity: 0; transform: translateX(-40px); } to { opacity: 1; transform: translateX(0); } }
-    @keyframes revealRight { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: translateX(0); } }
-    @keyframes scaleIn { from { opacity: 0; transform: scale(0.85); } to { opacity: 1; transform: scale(1); } }
     @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
     @keyframes pulseGlow { 0%,100% { box-shadow: 0 0 20px rgba(212,175,55,0.2); } 50% { box-shadow: 0 0 40px rgba(212,175,55,0.4); } }
     @keyframes gradientShift { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
-    .reveal-up { opacity: 0; transform: translateY(40px); transition: all 700ms cubic-bezier(0.4,0,0.2,1); }
-    .reveal-left { opacity: 0; transform: translateX(-40px); transition: all 700ms cubic-bezier(0.4,0,0.2,1); }
-    .reveal-right { opacity: 0; transform: translateX(40px); transition: all 700ms cubic-bezier(0.4,0,0.2,1); }
-    .reveal-scale { opacity: 0; transform: scale(0.85); transition: all 700ms cubic-bezier(0.4,0,0.2,1); }
-    .revealed { opacity: 1 !important; transform: translateY(0) translateX(0) scale(1) !important; }
-    .stagger-1 { transition-delay: 0ms; } .stagger-2 { transition-delay: 150ms; } .stagger-3 { transition-delay: 300ms; }
-    .stagger-4 { transition-delay: 450ms; } .stagger-5 { transition-delay: 600ms; }
+
+    /* ===== Apple-style scroll reveal system ===== */
+    .reveal-up { opacity: 0; transform: translateY(32px); filter: blur(3px); transition: opacity 0.55s cubic-bezier(0.25,0.46,0.45,0.94), transform 0.55s cubic-bezier(0.25,0.46,0.45,0.94), filter 0.55s cubic-bezier(0.25,0.46,0.45,0.94); }
+    .reveal-left { opacity: 0; transform: translateX(-32px); filter: blur(3px); transition: opacity 0.55s cubic-bezier(0.25,0.46,0.45,0.94), transform 0.55s cubic-bezier(0.25,0.46,0.45,0.94), filter 0.55s cubic-bezier(0.25,0.46,0.45,0.94); }
+    .reveal-right { opacity: 0; transform: translateX(32px); filter: blur(3px); transition: opacity 0.55s cubic-bezier(0.25,0.46,0.45,0.94), transform 0.55s cubic-bezier(0.25,0.46,0.45,0.94), filter 0.55s cubic-bezier(0.25,0.46,0.45,0.94); }
+    .reveal-scale { opacity: 0; transform: scale(0.92); filter: blur(3px); transition: opacity 0.55s cubic-bezier(0.25,0.46,0.45,0.94), transform 0.55s cubic-bezier(0.25,0.46,0.45,0.94), filter 0.55s cubic-bezier(0.25,0.46,0.45,0.94); }
+    .revealed { opacity: 1 !important; transform: translateY(0) translateX(0) scale(1) !important; filter: blur(0) !important; }
+    .stagger-1 { transition-delay: 0ms; } .stagger-2 { transition-delay: 80ms; } .stagger-3 { transition-delay: 160ms; }
+    .stagger-4 { transition-delay: 240ms; } .stagger-5 { transition-delay: 320ms; }
+
+    /* Section-level reveal: headers, text blocks, grids */
+    .landing-section-header { opacity: 0; transform: translateY(28px); filter: blur(3px); transition: opacity 0.5s cubic-bezier(0.25,0.46,0.45,0.94), transform 0.5s cubic-bezier(0.25,0.46,0.45,0.94), filter 0.5s cubic-bezier(0.25,0.46,0.45,0.94); }
+    .landing-section-header.revealed { opacity: 1; transform: translateY(0); filter: blur(0); }
+    .brand-grid { opacity: 0; transform: translateY(24px); filter: blur(3px); transition: opacity 0.55s cubic-bezier(0.25,0.46,0.45,0.94) 0.1s, transform 0.55s cubic-bezier(0.25,0.46,0.45,0.94) 0.1s, filter 0.55s cubic-bezier(0.25,0.46,0.45,0.94) 0.1s; }
+    .brand-grid.revealed { opacity: 1; transform: translateY(0); filter: blur(0); }
+    .emotion-grid { opacity: 0; transform: translateY(24px); filter: blur(3px); transition: opacity 0.55s cubic-bezier(0.25,0.46,0.45,0.94) 0.1s, transform 0.55s cubic-bezier(0.25,0.46,0.45,0.94) 0.1s, filter 0.55s cubic-bezier(0.25,0.46,0.45,0.94) 0.1s; }
+    .emotion-grid.revealed { opacity: 1; transform: translateY(0); filter: blur(0); }
 
     /* ==================== Section Base ==================== */
     .landing-section { scroll-margin-top: 80px; }
@@ -591,6 +597,43 @@ export default function Landing() {
       border: 1px solid rgba(255,255,255,0.05);
     }
     .emotion-mini { text-align: center; color: #003DA5; font-weight: 600; font-size: 1.1rem; margin-top: 1.5rem; }
+    .emotion-badge {
+      font-size: 0.8rem; font-weight: 600; letter-spacing: 0.03em;
+      color: #003DA5; padding: 0.4rem 1rem; border-radius: 2rem;
+      background: linear-gradient(135deg, rgba(0,61,165,0.08), rgba(201,168,76,0.08));
+      border: 1px solid rgba(0,61,165,0.15);
+      box-shadow: 0 2px 8px rgba(0,61,165,0.06);
+      transition: all 0.3s ease;
+    }
+    .emotion-badge:hover {
+      background: linear-gradient(135deg, rgba(0,61,165,0.14), rgba(201,168,76,0.14));
+      border-color: rgba(201,168,76,0.4);
+      box-shadow: 0 4px 12px rgba(201,168,76,0.15);
+      transform: translateY(-1px);
+    }
+    .emotion-cta-wrapper { text-align: center; margin-top: 2rem; }
+    .emotion-cta {
+      display: inline-block; background: linear-gradient(135deg, #003DA5, #0052D4);
+      color: white; padding: 1.1rem 2.5rem; border-radius: 1rem;
+      font-size: 1.2rem; font-weight: 700;
+      box-shadow: 0 8px 24px rgba(0,61,165,0.25);
+      animation: ctaPulse 2.5s ease-in-out infinite;
+      position: relative; overflow: hidden;
+    }
+    .emotion-cta::before {
+      content: ''; position: absolute; top: -50%; left: -50%;
+      width: 200%; height: 200%;
+      background: linear-gradient(45deg, transparent 40%, rgba(255,255,255,0.15) 50%, transparent 60%);
+      animation: ctaShine 3s ease-in-out infinite;
+    }
+    @keyframes ctaPulse {
+      0%, 100% { box-shadow: 0 8px 24px rgba(0,61,165,0.25); transform: scale(1); }
+      50% { box-shadow: 0 12px 36px rgba(0,61,165,0.4), 0 0 20px rgba(0,82,212,0.2); transform: scale(1.02); }
+    }
+    @keyframes ctaShine {
+      0% { transform: translateX(-100%) rotate(25deg); }
+      60%, 100% { transform: translateX(100%) rotate(25deg); }
+    }
 
     /* ==================== Problem Cards ==================== */
     .landing-problems-grid { max-width: 1200px; margin: 0 auto; display: grid; grid-template-columns: repeat(3, 1fr); gap: 2.5rem; }
@@ -598,10 +641,10 @@ export default function Landing() {
       background: white; border: none; border-radius: 1.25rem;
       padding: 2.5rem 2rem; position: relative; overflow: hidden;
       box-shadow: 0 4px 20px rgba(0,18,51,0.06);
-      opacity: 0; transform: translateY(30px);
-      transition: opacity 600ms ease, transform 600ms ease, box-shadow 400ms ease;
+      opacity: 0; transform: translateY(28px); filter: blur(3px);
+      transition: opacity 0.5s cubic-bezier(0.25,0.46,0.45,0.94), transform 0.5s cubic-bezier(0.25,0.46,0.45,0.94), filter 0.5s cubic-bezier(0.25,0.46,0.45,0.94), box-shadow 400ms ease;
     }
-    .landing-problem-card.revealed { opacity: 1; transform: translateY(0); }
+    .landing-problem-card.revealed { opacity: 1; transform: translateY(0); filter: blur(0); }
     .landing-problem-card::before {
       content: ''; position: absolute; top: 0; left: 0; right: 0; height: 4px;
       background: linear-gradient(90deg, #D4AF37, #C9A84C, #B99830); transform: scaleX(0);
@@ -644,8 +687,8 @@ export default function Landing() {
       background: white; border-radius: 1.5rem; padding: 2.5rem 2rem;
       border: 1px solid rgba(0,18,51,0.06); position: relative; overflow: visible;
       box-shadow: 0 4px 20px rgba(0,18,51,0.06);
-      opacity: 0; transform: translateY(50px) scale(0.95);
-      transition: opacity 700ms cubic-bezier(0.16,1,0.3,1), transform 700ms cubic-bezier(0.16,1,0.3,1), box-shadow 400ms ease, border-color 400ms ease;
+      opacity: 0; transform: translateY(28px) scale(0.97); filter: blur(3px);
+      transition: opacity 0.5s cubic-bezier(0.25,0.46,0.45,0.94), transform 0.5s cubic-bezier(0.25,0.46,0.45,0.94), filter 0.5s cubic-bezier(0.25,0.46,0.45,0.94), box-shadow 400ms ease, border-color 400ms ease;
       z-index: 1;
     }
     .landing-service-card::before {
@@ -661,7 +704,7 @@ export default function Landing() {
     .landing-service-card:hover { box-shadow: 0 24px 48px rgba(0,18,51,0.14); transform: translateY(-8px) scale(1.02); border-color: rgba(0,61,165,0.15); }
     .landing-service-card:hover::before { transform: scaleX(1); }
     .landing-service-card:hover::after { opacity: 1; }
-    .landing-service-card.revealed { opacity: 1; transform: translateY(0) scale(1); }
+    .landing-service-card.revealed { opacity: 1; transform: translateY(0) scale(1); filter: blur(0) !important; }
     .landing-service-card.revealed:hover { transform: translateY(-8px) scale(1.02); }
 
     .service-step-number {
@@ -711,20 +754,23 @@ export default function Landing() {
 
     /* ==================== Tax Calculator ==================== */
     .tax-calc-container {
-      max-width: 1200px; margin: 0 auto; background: white;
-      border: none; border-radius: 1rem;
-      padding: 1.25rem; box-shadow: 0 20px 50px rgba(0,18,51,0.08);
+      max-width: 1100px; margin: 0 auto; background: white;
+      border: none; border-radius: 1.25rem;
+      padding: 1.5rem; box-shadow: 0 20px 50px rgba(0,18,51,0.08);
       position: relative; overflow: hidden;
+      opacity: 0; transform: translateY(28px) scale(0.98); filter: blur(3px);
+      transition: opacity 0.55s cubic-bezier(0.25,0.46,0.45,0.94), transform 0.55s cubic-bezier(0.25,0.46,0.45,0.94), filter 0.55s cubic-bezier(0.25,0.46,0.45,0.94);
     }
+    .tax-calc-container.revealed { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
     .tax-calc-container::before {
       content: ''; position: absolute; top: 0; left: 0; right: 0; height: 6px;
       background: linear-gradient(90deg, #D4AF37, #003DA5, #001845);
       border-radius: 1rem 1rem 0 0;
     }
     .tax-calc-support { text-align: center; color: #5A6577; font-size: 0.9rem; margin-bottom: 1rem; font-style: italic; }
-    .tax-calc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+    .tax-calc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; align-items: stretch; }
     .tax-calc-inputs { display: flex; flex-direction: column; gap: 0.5rem; }
-    .tax-input-group { display: flex; flex-direction: column; gap: 0.25rem; }
+    .tax-input-group { display: flex; flex-direction: column; gap: 0.2rem; }
     .tax-input-group label { font-weight: 600; color: #2D3436; font-size: 0.8rem; }
     .tax-input-group input, .tax-input-group select {
       padding: 0.45rem 0.75rem; border: 1.5px solid #E5E7EB; border-radius: 0.5rem;
@@ -740,18 +786,86 @@ export default function Landing() {
     }
     .tax-toggle-advanced:hover { color: #0067C5; }
     .tax-results {
-      background: linear-gradient(160deg, #001233, #001845);
-      border-radius: 1.25rem; padding: 1.5rem; border: none;
-      box-shadow: 0 10px 30px rgba(0,18,51,0.15);
+      background: linear-gradient(160deg, #060a14 0%, #0a1225 40%, #0e1a33 100%);
+      border-radius: 1.25rem; padding: 1.25rem; border: none;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.4), 0 0 80px rgba(212,175,55,0.04);
+      display: flex; flex-direction: column; justify-content: space-between;
+      position: relative; overflow: hidden;
     }
-    .tax-results h3 { color: #D4AF37; font-size: 1.1rem; margin-bottom: 1rem; text-align: center; font-family: 'Playfair Display', serif; }
+    /* Animated border gradient */
+    .tax-results::before {
+      content: ''; position: absolute; inset: -1px; border-radius: 1.25rem; padding: 1px; z-index: 0;
+      background: linear-gradient(var(--border-angle, 0deg), rgba(212,175,55,0.4), rgba(0,61,165,0.2), rgba(212,175,55,0.1), rgba(52,211,153,0.2), rgba(212,175,55,0.4));
+      -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+      -webkit-mask-composite: xor; mask-composite: exclude;
+      animation: borderSpin 6s linear infinite;
+    }
+    @keyframes borderSpin { to { --border-angle: 360deg; } }
+    @property --border-angle { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
+    /* Floating particles */
+    .tax-results::after {
+      content: ''; position: absolute; inset: 0; z-index: 0;
+      background:
+        radial-gradient(1.5px 1.5px at 15% 25%, rgba(212,175,55,0.3) 50%, transparent 50%),
+        radial-gradient(1px 1px at 75% 15%, rgba(255,255,255,0.15) 50%, transparent 50%),
+        radial-gradient(1.5px 1.5px at 85% 70%, rgba(212,175,55,0.2) 50%, transparent 50%),
+        radial-gradient(1px 1px at 35% 80%, rgba(255,255,255,0.1) 50%, transparent 50%),
+        radial-gradient(1px 1px at 55% 45%, rgba(52,211,153,0.15) 50%, transparent 50%);
+      animation: particleFloat 6s ease-in-out infinite alternate;
+    }
+    @keyframes particleFloat { 0% { transform: translateY(0); } 100% { transform: translateY(-6px); } }
+    .tax-results > * { position: relative; z-index: 1; }
+    .tax-results h3 {
+      color: transparent; font-size: 1rem; margin-bottom: 0.5rem; text-align: center;
+      font-family: 'Playfair Display', serif; letter-spacing: 0.03em;
+      background: linear-gradient(135deg, #D4AF37 0%, #F0D78C 50%, #D4AF37 100%);
+      background-size: 200% 100%; -webkit-background-clip: text; background-clip: text;
+      animation: goldShift 4s ease-in-out infinite;
+    }
+    @keyframes goldShift { 0%,100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
+    /* Stat cards with glass morphism */
+    .tax-stat-card {
+      text-align: center; padding: 0.65rem; border-radius: 0.65rem;
+      background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07);
+      backdrop-filter: blur(12px); transition: all 400ms cubic-bezier(0.34,1.56,0.64,1);
+      animation: statReveal 600ms ease-out backwards;
+    }
+    .tax-stat-card:first-child { animation-delay: 100ms; }
+    .tax-stat-card:last-child { animation-delay: 250ms; }
+    @keyframes statReveal { from { opacity: 0; transform: translateY(10px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
+    .tax-stat-card:hover { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.15); transform: translateY(-3px) scale(1.02); box-shadow: 0 8px 25px rgba(0,0,0,0.3); }
+    .tax-stat-card .stat-label { font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.15rem; }
+    .tax-stat-card .stat-value { font-size: 1.5rem; font-weight: 800; font-family: 'Montserrat', sans-serif; }
+    .tax-stat-card .stat-sub { font-size: 0.55rem; color: rgba(255,255,255,0.35); margin-top: 0.05rem; }
+    /* Hero card with pulse glow */
+    .tax-hero-card {
+      text-align: center; padding: 0.85rem; border-radius: 0.75rem;
+      background: linear-gradient(135deg, rgba(52,211,153,0.05), rgba(52,211,153,0.01));
+      border: 1px solid rgba(52,211,153,0.12);
+      position: relative; overflow: hidden;
+      animation: statReveal 600ms ease-out 400ms backwards;
+      box-shadow: 0 0 30px rgba(52,211,153,0.05);
+    }
+    .tax-hero-card::before {
+      content: ''; position: absolute; inset: 0;
+      background: linear-gradient(90deg, transparent 0%, rgba(52,211,153,0.06) 50%, transparent 100%);
+      animation: heroShimmer 4s ease-in-out infinite;
+    }
+    @keyframes heroShimmer { 0%,100% { opacity: 0; transform: translateX(-100%); } 50% { opacity: 1; transform: translateX(100%); } }
+    .tax-hero-card:hover { box-shadow: 0 0 40px rgba(52,211,153,0.1); border-color: rgba(52,211,153,0.25); }
+    .tax-hero-card > * { position: relative; z-index: 1; }
+    /* Result rows */
     .tax-result-row {
       display: flex; justify-content: space-between; align-items: center;
-      padding: 0.6rem 0; border-bottom: 1px solid rgba(255,255,255,0.08);
+      padding: 0.4rem 0; border-bottom: 1px solid rgba(255,255,255,0.04);
+      animation: statReveal 500ms ease-out backwards;
     }
+    .tax-result-row:nth-child(1) { animation-delay: 550ms; }
+    .tax-result-row:nth-child(2) { animation-delay: 650ms; }
+    .tax-result-row:nth-child(3) { animation-delay: 750ms; }
     .tax-result-row:last-child { border-bottom: none; }
-    .tax-result-label { color: rgba(255,255,255,0.7); font-size: 0.85rem; font-weight: 500; }
-    .tax-result-value { color: #FFFFFF; font-size: 1.1rem; font-weight: 700; }
+    .tax-result-label { color: rgba(255,255,255,0.45); font-size: 0.75rem; font-weight: 500; }
+    .tax-result-value { color: rgba(255,255,255,0.95); font-size: 1.05rem; font-weight: 700; font-family: 'Montserrat', sans-serif; }
     .tax-result-highlight {
       background: linear-gradient(135deg, rgba(212,175,55,0.12), rgba(212,175,55,0.05));
       border: 1px solid rgba(212,175,55,0.3); border-radius: 0.75rem; padding: 1rem;
@@ -782,10 +896,10 @@ export default function Landing() {
       border-radius: 0.85rem; padding: 0.85rem 1.25rem;
       color: white; font-size: 0.95rem; font-style: italic;
       backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
-      opacity: 0; transform: translateX(-30px);
-      transition: opacity 600ms ease, transform 600ms ease, background 300ms ease, border-color 300ms ease;
+      opacity: 0; transform: translateX(-24px); filter: blur(3px);
+      transition: opacity 0.5s cubic-bezier(0.25,0.46,0.45,0.94), transform 0.5s cubic-bezier(0.25,0.46,0.45,0.94), filter 0.5s cubic-bezier(0.25,0.46,0.45,0.94), background 300ms ease, border-color 300ms ease;
     }
-    .pq-card.revealed { opacity: 1; transform: translateX(0); }
+    .pq-card.revealed { opacity: 1; transform: translateX(0); filter: blur(0); }
     .pq-card:hover { background: rgba(255,255,255,0.2); border-color: rgba(212,175,55,0.5); }
     .pq-icon { flex-shrink: 0; color: #D4AF37; display: flex; align-items: center; }
     .pq-text { line-height: 1.5; }
@@ -808,6 +922,49 @@ export default function Landing() {
     .trust-stat-label { color: rgba(255,255,255,0.9); font-size: 0.82rem; line-height: 1.3; font-weight: 500; }
     .trust-stat-bg-icon {
       position: absolute; top: 10px; right: 10px; color: rgba(212,175,55,0.5);
+    }
+
+    /* ==================== Live Banner ==================== */
+    .live-banner-wrapper { text-align: center; margin-top: 2rem; }
+    .live-banner {
+      display: inline-flex; align-items: center; gap: 0.75rem;
+      background: linear-gradient(135deg, #8B6914 0%, #A67C1A 30%, #C9A84C 60%, #A67C1A 100%);
+      border: 1px solid rgba(255,255,255,0.3);
+      border-radius: 3rem; padding: 0.9rem 2.2rem;
+      box-shadow: 0 6px 24px rgba(201,168,76,0.35), 0 0 0 3px rgba(212,175,55,0.15), inset 0 1px 0 rgba(255,255,255,0.3);
+      animation: liveBannerPulse 3s ease-in-out infinite;
+      position: relative; overflow: hidden;
+    }
+    .live-banner::before {
+      content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+      animation: liveBannerShine 3s ease-in-out infinite;
+    }
+    .live-dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      background: #003DA5; flex-shrink: 0;
+      box-shadow: 0 0 6px rgba(0,61,165,0.8), 0 0 12px rgba(0,61,165,0.4);
+      animation: liveDotPulse 1.5s ease-in-out infinite;
+    }
+    .live-text {
+      color: #ffffff; font-weight: 600; font-size: 0.95rem;
+      letter-spacing: 0.01em; text-shadow: 0 1px 2px rgba(0,0,0,0.15);
+    }
+    .live-count {
+      color: #003DA5; font-weight: 800; font-size: 1.1rem;
+      text-shadow: none;
+    }
+    @keyframes liveDotPulse {
+      0%, 100% { box-shadow: 0 0 4px rgba(0,61,165,0.5); transform: scale(1); }
+      50% { box-shadow: 0 0 12px rgba(0,61,165,0.9), 0 0 20px rgba(0,61,165,0.4); transform: scale(1.2); }
+    }
+    @keyframes liveBannerPulse {
+      0%, 100% { box-shadow: 0 6px 24px rgba(201,168,76,0.35), 0 0 0 3px rgba(212,175,55,0.15); transform: scale(1); }
+      50% { box-shadow: 0 10px 36px rgba(201,168,76,0.5), 0 0 0 5px rgba(212,175,55,0.25); transform: scale(1.02); }
+    }
+    @keyframes liveBannerShine {
+      0% { left: -100%; }
+      50%, 100% { left: 200%; }
     }
 
     /* ==================== About Block ==================== */
@@ -863,27 +1020,56 @@ export default function Landing() {
     /* ==================== About Full ==================== */
     .about-full { max-width: 1200px; margin: 0 auto; }
     .about-pillars {
-      display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; margin-bottom: 2.5rem;
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.25rem; margin-bottom: 2rem;
     }
     .about-pillar-card {
-      text-align: center; padding: 2rem 1.25rem; border-radius: 1.25rem;
-      background: white; border: 1px solid rgba(0,18,51,0.06);
-      box-shadow: 0 4px 16px rgba(0,18,51,0.05);
-      transition: transform 400ms cubic-bezier(0.34,1.56,0.64,1), box-shadow 400ms ease;
+      position: relative; text-align: center; padding: 2rem 1.25rem 1.75rem; border-radius: 1.25rem;
+      background: linear-gradient(160deg, #ffffff 0%, #f8faff 100%);
+      border: 1px solid transparent;
+      background-clip: padding-box;
+      box-shadow: 0 4px 20px rgba(0,18,51,0.06);
+      transition: all 500ms cubic-bezier(0.34,1.56,0.64,1);
+      overflow: hidden;
     }
-    .about-pillar-card:hover { transform: translateY(-6px); box-shadow: 0 16px 40px rgba(0,18,51,0.12); }
+    .about-pillar-card::before {
+      content: ''; position: absolute; inset: 0; border-radius: 1.25rem; padding: 1px;
+      background: linear-gradient(135deg, rgba(0,61,165,0.15), rgba(212,175,55,0.3), rgba(0,61,165,0.1));
+      -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+      -webkit-mask-composite: xor; mask-composite: exclude;
+      transition: all 400ms ease;
+    }
+    .about-pillar-card::after {
+      content: ''; position: absolute; top: -50%; right: -50%; width: 100%; height: 100%;
+      background: radial-gradient(circle, rgba(212,175,55,0.06) 0%, transparent 70%);
+      transition: all 600ms ease; pointer-events: none;
+    }
+    .about-pillar-card:hover {
+      transform: translateY(-8px) scale(1.02);
+      box-shadow: 0 20px 50px rgba(0,61,165,0.15), 0 0 30px rgba(212,175,55,0.08);
+    }
+    .about-pillar-card:hover::before {
+      background: linear-gradient(135deg, rgba(0,61,165,0.3), rgba(212,175,55,0.5), rgba(0,61,165,0.2));
+    }
+    .about-pillar-card:hover::after { top: -30%; right: -30%; }
     .about-pillar-icon {
-      width: 56px; height: 56px; border-radius: 50%; margin: 0 auto 1rem;
+      width: 60px; height: 60px; border-radius: 1rem; margin: 0 auto 1rem;
       display: flex; align-items: center; justify-content: center;
-      background: linear-gradient(135deg, rgba(0,61,165,0.1), rgba(212,175,55,0.08));
-      color: #003DA5; transition: background 300ms, color 300ms;
+      background: linear-gradient(135deg, #001845, #003DA5);
+      color: white; position: relative; z-index: 1;
+      box-shadow: 0 6px 20px rgba(0,61,165,0.25);
+      transition: all 400ms cubic-bezier(0.34,1.56,0.64,1);
     }
-    .about-pillar-card:hover .about-pillar-icon { background: linear-gradient(135deg, #001845, #003DA5); color: white; }
-    .about-pillar-card h4 { color: #001233; font-size: 1rem; font-weight: 700; margin-bottom: 0.5rem; font-family: 'Playfair Display', serif; }
-    .about-pillar-card p { color: #5A6577; font-size: 0.85rem; line-height: 1.6; margin: 0; }
+    .about-pillar-card:hover .about-pillar-icon {
+      transform: scale(1.1) rotate(-5deg);
+      background: linear-gradient(135deg, #D4AF37, #C9A84C);
+      box-shadow: 0 8px 25px rgba(212,175,55,0.35);
+    }
+    .about-pillar-card h4 { color: #001233; font-size: 1rem; font-weight: 700; margin-bottom: 0.4rem; font-family: 'Playfair Display', serif; position: relative; z-index: 1; }
+    .about-pillar-card p { color: #5A6577; font-size: 0.85rem; line-height: 1.6; margin: 0; position: relative; z-index: 1; }
     .about-highlight-bar {
       background: linear-gradient(135deg, #001233, #001845); border-radius: 1rem;
       padding: 1.5rem 2.5rem; text-align: center;
+      box-shadow: 0 8px 30px rgba(0,18,51,0.2);
     }
     .about-highlight-bar p {
       color: white; font-weight: 600; font-size: 1.2rem; margin: 0;
@@ -919,7 +1105,10 @@ export default function Landing() {
       max-width: 650px; margin: 0 auto; background: white; padding: 2rem;
       border-radius: 1.25rem; box-shadow: 0 20px 50px rgba(0,18,51,0.12);
       border: none; position: relative; overflow: hidden;
+      opacity: 0; transform: translateY(28px) scale(0.98); filter: blur(3px);
+      transition: opacity 0.55s cubic-bezier(0.25,0.46,0.45,0.94), transform 0.55s cubic-bezier(0.25,0.46,0.45,0.94), filter 0.55s cubic-bezier(0.25,0.46,0.45,0.94);
     }
+    .landing-contact-form-container.revealed { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
     .landing-contact-form-container::before {
       content: ''; position: absolute; top: 0; left: 0; right: 0; height: 5px;
       background: linear-gradient(90deg, #001845, #003DA5, #D4AF37);
@@ -1124,8 +1313,8 @@ export default function Landing() {
     .landing-sound-toggle:hover { background: rgba(0,61,165,0.9); transform: scale(1.1); }
 
     /* ==================== Animations ==================== */
-    @keyframes slideInUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
-    .slide-up { animation: slideInUp 500ms ease; }
+    @keyframes slideInUp { from { opacity: 0; transform: translateY(24px); filter: blur(2px); } to { opacity: 1; transform: translateY(0); filter: blur(0); } }
+    .slide-up { animation: slideInUp 0.5s cubic-bezier(0.25,0.46,0.45,0.94); }
 
     /* ==================== Responsive ==================== */
     @media (max-width: 768px) {
@@ -1156,7 +1345,7 @@ export default function Landing() {
       .sat-grid { grid-template-columns: 1fr; gap: 2rem; }
       .paraquien-grid { grid-template-columns: 1fr; gap: 2rem; }
       .paraquien-stats-col { grid-template-columns: repeat(2, 1fr); }
-      .about-pillars { grid-template-columns: repeat(2, 1fr); }
+      .about-pillars { grid-template-columns: repeat(2, 1fr); gap: 1rem; }
       .about-pillar-card { padding: 1.5rem 1rem; }
       .about-highlight-bar { padding: 1.25rem 1.5rem; }
       .about-highlight-bar p { font-size: 1rem; }
@@ -1205,8 +1394,8 @@ export default function Landing() {
         <div className="landing-hero-content">
           <div className="landing-hero-text">
             <h1>Tu dinero, tu retiro y tus impuestos <span className="gold">pueden sentirse menos complicados</span></h1>
-            <p>
-              En Finance S C<span className="oo-infinity">oo</span>l hacemos algo muy simple: convertimos lo que antes sonaba pesado
+            <p style={{ textAlign: 'justify' }}>
+              En <span style={{ display: 'inline-block', verticalAlign: 'middle', margin: '0 0.2rem' }}><Logo height={28} variant="light" layout="inline" animated /></span> hacemos algo muy simple: convertimos lo que antes sonaba pesado
               —números, SAT, ahorro, retiro y estrategia fiscal— en algo fácil de entender,
               útil y hasta emocionante de usar a tu favor.
             </p>
@@ -1247,28 +1436,30 @@ export default function Landing() {
 
       {/* ==================== 2. IDENTIDAD DE MARCA ==================== */}
       <section className="landing-section landing-section-light landing-section-padding">
-        <div className="brand-block" ref={(el) => (observerRefs.current[0] = el)}>
-          <div className="landing-section-header">
+        <div className="brand-block" ref={(el) => (observerRefs.current[0] = el)} data-section="brand">
+          <div className={`landing-section-header ${visibleSections.brand ? 'revealed' : ''}`}>
             <span className="landing-section-subtitle">Nuestra Historia</span>
             <h2>¿Por qué <span style={{ color: '#003DA5' }}>Finance</span> S C<span className="oo-infinity">oo</span>l?</h2>
           </div>
-          <div className="brand-grid">
+          <div className={`brand-grid ${visibleSections.brand ? 'revealed' : ''}`}>
             <div className="brand-left">
               <div className="brand-video-wrapper">
                 <img src="/assets/ppr-hero.png" alt="Plan Personal de Retiro - Ahorra e Invierte a Largo Plazo" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
               </div>
             </div>
             <div className="brand-right">
-              <p className="brand-text">
+              <p className="brand-text" style={{ textAlign: 'justify' }}>
                 Mucha gente escucha nuestro nombre y cree que decimos <strong>Finance School</strong>,
                 como si fuéramos una escuela de finanzas. Y sí... suena parecido. Pero hay un juego de palabras que nos define:
               </p>
-              <span className="brand-name-highlight">Finance S C<span className="oo-infinity">oo</span>l</span>
-              <p className="brand-text">
+              <div style={{ margin: '1.5rem 0', display: 'flex', justifyContent: 'center' }}>
+                <Logo height={50} variant="dark" layout="inline" animated />
+              </div>
+              <p className="brand-text" style={{ textAlign: 'justify' }}>
                 Porque las finanzas, los impuestos, el ahorro y el retiro <strong>sí pueden
-                entenderse fácil, verse bien y sentirse cool.</strong>
+                entenderse fácil, verse bien y sentirse c<span className="oo-infinity">oo</span>l.</strong>
               </p>
-              <p className="brand-text">
+              <p className="brand-text" style={{ textAlign: 'justify' }}>
                 Nosotros lo hacemos distinto.
                 <strong> Te lo explicamos claro. Te lo aterrizamos a tu vida.</strong> Y te ayudamos a tomar decisiones inteligentes sin hablarte "en chino".
               </p>
@@ -1283,11 +1474,11 @@ export default function Landing() {
       {/* ==================== 3. CONEXION EMOCIONAL ==================== */}
       <section className="landing-section landing-section-gray landing-section-padding">
         <div style={{ maxWidth: '1200px', margin: '0 auto' }} ref={(el) => (observerRefs.current[1] = el)} data-section="emotion">
-          <div className="landing-section-header">
+          <div className={`landing-section-header ${visibleSections.emotion ? 'revealed' : ''}`}>
             <h2>Si el SAT, el retiro o los números te dan dolor de cabeza... <span style={{ color: '#003DA5' }}>no eres tú.</span></h2>
             <p>Es como te lo habían contado. La mayoría de las personas nunca recibió una guía real para entender:</p>
           </div>
-          <div className="emotion-grid">
+          <div className={`emotion-grid ${visibleSections.emotion ? 'revealed' : ''}`}>
             <div>
               <ul className="emotion-list">
                 <li className={`reveal-left stagger-1 ${visibleSections.emotion ? 'revealed' : ''}`}><span className="emotion-check"><CheckCircle size={20} color="#C9A84C" /></span> Cómo los impuestos juegan a tu favor</li>
@@ -1295,22 +1486,24 @@ export default function Landing() {
                 <li className={`reveal-left stagger-3 ${visibleSections.emotion ? 'revealed' : ''}`}><span className="emotion-check"><CheckCircle size={20} color="#C9A84C" /></span> Cómo preparar su retiro</li>
                 <li className={`reveal-left stagger-4 ${visibleSections.emotion ? 'revealed' : ''}`}><span className="emotion-check"><CheckCircle size={20} color="#C9A84C" /></span> Cómo escoger la herramienta financiera ideal</li>
               </ul>
-              <div className="emotion-combo" style={{ justifyContent: 'flex-start' }}>
-                <span className="emotion-combo-item">ingresos pasivos</span>
-                <span className="emotion-combo-item">deducción fiscal</span>
-                <span className="emotion-combo-item">retiro</span>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.6rem', marginTop: '1.2rem' }}>
+                <span className="emotion-badge">ingresos pasivos</span>
+                <span className="emotion-badge">deducción fiscal</span>
+                <span className="emotion-badge">retiro</span>
               </div>
             </div>
             <LazyVideo src="/assets/man-points.mp4" className="brand-video-wrapper" globalMuted={isMuted} />
           </div>
-          <p className="emotion-mini" style={{ background: 'linear-gradient(135deg, #003DA5, #0067C5)', color: 'white', padding: '1rem 2rem', borderRadius: '1rem', display: 'inline-block', fontSize: '1.2rem', fontWeight: '700', boxShadow: '0 8px 16px rgba(0,61,165,0.15)' }}>Menos confusión. Más claridad. Más control sobre tu futuro.</p>
+          <div className="emotion-cta-wrapper">
+            <p className="emotion-cta">Menos confusión. Más claridad. Más control sobre tu futuro.</p>
+          </div>
         </div>
       </section>
 
       {/* ==================== 4. EL PROBLEMA ==================== */}
       <section id="problema" className="landing-section landing-section-light landing-section-padding">
         <div style={{ maxWidth: '1200px', margin: '0 auto' }} data-section="problema" ref={(el) => (sectionRefs.current.problema = el)}>
-          <div className="landing-section-header">
+          <div className={`landing-section-header ${visibleSections.problema ? 'revealed' : ''}`}>
             <span className="landing-section-subtitle">El Problema</span>
             <h2>¿Por qué <span style={{ color: '#D4AF37' }}>sí urge</span> actuar?</h2>
             <p>Porque hay tres cosas que casi siempre pasan al mismo tiempo... y juntas pegan más de lo que parece.</p>
@@ -1350,7 +1543,7 @@ export default function Landing() {
       {/* ==================== 5. SOLUCION ==================== */}
       <section id="solucion" className="landing-section landing-section-gray landing-section-padding">
         <div style={{ maxWidth: '1200px', margin: '0 auto' }} data-section="solucion" ref={(el) => (sectionRefs.current.solucion = el)}>
-          <div className="landing-section-header">
+          <div className={`landing-section-header ${visibleSections.solucion ? 'revealed' : ''}`}>
             <span className="landing-section-subtitle">La Solución</span>
             <h2>Aquí no solo hablas de retiro. Aquí armas una <span style={{ color: '#D4AF37' }}>estrategia inteligente.</span></h2>
             <p>Tres piezas que juntas te ayudan a ver mejor tu dinero hoy y construir mejor tu futuro mañana.</p>
@@ -1366,14 +1559,14 @@ export default function Landing() {
             <div className={`landing-service-card stagger-2 ${visibleSections.solucion ? 'revealed' : ''}`}>
               <span className="service-step-number">2</span>
               <div className="landing-service-icon"><TrendingUp size={30} strokeWidth={1.5} color="#003DA5" /></div>
-              <h3>Estrategia Fiscal Cool</h3>
+              <h3>Estrategia Fiscal C<span className="oo-infinity">oo</span>l</h3>
               <p>Te ayudamos a entender cómo conectar ahorro, retiro y deducción de una forma clara, ordenada y aterrizada a tu caso.</p>
               <span className="service-tag">Optimización</span>
             </div>
             <div className={`landing-service-card stagger-3 ${visibleSections.solucion ? 'revealed' : ''}`}>
               <span className="service-step-number">3</span>
               <div className="landing-service-icon"><GraduationCap size={30} strokeWidth={1.5} color="#003DA5" /></div>
-              <h3>Educación Financiera sin rollo</h3>
+              <h3>Educación Financiera sin r<span className="oo-infinity">o</span>ll<span className="oo-infinity">o</span></h3>
               <p>Porque antes de decidir, necesitas entender. Y entender bien cambia por completo la forma en la que usas tu dinero.</p>
               <span className="service-tag">Educación</span>
             </div>
@@ -1382,9 +1575,9 @@ export default function Landing() {
       </section>
 
       {/* ==================== 6. CONCEPTO VIRAL ==================== */}
-      <section className="landing-section landing-section-blue landing-section-padding">
+      <section className="landing-section landing-section-blue landing-section-padding" data-section="viral" ref={(el) => (sectionRefs.current.viral = el)}>
         <div style={{ maxWidth: '1100px', margin: '0 auto' }}>
-          <div className="landing-section-header" style={{ marginBottom: '1.5rem' }}>
+          <div className={`landing-section-header ${visibleSections.viral ? 'revealed' : ''}`} style={{ marginBottom: '1.5rem' }}>
             <span className="landing-section-subtitle" style={{ background: 'rgba(212,175,55,0.15)', color: '#D4AF37' }}>SAT vs Tu Estrategia</span>
             <h2 style={{ color: 'white' }}>Sí, el SAT puede sentirse como el villano... <span style={{ color: '#D4AF37' }}>pero no tienes que jugar sin estrategia</span></h2>
           </div>
@@ -1415,13 +1608,13 @@ export default function Landing() {
       </section>
 
       {/* ==================== 7. CALCULADORA ISR 2026 ==================== */}
-      <section id="simulador" className="landing-section landing-section-light" style={{ padding: '1rem 1rem 1.5rem' }}>
-        <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
+      <section id="simulador" className="landing-section landing-section-light" style={{ minHeight: 'calc(100vh - 80px)', display: 'flex', alignItems: 'center', padding: '2rem 1.5rem' }} data-section="simulador" ref={(el) => (sectionRefs.current.simulador = el)}>
+        <div style={{ maxWidth: '1100px', margin: '0 auto', width: '100%' }}>
           <div style={{ textAlign: 'center', marginBottom: '0.75rem' }}>
-            <span className="landing-section-subtitle" style={{ marginBottom: '0.5rem' }}>Simulador Fiscal 2026</span>
+            <span className="landing-section-subtitle" style={{ marginBottom: '0.25rem' }}>Simulador Fiscal 2026</span>
             <h2 style={{ fontSize: 'clamp(1.25rem, 2.5vw, 1.75rem)', color: '#001233', fontFamily: "'Playfair Display', serif", fontWeight: 700, margin: 0 }}>¿Cuánto pagas de impuestos? Ponlo en números.</h2>
           </div>
-          <div className="tax-calc-container">
+          <div className={`tax-calc-container ${visibleSections.simulador ? 'revealed' : ''}`}>
             <div className="tax-calc-grid">
               {/* LEFT: Input + Deducciones fijas */}
               <div className="tax-calc-inputs">
@@ -1443,99 +1636,82 @@ export default function Landing() {
                 </div>
 
                 {/* Deducciones personales - INFO FIJA */}
-                <div style={{ background: '#F7F8FC', borderRadius: '1rem', padding: '1.25rem', marginTop: '0.5rem', border: '1px solid rgba(0,61,165,0.08)' }}>
-                  <h4 style={{ color: '#003DA5', fontSize: '0.95rem', marginBottom: '0.75rem', fontWeight: 700 }}>Deducciones personales autorizadas</h4>
-                  <p style={{ fontSize: '0.8rem', color: '#4B5563', marginBottom: '0.75rem', lineHeight: 1.5 }}>Estas son las deducciones que puedes aplicar cada año. El tope total es el menor entre 15% de tu ingreso o 5 UMAs anuales.</p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                <div style={{ background: '#F7F8FC', borderRadius: '0.75rem', padding: '0.75rem 1rem', marginTop: '0.15rem', border: '1px solid rgba(0,61,165,0.08)' }}>
+                  <h4 style={{ color: '#003DA5', fontSize: '0.8rem', marginBottom: '0.3rem', fontWeight: 700 }}>Deducciones personales autorizadas</h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
                     {[
-                      { name: 'Honorarios médicos y dentales', limit: 'Hasta 15% de ingreso' },
+                      { name: 'Honorarios médicos y dentales', limit: 'Hasta 15% ingreso' },
                       { name: 'Gastos funerarios', limit: 'Hasta $42,795' },
-                      { name: 'Donativos', limit: 'Hasta 7% de ingreso' },
-                      { name: 'Intereses créditos hipotecarios', limit: 'Hasta 750 mil UDIs' },
-                      { name: 'Seguro de Gastos Médicos Mayores', limit: 'Sin tope individual' },
-                      { name: 'Transporte escolar obligatorio', limit: 'Sin tope individual' },
+                      { name: 'Donativos', limit: 'Hasta 7% ingreso' },
+                      { name: 'Intereses créditos hipotecarios', limit: 'Hasta 750k UDIs' },
+                      { name: 'Seguro de GMM', limit: 'Sin tope' },
+                      { name: 'Transporte escolar', limit: 'Sin tope' },
                     ].map((d, i) => (
-                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.35rem 0', borderBottom: i < 5 ? '1px solid rgba(0,61,165,0.06)' : 'none' }}>
-                        <span style={{ fontSize: '0.8rem', color: '#2D3436', fontWeight: 500 }}>{d.name}</span>
-                        <span style={{ fontSize: '0.75rem', color: '#003DA5', fontWeight: 600, whiteSpace: 'nowrap', marginLeft: '0.5rem' }}>{d.limit}</span>
+                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.2rem 0', borderBottom: i < 5 ? '1px solid rgba(0,61,165,0.06)' : 'none' }}>
+                        <span style={{ fontSize: '0.75rem', color: '#2D3436', fontWeight: 500 }}>{d.name}</span>
+                        <span style={{ fontSize: '0.7rem', color: '#003DA5', fontWeight: 600, whiteSpace: 'nowrap', marginLeft: '0.5rem' }}>{d.limit}</span>
                       </div>
                     ))}
                   </div>
-                  <div style={{ marginTop: '0.75rem', background: 'linear-gradient(135deg, rgba(0,61,165,0.06), rgba(0,61,165,0.02))', borderRadius: '0.5rem', padding: '0.6rem 0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '0.8rem', color: '#003DA5', fontWeight: 700 }}>Tope máximo deducible</span>
-                    <span style={{ fontSize: '1rem', color: '#003DA5', fontWeight: 700 }}>{formatMXN(taxResults.maxDeduciblePersonal)}</span>
+                  <div style={{ marginTop: '0.3rem', background: 'linear-gradient(135deg, rgba(0,61,165,0.06), rgba(0,61,165,0.02))', borderRadius: '0.4rem', padding: '0.4rem 0.6rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.75rem', color: '#003DA5', fontWeight: 700 }}>Tope máximo deducible</span>
+                    <span style={{ fontSize: '0.9rem', color: '#003DA5', fontWeight: 700 }}>{formatMXN(taxResults.maxDeduciblePersonal)}</span>
                   </div>
                 </div>
 
-                {/* PPR - APARTE de deducciones personales */}
-                <div style={{ background: 'linear-gradient(135deg, rgba(201,168,76,0.08), rgba(201,168,76,0.02))', borderRadius: '1rem', padding: '1.25rem', border: '1px solid rgba(201,168,76,0.2)' }}>
-                  <h4 style={{ color: '#003DA5', fontSize: '0.95rem', marginBottom: '0.25rem', fontWeight: 700 }}>Plan Personal de Retiro (PPR)</h4>
-                  <p style={{ fontSize: '0.8rem', color: '#C9A84C', fontWeight: 600, marginBottom: '0.75rem' }}>Esto es APARTE de tus deducciones personales</p>
-                  <div className="tax-input-group" style={{ marginBottom: '0.5rem' }}>
-                    <label style={{ fontSize: '0.85rem' }}>¿Cuánto aportas al año a tu PPR?</label>
-                    <input
-                      type="number" placeholder="Ej: 100,000"
-                      value={taxCalc.ppr || ''}
-                      onChange={(e) => setTaxCalc({ ...taxCalc, ppr: Number(e.target.value) })}
-                    />
-                    <span style={{ fontSize: '0.75rem', color: '#9CA3AF' }}>
-                      Tope deducible: {formatMXN(taxResults.capPPR)} (10% ingreso o 5 UMAs, lo menor)
-                    </span>
-                  </div>
-                  <div className="tax-input-group">
-                    <label style={{ fontSize: '0.85rem' }}>Primas Seguro Retiro (Art. 185 LISR)</label>
-                    <input
-                      type="number" placeholder="Ej: 0"
-                      value={taxCalc.art185 || ''}
-                      onChange={(e) => setTaxCalc({ ...taxCalc, art185: Number(e.target.value) })}
-                    />
-                    <span style={{ fontSize: '0.75rem', color: '#9CA3AF' }}>Tope: $152,000</span>
-                  </div>
+                {/* PPR - APARTE de deducciones personales - INFO FIJA */}
+                <div style={{ background: 'linear-gradient(135deg, rgba(201,168,76,0.08), rgba(201,168,76,0.02))', borderRadius: '0.75rem', padding: '0.75rem 1rem', border: '1px solid rgba(201,168,76,0.2)' }}>
+                  <h4 style={{ color: '#003DA5', fontSize: '0.8rem', margin: '0 0 0.2rem', fontWeight: 700 }}>Plan Personal de Retiro (PPR)</h4>
+                  <p style={{ fontSize: '0.7rem', color: '#4B5563', margin: '0 0 0.15rem', lineHeight: 1.4 }}>Una deducción adicional e independiente a las personales. Tú decides cuánto aportar cada año.</p>
+                  <p style={{ fontSize: '0.65rem', color: '#9CA3AF', margin: 0, lineHeight: 1.4 }}>Incluye aportaciones a PPR y primas de seguros de retiro (Art. 185 LISR).</p>
                 </div>
               </div>
 
-              {/* RIGHT: Resultados */}
+              {/* RIGHT: Resultados Premium */}
               <div className="tax-results">
                 <h3>Tu escenario fiscal 2026</h3>
 
-                {/* Cuánto estás pagando de impuestos */}
-                <div style={{ background: 'linear-gradient(135deg, rgba(239,68,68,0.06), rgba(239,68,68,0.02))', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '1rem', padding: '1.25rem', textAlign: 'center', marginBottom: '1rem' }}>
-                  <div style={{ fontSize: '0.8rem', color: '#DC2626', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.25rem' }}>Hoy estás pagando de impuestos</div>
-                  <div style={{ fontSize: '2.25rem', fontWeight: 700, color: '#DC2626' }}>{formatMXN(taxResults.isrSinDed)}</div>
-                  <div style={{ fontSize: '0.8rem', color: '#4B5563', marginTop: '0.25rem' }}>al año sin usar deducciones</div>
-                </div>
-
-                {/* Cuánto estás perdiendo en deducibles */}
-                <div style={{ background: 'linear-gradient(135deg, rgba(245,158,11,0.06), rgba(245,158,11,0.02))', border: '1px solid rgba(245,158,11,0.2)', borderRadius: '1rem', padding: '1.25rem', textAlign: 'center', marginBottom: '1rem' }}>
-                  <div style={{ fontSize: '0.8rem', color: '#D97706', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.25rem' }}>Estás perdiendo en deducibles</div>
-                  <div style={{ fontSize: '2.25rem', fontWeight: 700, color: '#D97706' }}>{formatMXN(taxResults.deduciblesNoUsados)}</div>
-                  <div style={{ fontSize: '0.8rem', color: '#4B5563', marginTop: '0.25rem' }}>en deducciones que podrías aprovechar</div>
-                </div>
-
-                {/* Con estrategia */}
-                <div className="tax-result-highlight" style={{ background: 'linear-gradient(135deg, rgba(16,185,129,0.08), rgba(16,185,129,0.02))', border: '1px solid rgba(16,185,129,0.25)' }}>
-                  <div className="tax-result-label" style={{ color: '#047857' }}>Con estrategia fiscal pagarías</div>
-                  <div className="tax-result-value" style={{ color: '#10B981' }}>{formatMXN(taxResults.isrConDedConRetiro)}</div>
-                  <div style={{ fontSize: '0.8rem', color: '#047857', marginTop: '0.25rem' }}>
-                    Ahorras <strong>{formatMXN(taxResults.impuestosPerdidos)}</strong> en impuestos al año
+                {/* Top stats */}
+                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.6rem' }}>
+                  <div className="tax-stat-card" style={{ flex: 1 }}>
+                    <div className="stat-label" style={{ color: '#E05252' }}>Pagas de impuestos</div>
+                    <div className="stat-value" style={{ color: '#E05252' }}>{formatMXN(taxResults.isrSinDed)}</div>
+                    <div className="stat-sub">sin deducciones</div>
+                  </div>
+                  <div className="tax-stat-card" style={{ flex: 1 }}>
+                    <div className="stat-label" style={{ color: '#E8A030' }}>Pierdes en deducciones</div>
+                    <div className="stat-value" style={{ color: '#E8A030' }}>{formatMXN(taxResults.deduciblesNoUsados)}</div>
+                    <div className="stat-sub">en ahorro fiscal</div>
                   </div>
                 </div>
 
-                <div className="tax-result-row">
-                  <span className="tax-result-label">Ingreso real (después de ISR)</span>
-                  <span className="tax-result-value">{formatMXN(taxResults.ingresoReal)}</span>
-                </div>
-                <div className="tax-result-row">
-                  <span className="tax-result-label">Promedio mensual</span>
-                  <span className="tax-result-value">{formatMXN(taxResults.mensual)}</span>
-                </div>
-                <div className="tax-result-row">
-                  <span className="tax-result-label">Tasa marginal</span>
-                  <span className="tax-result-value">{taxResults.pctRecup.toFixed(0)}%</span>
+                {/* Hero result */}
+                <div className="tax-hero-card" style={{ marginBottom: '0.6rem' }}>
+                  <div style={{ fontSize: '0.6rem', color: '#34D399', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '0.15rem' }}>Con estrategia fiscal pagarías</div>
+                  <div style={{ fontSize: '2rem', fontWeight: 800, color: '#34D399', fontFamily: "'Montserrat', sans-serif", lineHeight: 1.1 }}>{formatMXN(taxResults.isrConDedConRetiro)}</div>
+                  <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)', marginTop: '0.2rem' }}>
+                    Ahorras <span style={{ color: '#34D399', fontWeight: 700, fontFamily: "'Montserrat', sans-serif" }}>{formatMXN(taxResults.devolucion)}</span> al año
+                  </div>
                 </div>
 
-                <div style={{ marginTop: '1.5rem', textAlign: 'center' }}>
-                  <button className="landing-btn landing-btn-gold" onClick={() => scrollToSection('contacto')}>
+                {/* Detail rows */}
+                <div style={{ marginBottom: '0.5rem' }}>
+                  <div className="tax-result-row">
+                    <span className="tax-result-label">Ingreso real (después de ISR)</span>
+                    <span className="tax-result-value">{formatMXN(taxResults.ingresoReal)}</span>
+                  </div>
+                  <div className="tax-result-row">
+                    <span className="tax-result-label">Promedio mensual</span>
+                    <span className="tax-result-value">{formatMXN(taxResults.mensual)}</span>
+                  </div>
+                  <div className="tax-result-row">
+                    <span className="tax-result-label">Tasa marginal</span>
+                    <span className="tax-result-value">{taxResults.pctRecup.toFixed(0)}%</span>
+                  </div>
+                </div>
+
+                <div style={{ textAlign: 'center' }}>
+                  <button className="landing-btn landing-btn-gold" onClick={() => scrollToSection('contacto')} style={{ fontSize: '0.8rem', padding: '0.65rem 1.5rem' }}>
                     Quiero mi estrategia fiscal personalizada
                   </button>
                 </div>
@@ -1548,7 +1724,7 @@ export default function Landing() {
       {/* ==================== 8. PARA QUIEN + CONFIANZA ==================== */}
       <section className="landing-section landing-trust-bar landing-section-padding" data-section="paraquien" ref={(el) => (sectionRefs.current.paraquien = el)}>
         <div style={{ maxWidth: '1100px', margin: '0 auto' }}>
-          <div className="landing-section-header" style={{ marginBottom: '2rem' }}>
+          <div className={`landing-section-header ${visibleSections.paraquien ? 'revealed' : ''}`} style={{ marginBottom: '2rem' }}>
             <span className="landing-section-subtitle" style={{ background: 'rgba(212,175,55,0.15)', color: '#D4AF37' }}>Te Identificas</span>
             <h2 style={{ color: 'white', fontSize: 'clamp(1.5rem, 3vw, 2.25rem)' }}>Esto hace sentido si tú piensas algo así...</h2>
           </div>
@@ -1593,31 +1769,26 @@ export default function Landing() {
               </div>
             </div>
           </div>
-          <div style={{ textAlign: 'center', marginTop: '1.5rem' }}>
-            <span style={{
-              display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
-              background: 'linear-gradient(135deg, rgba(16,185,129,0.1), rgba(16,185,129,0.05))',
-              border: '1px solid rgba(16,185,129,0.3)', borderRadius: '2rem',
-              padding: '0.6rem 1.25rem', color: '#047857', fontWeight: '600', fontSize: '0.9rem'
-            }}>
-              <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10B981', animation: 'pulse 2s infinite' }}></span>
-              En este momento <strong style={{ color: '#003DA5' }}>{liveUsers} personas</strong> están solicitando la consultoría
-            </span>
+          <div className="live-banner-wrapper">
+            <div className="live-banner">
+              <span className="live-dot"></span>
+              <span className="live-text">En este momento <strong className="live-count">{liveUsers} personas</strong> están solicitando la consultoría</span>
+            </div>
           </div>
         </div>
       </section>
 
       {/* ==================== 10. QUIENES SOMOS ==================== */}
-      <section className="landing-section landing-section-light landing-section-padding">
+      <section className="landing-section landing-section-light" style={{ minHeight: 'calc(100vh - 80px)', display: 'flex', alignItems: 'center', padding: '2rem 1.5rem' }} data-section="about" ref={(el) => (sectionRefs.current.about = el)}>
         <div className="about-full" ref={(el) => (observerRefs.current[9] = el)}>
-          <div className="landing-section-header">
+          <div className={`landing-section-header ${visibleSections.about ? 'revealed' : ''}`} style={{ marginBottom: '1.5rem' }}>
             <span className="landing-section-subtitle">Quiénes Somos</span>
             <h2>No somos la típica firma que te habla complicado <span style={{ color: '#D4AF37' }}>para sonar inteligente</span></h2>
             <p>En Finance S C<span className="oo-infinity">oo</span>l creemos que la verdadera inteligencia está en hacer entendible lo importante. Por eso acompañamos a personas y familias a tomar mejores decisiones sobre:</p>
           </div>
 
-          <div className="landing-section-header" style={{ marginBottom: '2rem' }}>
-            <h3 style={{ fontSize: '1.5rem', color: '#003DA5' }}>Prioridades financieras</h3>
+          <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
+            <h3 style={{ fontSize: '1.5rem', color: '#003DA5', margin: 0 }}>Prioridades financieras</h3>
           </div>
           <div className="about-pillars">
             <div className="about-pillar-card">
@@ -1659,9 +1830,9 @@ export default function Landing() {
       </section>
 
       {/* ==================== FAQ ==================== */}
-      <section id="faq" className="landing-section landing-section-gray landing-section-padding">
+      <section id="faq" className="landing-section landing-section-gray landing-section-padding" data-section="faq" ref={(el) => (sectionRefs.current.faq = el)}>
         <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-          <div className="landing-section-header">
+          <div className={`landing-section-header ${visibleSections.faq ? 'revealed' : ''}`}>
             <span className="landing-section-subtitle">Dudas Comunes</span>
             <h2>Preguntas Frecuentes</h2>
           </div>
@@ -1680,8 +1851,8 @@ export default function Landing() {
       </section>
 
       {/* ==================== 11. FORMULARIO DE CONVERSION ==================== */}
-      <section id="contacto" className="landing-section landing-section-light landing-section-padding">
-        <div className="landing-contact-form-container">
+      <section id="contacto" className="landing-section landing-section-light landing-section-padding" data-section="contacto" ref={(el) => (sectionRefs.current.contacto = el)}>
+        <div className={`landing-contact-form-container ${visibleSections.contacto ? 'revealed' : ''}`}>
           <h2>Descubre si hoy puedes hacer más con tu dinero</h2>
           <p className="form-subcopy">
             Déjanos tus datos y uno de nuestros consultores te ayuda a revisar si esta estrategia hace sentido para ti.
@@ -1782,9 +1953,9 @@ export default function Landing() {
               Cuando entiendes cómo conectar estrategia fiscal, ahorro y retiro, las decisiones cambian.
               Y cuando alguien por fin te lo explica fácil, también cambia tu forma de verlo.
             </p>
-            <div className="brand-tagline">
-              <strong>Finance S C<span className="oo-infinity">oo</span>l</strong>
-              <p>Porque las finanzas también se pueden entender cool.</p>
+            <div className="brand-tagline" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+              <Logo height={40} variant="light" layout="inline" animated />
+              <p>Porque las finanzas también se pueden entender c<span className="oo-infinity">oo</span>l.</p>
             </div>
             <button className="landing-btn landing-btn-gold cta-btn-pulse" onClick={() => scrollToSection('contacto')} style={{ marginTop: '0.5rem', fontSize: '1.15rem', padding: '1.15rem 3rem', letterSpacing: '0.03em' }}>
               Agenda tu consultoría fiscal y financiera AHORA

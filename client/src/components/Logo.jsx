@@ -1,6 +1,6 @@
-export default function Logo({ height = 40, variant = 'dark' }) {
+export default function Logo({ height = 40, variant = 'dark', layout = 'stacked', animated = false }) {
   const textColor = variant === 'light' ? '#FFFFFF' : '#1A3A5C';
-  const financeColor = variant === 'light' ? '#FFFFFF' : '#2E6EA6';
+  const financeColor = variant === 'light' ? '#5B9BD5' : '#2E6EA6';
   const u = variant;
 
   // Infinity: two nearly-circular loops (rx≈16, ry≈16)
@@ -22,6 +22,69 @@ export default function Logo({ height = 40, variant = 'dark' }) {
 
   const back  = [0, 1, 6, 7];
   const front = [2, 3, 4, 5];
+
+  if (layout === 'inline') {
+    // FINANCE  S  C  ∞  L — with proper spacing so ∞ doesn't overlap C
+    // FINANCE(0-165) gap S(180) gap C(210) gap ∞(center=271, from 234-308) gap L(322)
+    const cx = 291; // infinity center x — centered between C(~235) and L(346)
+    const SH = [
+      { d: `M ${cx} 28 C ${cx-5} 19, ${cx-14} 12, ${cx-22} 12`,  x1:cx,y1:28, x2:cx-22,y2:12, c1:'#43A047', c2:'#FDD835' },
+      { d: `M ${cx-22} 12 C ${cx-31} 12, ${cx-37} 19, ${cx-37} 28`, x1:cx-22,y1:12, x2:cx-37,y2:28, c1:'#FDD835', c2:'#FF8F00' },
+      { d: `M ${cx-37} 28 C ${cx-37} 37, ${cx-31} 44, ${cx-22} 44`, x1:cx-37,y1:28, x2:cx-22,y2:44, c1:'#FF8F00', c2:'#E91E63' },
+      { d: `M ${cx-22} 44 C ${cx-14} 44, ${cx-5} 37, ${cx} 28`,    x1:cx-22,y1:44, x2:cx,y2:28, c1:'#E91E63', c2:'#00ACC1' },
+      { d: `M ${cx} 28 C ${cx+5} 19, ${cx+14} 12, ${cx+22} 12`,    x1:cx,y1:28, x2:cx+22,y2:12, c1:'#00ACC1', c2:'#FF6D00' },
+      { d: `M ${cx+22} 12 C ${cx+31} 12, ${cx+37} 19, ${cx+37} 28`,x1:cx+22,y1:12, x2:cx+37,y2:28, c1:'#FF6D00', c2:'#E53935' },
+      { d: `M ${cx+37} 28 C ${cx+37} 37, ${cx+31} 44, ${cx+22} 44`,x1:cx+37,y1:28, x2:cx+22,y2:44, c1:'#E53935', c2:'#3949AB' },
+      { d: `M ${cx+22} 44 C ${cx+14} 44, ${cx+5} 37, ${cx} 28`,    x1:cx+22,y1:44, x2:cx,y2:28, c1:'#3949AB', c2:'#43A047' },
+    ];
+
+    // Smooth RGB animation: each segment cycles through all 8 colors with seamless loop
+    const allColors = ['#43A047','#FDD835','#FF8F00','#E91E63','#00ACC1','#FF6D00','#E53935','#3949AB'];
+    const getColorCycle = (offset) => {
+      const shifted = [];
+      for (let j = 0; j <= 8; j++) shifted.push(allColors[(offset + j) % 8]);
+      return shifted.join(';');
+    };
+
+    return (
+      <svg viewBox="0 0 370 56" height={height} xmlns="http://www.w3.org/2000/svg" style={{ display: 'block' }}>
+        <defs>
+          {SH.map((s, i) => (
+            <linearGradient key={i} id={`ih-${u}-${i}`} gradientUnits="userSpaceOnUse" x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2}>
+              <stop offset="0%" stopColor={s.c1}>
+                {animated && (
+                  <animate attributeName="stop-color" values={getColorCycle(i)} dur="4s" repeatCount="indefinite" />
+                )}
+              </stop>
+              <stop offset="100%" stopColor={s.c2}>
+                {animated && (
+                  <animate attributeName="stop-color" values={getColorCycle((i+1)%8)} dur="4s" repeatCount="indefinite" />
+                )}
+              </stop>
+            </linearGradient>
+          ))}
+        </defs>
+        {/* FINANCE */}
+        <text x="0" y="36" fontFamily="'Montserrat','Inter',sans-serif" fontSize="30" fontWeight="800" fill={financeColor} letterSpacing="2">FINANCE</text>
+        {/* S */}
+        <text x="180" y="36" fontFamily="'Montserrat','Inter',sans-serif" fontSize="30" fontWeight="800" fill={textColor}>S</text>
+        {/* C */}
+        <text x="215" y="36" fontFamily="'Montserrat','Inter',sans-serif" fontSize="30" fontWeight="800" fill={textColor}>C</text>
+        {/* ∞ BACK — behind the crossing */}
+        {back.map(i => (
+          <path key={`bh${i}`} d={SH[i].d} stroke={`url(#ih-${u}-${i})`} strokeWidth="8" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        ))}
+        {/* ∞ FRONT — on top at crossing */}
+        {front.map(i => (
+          <path key={`fh${i}`} d={SH[i].d} stroke={`url(#ih-${u}-${i})`} strokeWidth="8" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        ))}
+        {/* L */}
+        <text x="346" y="36" fontFamily="'Montserrat','Inter',sans-serif" fontSize="30" fontWeight="800" fill={textColor}>L</text>
+        {/* Accent line */}
+        <line x1="0" y1="52" x2="366" y2="52" stroke="#F26522" strokeWidth="2" strokeLinecap="round" />
+      </svg>
+    );
+  }
 
   return (
     <svg
