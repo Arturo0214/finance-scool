@@ -138,7 +138,7 @@ export default function Landing() {
   // Live "people requesting" counter (random 6-20, changes every 8s)
   const [liveUsers, setLiveUsers] = useState(() => Math.floor(Math.random() * 15) + 6);
   useEffect(() => {
-    const interval = setInterval(() => setLiveUsers(Math.floor(Math.random() * 15) + 6), 8000);
+    const interval = setInterval(() => setLiveUsers(Math.floor(Math.random() * 15) + 6), 30000);
     return () => clearInterval(interval);
   }, []);
 
