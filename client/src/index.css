@@ -233,10 +233,10 @@ select:focus {
 
 @keyframes float {
   0%, 100% {
-    transform: translateY(0px);
+    transform: translate3d(0,0,0);
   }
   50% {
-    transform: translateY(-8px);
+    transform: translate3d(0,-8px,0);
   }
 }
 
@@ -251,7 +251,7 @@ select:focus {
 
 @keyframes spin {
   to {
-    transform: rotate(360deg);
+    transform: rotate(360deg) translateZ(0);
   }
 }
 
