@@ -339,7 +339,7 @@ export default function Landing() {
     { question: '¿Hay algún artículo para deducción de retiro?', answer: 'Sí, los artículos 151 y 185 de la LISR. Sin embargo, no aplican para todos los casos — necesitas un especialista fiscal que analice tu situación particular para determinar cuál te conviene y cómo aplicarlos correctamente.' },
     { question: '¿Qué me conviene, exentar o deducir? ¿Puedo aplicar ambas?', answer: 'En algunos casos sí puedes combinar ambas estrategias. Todo depende de tu estructura de ingresos, tipo de régimen fiscal y situación particular. Un análisis personalizado te da la respuesta correcta.' },
     { question: '¿Qué me ofrecen con la asesoría personalizada?', answer: 'Revisamos tu situación fiscal completa, calculamos tus escenarios reales con la tabla ISR vigente, identificamos oportunidades de deducción que no estás aprovechando, y diseñamos una estrategia de retiro + ahorro fiscal adaptada a tu caso.' },
-    { question: '¿Prudential es seguro?', answer: 'Sí. Prudential es una aseguradora regulada por la CNBV (Comisión Nacional Bancaria y de Valores) con presencia global y respaldo institucional en México.' },
+    { question: '¿El PPR es seguro?', answer: 'Sí. Los Planes Personales de Retiro están regulados por la CNBV (Comisión Nacional Bancaria y de Valores) y operan bajo el marco legal del Art. 151 LISR, con respaldo institucional en México.' },
   ];
 
   const styles = `
@@ -1294,7 +1294,7 @@ export default function Landing() {
             <div className={`landing-service-card stagger-1 ${visibleSections.solucion ? 'revealed' : ''}`}>
               <span className="service-step-number">1</span>
               <div className="landing-service-icon"><Landmark size={30} strokeWidth={1.5} color="#003DA5" /></div>
-              <h3>PPR Prudential</h3>
+              <h3>Plan Personal de Retiro (PPR)</h3>
               <p>Un vehículo pensado para ayudarte a construir retiro con visión de largo plazo.</p>
               <span className="service-tag">Inversión</span>
             </div>
@@ -1338,7 +1338,7 @@ export default function Landing() {
               <div className="sat-badge-row">
                 <div className="sat-ppr-badge">
                   <Shield size={18} strokeWidth={2} />
-                  <span>Respaldado por PPR Prudential</span>
+                  <span>Respaldado por tu PPR</span>
                 </div>
               </div>
               <button className="landing-btn landing-btn-gold" onClick={() => scrollToSection('simulador')} style={{ marginTop: '1.5rem' }}>
@@ -1522,7 +1522,7 @@ export default function Landing() {
               </div>
               <div className="trust-stat-card">
                 <div className="trust-stat-number">AAA</div>
-                <div className="trust-stat-label">Respaldo Prudential</div>
+                <div className="trust-stat-label">Respaldo institucional</div>
                 <Shield size={24} strokeWidth={1.5} className="trust-stat-bg-icon" />
               </div>
             </div>
