@@ -131,9 +131,16 @@ export default function Landing() {
   const navigate = useNavigate();
 
   // Animated counters for trust bar
-  const [trustCount1, trustRef1] = useCountUp(500, 2000);
+  const [trustCount1, trustRef1] = useCountUp(900, 2000);
   const [trustCount2, trustRef2] = useCountUp(100, 1500);
   const [trustCount3, trustRef3] = useCountUp(10, 1200);
+
+  // Live "people requesting" counter (random 6-20, changes every 8s)
+  const [liveUsers, setLiveUsers] = useState(() => Math.floor(Math.random() * 15) + 6);
+  useEffect(() => {
+    const interval = setInterval(() => setLiveUsers(Math.floor(Math.random() * 15) + 6), 8000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Hero carousel slides with videos
   const heroSlides = [
@@ -327,12 +334,12 @@ export default function Landing() {
   };
 
   const faqItems = [
-    { question: '¿Qué es un PPR (Plan Personal de Retiro)?', answer: 'Un PPR es un producto de ahorro e inversión con beneficios fiscales que te permite ahorrar para tu retiro. Puedes deducir hasta el 10% de tus ingresos o 5 UMAs anuales (lo que sea menor) conforme al Art. 151 LISR.' },
-    { question: '¿Cuánto puedo deducir cada año?', answer: 'El PPR permite deducir hasta el 10% de tu ingreso anual o 5 UMAs anuales. Además hay deducciones personales con un tope del 15% de tu ingreso o 5 UMAs. Y el Art. 185 permite deducir hasta $152,000 adicionales en cuentas de ahorro para retiro.' },
+    { question: '¿Cuáles son las deducciones fiscales autorizadas?', answer: 'Las principales son: honorarios médicos y dentales, gastos funerarios, donativos, intereses reales por créditos hipotecarios, seguro de gastos médicos mayores y transporte escolar obligatorio. Cada una tiene topes específicos conforme a la ley.' },
+    { question: '¿Cuánto puedo deducir de la escuela de mis hijos?', answer: 'Depende del nivel educativo. Preescolar: $14,200, Primaria: $12,900, Secundaria: $19,900, Profesional técnico: $17,100 y Bachillerato: $24,500 anuales por hijo. Estos montos son los topes máximos deducibles.' },
+    { question: '¿Hay algún artículo para deducción de retiro?', answer: 'Sí, los artículos 151 y 185 de la LISR. Sin embargo, no aplican para todos los casos — necesitas un especialista fiscal que analice tu situación particular para determinar cuál te conviene y cómo aplicarlos correctamente.' },
+    { question: '¿Qué me conviene, exentar o deducir? ¿Puedo aplicar ambas?', answer: 'En algunos casos sí puedes combinar ambas estrategias. Todo depende de tu estructura de ingresos, tipo de régimen fiscal y situación particular. Un análisis personalizado te da la respuesta correcta.' },
+    { question: '¿Qué me ofrecen con la asesoría personalizada?', answer: 'Revisamos tu situación fiscal completa, calculamos tus escenarios reales con la tabla ISR vigente, identificamos oportunidades de deducción que no estás aprovechando, y diseñamos una estrategia de retiro + ahorro fiscal adaptada a tu caso.' },
     { question: '¿Prudential es seguro?', answer: 'Sí. Prudential es una aseguradora regulada por la CNBV (Comisión Nacional Bancaria y de Valores) con presencia global y respaldo institucional en México.' },
-    { question: '¿Qué diferencia hay entre el Art. 151 y el Art. 185?', answer: 'El Art. 151 aplica a PPR y tiene un tope de min(10% ingreso, 5 UMAs). El Art. 185 aplica a primas de seguro para retiro con un tope de $152,000. Son complementarios.' },
-    { question: '¿Cómo funciona la calculadora de impuestos?', answer: 'Usa la tabla ISR 2026 oficial del SAT. Calcula tu impuesto en tres escenarios: sin deducciones, con deducciones personales, y con deducciones + retiro. La diferencia es tu devolución estimada.' },
-    { question: '¿Necesito asesoría personalizada?', answer: 'Sí, ofrecemos consultas donde revisamos tu situación fiscal actual, ingresos, estructura (empleado, freelancer, empresa) y diseñamos la estrategia óptima para ti.' },
   ];
 
   const styles = `
@@ -1132,7 +1139,7 @@ export default function Landing() {
       <section className="landing-hero" ref={heroSectionRef}>
         <div className="landing-hero-content">
           <div className="landing-hero-text">
-            <h1>Haz que tu retiro, tus impuestos y tu dinero <span className="gold">dejen de sentirse complicados</span></h1>
+            <h1>Tu dinero, tu retiro y tus impuestos <span className="gold">pueden sentirse menos complicados</span></h1>
             <p>
               En Finance S C<span className="oo-infinity">oo</span>l hacemos algo muy simple: convertimos lo que antes sonaba pesado
               —números, SAT, ahorro, retiro y estrategia fiscal— en algo fácil de entender,
@@ -1218,20 +1225,20 @@ export default function Landing() {
           <div className="emotion-grid">
             <div>
               <ul className="emotion-list">
-                <li className={`reveal-left stagger-1 ${visibleSections.emotion ? 'revealed' : ''}`}><span className="emotion-check"><CheckCircle size={20} color="#C9A84C" /></span> Cómo pagar impuestos con estrategia</li>
+                <li className={`reveal-left stagger-1 ${visibleSections.emotion ? 'revealed' : ''}`}><span className="emotion-check"><CheckCircle size={20} color="#C9A84C" /></span> Cómo los impuestos juegan a tu favor</li>
                 <li className={`reveal-left stagger-2 ${visibleSections.emotion ? 'revealed' : ''}`}><span className="emotion-check"><CheckCircle size={20} color="#C9A84C" /></span> Cómo construir patrimonio</li>
                 <li className={`reveal-left stagger-3 ${visibleSections.emotion ? 'revealed' : ''}`}><span className="emotion-check"><CheckCircle size={20} color="#C9A84C" /></span> Cómo preparar su retiro</li>
-                <li className={`reveal-left stagger-4 ${visibleSections.emotion ? 'revealed' : ''}`}><span className="emotion-check"><CheckCircle size={20} color="#C9A84C" /></span> Cómo usar herramientas legales a su favor</li>
+                <li className={`reveal-left stagger-4 ${visibleSections.emotion ? 'revealed' : ''}`}><span className="emotion-check"><CheckCircle size={20} color="#C9A84C" /></span> Cómo escoger la herramienta financiera ideal</li>
               </ul>
               <div className="emotion-combo" style={{ justifyContent: 'flex-start' }}>
-                <span className="emotion-combo-item">dinero</span>
-                <span className="emotion-combo-item">estrategia</span>
-                <span className="emotion-combo-item">explicación sencilla</span>
+                <span className="emotion-combo-item">ingresos pasivos</span>
+                <span className="emotion-combo-item">deducción fiscal</span>
+                <span className="emotion-combo-item">retiro</span>
               </div>
             </div>
             <LazyVideo src="/assets/man-points.mp4" className="brand-video-wrapper" globalMuted={isMuted} />
           </div>
-          <p className="emotion-mini">Menos confusión. Más claridad. Más control sobre tu futuro.</p>
+          <p className="emotion-mini" style={{ background: 'linear-gradient(135deg, #003DA5, #0067C5)', color: 'white', padding: '1rem 2rem', borderRadius: '1rem', display: 'inline-block', fontSize: '1.2rem', fontWeight: '700', boxShadow: '0 8px 16px rgba(0,61,165,0.15)' }}>Menos confusión. Más claridad. Más control sobre tu futuro.</p>
         </div>
       </section>
 
@@ -1247,7 +1254,7 @@ export default function Landing() {
             <div className={`landing-problem-card stagger-1 ${visibleSections.problema ? 'revealed' : ''}`}>
               <span className="problem-number">01</span>
               <div className="landing-problem-icon"><BarChart3 size={24} strokeWidth={2} /></div>
-              <h3>Tu AFORE no siempre va a ser suficiente</h3>
+              <h3>Tu AFORE NUNCA va a ser suficiente</h3>
               <p>
                 Aunque si cuenta, para muchas personas no alcanza por sí sola para sostener el estilo
                 de vida que quisieran en retiro. Esperar a que "eso se resuelva solo" normalmente sale caro.
@@ -1256,7 +1263,7 @@ export default function Landing() {
             <div className={`landing-problem-card stagger-2 ${visibleSections.problema ? 'revealed' : ''}`}>
               <span className="problem-number">02</span>
               <div className="landing-problem-icon"><Wallet size={24} strokeWidth={2} /></div>
-              <h3>Pagas impuestos... pero quizá no los estás usando a tu favor</h3>
+              <h3>Pagas impuestos... pero no los estás usando a tu favor</h3>
               <p>
                 Muchas personas hacen sus deducciones normales, pero no aprovechan herramientas orientadas
                 al retiro que podrían ayudarles a ordenar mejor su estrategia fiscal.
@@ -1265,7 +1272,7 @@ export default function Landing() {
             <div className={`landing-problem-card stagger-3 ${visibleSections.problema ? 'revealed' : ''}`}>
               <span className="problem-number">03</span>
               <div className="landing-problem-icon"><Clock size={24} strokeWidth={2} /></div>
-              <h3>El tiempo sí cuenta. Y mucho.</h3>
+              <h3>El tiempo cuenta para construir patrimonio... y mucho.</h3>
               <p>
                 Cada año que pasa sin planear retiro pesa. Porque después necesitas ahorrar más,
                 más rápido y con más presión para llegar al mismo objetivo.
@@ -1347,7 +1354,7 @@ export default function Landing() {
         <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: '0.75rem' }}>
             <span className="landing-section-subtitle" style={{ marginBottom: '0.5rem' }}>Simulador Fiscal 2026</span>
-            <h2 style={{ fontSize: 'clamp(1.25rem, 2.5vw, 1.75rem)', color: '#001233', fontFamily: "'Playfair Display', serif", fontWeight: 700, margin: 0 }}>Ponlo en números</h2>
+            <h2 style={{ fontSize: 'clamp(1.25rem, 2.5vw, 1.75rem)', color: '#001233', fontFamily: "'Playfair Display', serif", fontWeight: 700, margin: 0 }}>¿Cuánto pagas de impuestos? Ponlo en números.</h2>
           </div>
           <div className="tax-calc-container">
             <div className="tax-calc-grid">
@@ -1430,7 +1437,7 @@ export default function Landing() {
 
                 <div className="tax-scenarios">
                   <div className="tax-scenario">
-                    <div className="tax-scenario-label">ISR sin deducciones</div>
+                    <div className="tax-scenario-label">Impuestos retenidos (sin deducciones)</div>
                     <div className="tax-scenario-value">{formatMXN(taxResults.isrSinDed)}</div>
                   </div>
                   <div className="tax-scenario">
@@ -1519,6 +1526,17 @@ export default function Landing() {
                 <Shield size={24} strokeWidth={1.5} className="trust-stat-bg-icon" />
               </div>
             </div>
+          </div>
+          <div style={{ textAlign: 'center', marginTop: '1.5rem' }}>
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
+              background: 'linear-gradient(135deg, rgba(16,185,129,0.1), rgba(16,185,129,0.05))',
+              border: '1px solid rgba(16,185,129,0.3)', borderRadius: '2rem',
+              padding: '0.6rem 1.25rem', color: '#047857', fontWeight: '600', fontSize: '0.9rem'
+            }}>
+              <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10B981', animation: 'pulse 2s infinite' }}></span>
+              En este momento <strong style={{ color: '#003DA5' }}>{liveUsers} personas</strong> están solicitando la consultoría
+            </span>
           </div>
         </div>
       </section>
@@ -1665,7 +1683,10 @@ export default function Landing() {
       <section className="landing-section landing-section-light landing-section-padding">
         <div className="landing-cta-section">
           <div className="landing-cta-content">
-            <h2>Tu retiro no debería empezar a importarte <span className="cta-highlight">cuando ya sea tarde</span></h2>
+            <h2><span className="cta-highlight">Retírate joven, comienza ahora.</span></h2>
+            <p style={{ fontSize: '1.15rem', marginBottom: '0.5rem' }}>
+              Imagina un retiro donde tú pongas las reglas. Comienza ahora.
+            </p>
             <p>
               Cuando entiendes cómo conectar estrategia fiscal, ahorro y retiro, las decisiones cambian.
               Y cuando alguien por fin te lo explica fácil, también cambia tu forma de verlo.
@@ -1674,8 +1695,8 @@ export default function Landing() {
               <strong>Finance S C<span className="oo-infinity">oo</span>l</strong>
               <p>Porque las finanzas también se pueden entender cool.</p>
             </div>
-            <button className="landing-btn landing-btn-gold cta-btn-pulse" onClick={() => scrollToSection('contacto')} style={{ marginTop: '1.5rem', fontSize: '1.05rem', padding: '1rem 2.5rem' }}>
-              Agenda tu asesoría gratuita
+            <button className="landing-btn landing-btn-gold cta-btn-pulse" onClick={() => scrollToSection('contacto')} style={{ marginTop: '1.5rem', fontSize: '1.1rem', padding: '1.1rem 2.5rem', letterSpacing: '0.02em' }}>
+              Agenda tu consultoría fiscal y financiera AHORA
             </button>
           </div>
         </div>
