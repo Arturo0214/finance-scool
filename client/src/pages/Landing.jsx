@@ -90,6 +90,175 @@ function LazyVideo({ src, className, style, globalMuted = true }) {
   );
 }
 
+// ==================== Premium Floating Particles (Canvas) ====================
+function PremiumParticles({ color = 'gold', density = 35, className = '' }) {
+  const canvasRef = useRef(null);
+  const animRef = useRef(null);
+  const particlesRef = useRef([]);
+  const mouseRef = useRef({ x: -999, y: -999 });
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    let w, h;
+
+    const palette = color === 'gold'
+      ? ['rgba(212,175,55,', 'rgba(201,168,76,', 'rgba(240,215,140,', 'rgba(0,61,165,']
+      : ['rgba(0,61,165,', 'rgba(0,103,197,', 'rgba(52,211,153,', 'rgba(212,175,55,'];
+
+    const resize = () => {
+      const rect = canvas.parentElement.getBoundingClientRect();
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      w = rect.width; h = rect.height;
+      canvas.width = w * dpr; canvas.height = h * dpr;
+      canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+      ctx.scale(dpr, dpr);
+      initParticles();
+    };
+
+    const initParticles = () => {
+      const count = density;
+      particlesRef.current = Array.from({ length: count }, () => ({
+        x: Math.random() * w,
+        y: Math.random() * h,
+        vx: (Math.random() - 0.5) * 0.4,
+        vy: (Math.random() - 0.5) * 0.25 - 0.12,
+        r: Math.random() * 3.2 + 1.2,
+        baseR: Math.random() * 3.2 + 1.2,
+        color: palette[Math.floor(Math.random() * palette.length)],
+        alpha: Math.random() * 0.45 + 0.35,
+        pulseSpeed: Math.random() * 0.025 + 0.008,
+        pulsePhase: Math.random() * Math.PI * 2,
+        drift: Math.random() * 0.5 + 0.15,
+        driftPhase: Math.random() * Math.PI * 2,
+      }));
+    };
+
+    const draw = (time) => {
+      ctx.clearRect(0, 0, w, h);
+      const particles = particlesRef.current;
+      const mx = mouseRef.current.x;
+      const my = mouseRef.current.y;
+
+      // Draw connections between nearby particles
+      for (let i = 0; i < particles.length; i++) {
+        for (let j = i + 1; j < particles.length; j++) {
+          const dx = particles[i].x - particles[j].x;
+          const dy = particles[i].y - particles[j].y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < 130) {
+            const opacity = (1 - dist / 130) * 0.12;
+            ctx.beginPath();
+            ctx.strokeStyle = `rgba(212,175,55,${opacity})`;
+            ctx.lineWidth = 0.5;
+            ctx.moveTo(particles[i].x, particles[i].y);
+            ctx.lineTo(particles[j].x, particles[j].y);
+            ctx.stroke();
+          }
+        }
+      }
+
+      // Draw and update particles
+      for (const p of particles) {
+        // Organic floating motion
+        p.driftPhase += 0.008;
+        p.pulsePhase += p.pulseSpeed;
+        const driftX = Math.sin(p.driftPhase) * p.drift;
+        const driftY = Math.cos(p.driftPhase * 0.7) * p.drift * 0.6;
+
+        p.x += p.vx + driftX * 0.3;
+        p.y += p.vy + driftY * 0.3;
+
+        // Mouse repulsion
+        const dmx = p.x - mx;
+        const dmy = p.y - my;
+        const dMouse = Math.sqrt(dmx * dmx + dmy * dmy);
+        if (dMouse < 120 && dMouse > 0) {
+          const force = (1 - dMouse / 120) * 1.5;
+          p.x += (dmx / dMouse) * force;
+          p.y += (dmy / dMouse) * force;
+        }
+
+        // Pulse size
+        p.r = p.baseR + Math.sin(p.pulsePhase) * 0.6;
+
+        // Wrap around edges
+        if (p.x < -10) p.x = w + 10;
+        if (p.x > w + 10) p.x = -10;
+        if (p.y < -10) p.y = h + 10;
+        if (p.y > h + 10) p.y = -10;
+
+        // Draw particle with glow
+        const alpha = p.alpha + Math.sin(p.pulsePhase) * 0.12;
+        // Outer glow (large soft halo)
+        const grd = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * 6);
+        grd.addColorStop(0, p.color + (alpha * 0.8) + ')');
+        grd.addColorStop(0.3, p.color + (alpha * 0.25) + ')');
+        grd.addColorStop(0.7, p.color + (alpha * 0.06) + ')');
+        grd.addColorStop(1, p.color + '0)');
+        ctx.beginPath();
+        ctx.fillStyle = grd;
+        ctx.arc(p.x, p.y, p.r * 6, 0, Math.PI * 2);
+        ctx.fill();
+        // Core (bright center)
+        ctx.beginPath();
+        ctx.fillStyle = p.color + Math.min(alpha * 1.2, 0.95) + ')';
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fill();
+        // Hot center dot
+        ctx.beginPath();
+        ctx.fillStyle = 'rgba(255,255,255,' + (alpha * 0.5) + ')';
+        ctx.arc(p.x, p.y, p.r * 0.35, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      animRef.current = requestAnimationFrame(draw);
+    };
+
+    const handleMouse = (e) => {
+      const rect = canvas.getBoundingClientRect();
+      mouseRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    };
+    const handleLeave = () => { mouseRef.current = { x: -999, y: -999 }; };
+
+    resize();
+    animRef.current = requestAnimationFrame(draw);
+    window.addEventListener('resize', resize);
+    canvas.addEventListener('mousemove', handleMouse);
+    canvas.addEventListener('mouseleave', handleLeave);
+
+    // Pause when out of viewport
+    const obs = new IntersectionObserver(([e]) => {
+      if (e.isIntersecting) {
+        if (!animRef.current) animRef.current = requestAnimationFrame(draw);
+      } else {
+        if (animRef.current) { cancelAnimationFrame(animRef.current); animRef.current = null; }
+      }
+    }, { threshold: 0.05 });
+    obs.observe(canvas);
+
+    return () => {
+      cancelAnimationFrame(animRef.current);
+      window.removeEventListener('resize', resize);
+      canvas.removeEventListener('mousemove', handleMouse);
+      canvas.removeEventListener('mouseleave', handleLeave);
+      obs.disconnect();
+    };
+  }, [color, density]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className={className}
+      style={{
+        position: 'absolute', inset: 0, width: '100%', height: '100%',
+        pointerEvents: 'auto', zIndex: 0, borderRadius: 'inherit',
+      }}
+    />
+  );
+}
+
 // ==================== Animated Counter Hook (rAF optimized) ====================
 function useCountUp(end, duration = 2000, startOnView = true) {
   const [count, setCount] = useState(0);
@@ -153,21 +322,21 @@ export default function Landing() {
   // Hero carousel slides with videos
   const heroSlides = [
     {
-      video: '/assets/hero-shield.mp4',
+      video: 'https://res.cloudinary.com/dbowaer8j/video/upload/Hero_raises_shield_202603302047_cakk6l.mp4',
       title: 'Tu dinero puede hacer más por ti',
       subtitle: 'cuando entiendes cómo moverlo con estrategia',
       stat: '$1,250,000+ MXN',
       statLabel: 'Proyección estimada a 25 años',
     },
     {
-      video: '/assets/man-points.mp4',
+      video: 'https://res.cloudinary.com/dbowaer8j/video/upload/Man_points_at_202603302047_ifuc9e.mp4',
       title: 'Menos impuestos, más patrimonio',
       subtitle: 'Conecta ahorro, retiro y deducción fiscal de forma inteligente',
       stat: 'Hasta 30%',
       statLabel: 'Devolución estimada de impuestos',
     },
     {
-      video: '/assets/flow.mp4',
+      video: 'https://res.cloudinary.com/dbowaer8j/video/upload/Flow_202603302047_bp5gbq.mp4',
       title: 'Planea hoy, vive tranquilo mañana',
       subtitle: 'Cada año que esperas, necesitas ahorrar más para llegar al mismo objetivo',
       stat: '25+ años',
@@ -227,6 +396,8 @@ export default function Landing() {
   });
 
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [storyStep, setStoryStep] = useState(1);
+  const [animatedISR, setAnimatedISR] = useState(0);
 
   // Calculate tax results
   const calcTaxResults = () => {
@@ -300,6 +471,36 @@ export default function Landing() {
   };
 
   const taxResults = calcTaxResults();
+
+  // Animate ISR count-up when step 2 reveals
+  useEffect(() => {
+    if (storyStep < 2) { setAnimatedISR(0); return; }
+    const target = Math.round(taxResults.isrSinDed);
+    if (target <= 0) { setAnimatedISR(0); return; }
+    let startTime = null;
+    let rafId;
+    const duration = 1800;
+    const animate = (ts) => {
+      if (!startTime) startTime = ts;
+      const progress = Math.min((ts - startTime) / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3); // easeOutCubic
+      setAnimatedISR(Math.floor(eased * target));
+      if (progress < 1) rafId = requestAnimationFrame(animate);
+      else setAnimatedISR(target);
+    };
+    rafId = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(rafId);
+  }, [storyStep, taxResults.isrSinDed]);
+
+  // Auto-scroll to newly revealed step
+  const storyStepRefs = useRef({});
+  useEffect(() => {
+    if (storyStep > 1 && storyStepRefs.current[storyStep]) {
+      setTimeout(() => {
+        storyStepRefs.current[storyStep]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 150);
+    }
+  }, [storyStep]);
 
   // Scroll effects (throttled + passive)
   useEffect(() => {
@@ -574,9 +775,15 @@ export default function Landing() {
     .blue-section-header p { color: rgba(255,255,255,0.85); }
 
     /* ==================== Brand Identity Block ==================== */
-    .brand-block { max-width: 1200px; margin: 0 auto; }
-    .brand-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 3rem; align-items: center; }
-    .brand-left { position: relative; }
+    .brand-block { max-width: 1200px; margin: 0 auto; width: 100%; box-sizing: border-box; }
+    .brand-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 3rem; align-items: center; overflow: hidden; }
+    .brand-left { position: relative; min-width: 0; }
+    .brand-right { min-width: 0; }
+    .brand-img-card {
+      max-height: 440px; width: auto; max-width: 100%;
+      border-radius: 1.5rem; box-shadow: 0 20px 50px rgba(0,18,51,0.15);
+      display: block; object-fit: contain;
+    }
     .brand-video-wrapper {
       border-radius: 1.5rem; overflow: hidden; box-shadow: 0 20px 50px rgba(0,18,51,0.15);
       position: relative; aspect-ratio: 4/3;
@@ -916,6 +1123,366 @@ export default function Landing() {
     .tax-scenario-label { font-size: 0.7rem; color: rgba(255,255,255,0.6); margin-bottom: 0.25rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
     .tax-scenario-value { font-size: 0.95rem; font-weight: 700; color: #FFFFFF; }
 
+    /* ==================== Storytelling Flow — Premium ==================== */
+    .tax-calc-container.story-mode {
+      max-width: 720px; padding: 2.5rem 2.5rem 2rem;
+      background: linear-gradient(180deg, #FFFFFF 0%, #F8F9FC 100%);
+      box-shadow: 0 25px 60px rgba(0,18,51,0.1), 0 0 0 1px rgba(0,61,165,0.04);
+    }
+
+    /* === Step base & timeline === */
+    .story-step {
+      padding-bottom: 0.25rem; position: relative; z-index: 1;
+    }
+    .story-step-visible { opacity: 1; }
+
+    /* Multi-stage premium entrance animation */
+    @keyframes storyRevealUp {
+      0% { opacity: 0; transform: translate3d(0, 40px, 0) scale(0.97); filter: blur(6px); }
+      60% { opacity: 1; filter: blur(0); }
+      100% { opacity: 1; transform: translate3d(0, 0, 0) scale(1); filter: blur(0); }
+    }
+    @keyframes storyChildStagger {
+      0% { opacity: 0; transform: translate3d(0, 18px, 0); }
+      100% { opacity: 1; transform: translate3d(0, 0, 0); }
+    }
+    .story-step-enter {
+      animation: storyRevealUp 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      will-change: opacity, transform, filter;
+    }
+    .story-step-enter > * {
+      opacity: 0;
+      animation: storyChildStagger 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    .story-step-enter > *:nth-child(1) { animation-delay: 0.15s; }
+    .story-step-enter > *:nth-child(2) { animation-delay: 0.25s; }
+    .story-step-enter > *:nth-child(3) { animation-delay: 0.35s; }
+    .story-step-enter > *:nth-child(4) { animation-delay: 0.45s; }
+    .story-step-enter > *:nth-child(5) { animation-delay: 0.55s; }
+    .story-step-enter > *:nth-child(6) { animation-delay: 0.65s; }
+    .story-step-enter > *:nth-child(7) { animation-delay: 0.7s; }
+
+    /* Timeline connector */
+    .story-step-divider {
+      width: 2px; height: 40px; margin: 1rem auto;
+      background: linear-gradient(180deg, #D4AF37 0%, rgba(0,61,165,0.3) 50%, transparent 100%);
+      border-radius: 2px; position: relative;
+      animation: dividerGrow 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      transform-origin: top center;
+    }
+    @keyframes dividerGrow {
+      0% { transform: scaleY(0); opacity: 0; }
+      100% { transform: scaleY(1); opacity: 1; }
+    }
+    .story-step-divider::after {
+      content: ''; position: absolute; bottom: -4px; left: 50%; transform: translateX(-50%);
+      width: 8px; height: 8px; border-radius: 50%;
+      background: linear-gradient(135deg, #D4AF37, #C9A84C);
+      box-shadow: 0 0 12px rgba(212,175,55,0.4);
+      animation: dividerDotPulse 2s ease-in-out infinite;
+    }
+    @keyframes dividerDotPulse {
+      0%, 100% { box-shadow: 0 0 8px rgba(212,175,55,0.3); transform: translateX(-50%) scale(1); }
+      50% { box-shadow: 0 0 18px rgba(212,175,55,0.6); transform: translateX(-50%) scale(1.3); }
+    }
+
+    /* Step header */
+    .story-step-header {
+      display: flex; align-items: center; gap: 0.85rem; margin-bottom: 0.75rem;
+    }
+    .story-step-number {
+      width: 42px; height: 42px; border-radius: 50%; flex-shrink: 0;
+      background: linear-gradient(145deg, #003DA5, #0067C5); color: white;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 800; font-size: 1rem; font-family: 'Montserrat', sans-serif;
+      box-shadow: 0 6px 20px rgba(0,61,165,0.3), 0 0 0 3px rgba(0,61,165,0.08);
+      position: relative; overflow: hidden;
+      transition: transform 400ms cubic-bezier(0.34,1.56,0.64,1), box-shadow 400ms ease;
+    }
+    .story-step-number::after {
+      content: ''; position: absolute; inset: 0; border-radius: 50%;
+      background: linear-gradient(135deg, rgba(255,255,255,0.25) 0%, transparent 60%);
+    }
+    .story-step-number:hover { transform: scale(1.1) rotate(5deg); }
+    .story-step-number-gold {
+      background: linear-gradient(145deg, #D4AF37, #B99830); color: #001233;
+      box-shadow: 0 6px 20px rgba(212,175,55,0.4), 0 0 0 3px rgba(212,175,55,0.12);
+    }
+    .story-step-title {
+      font-size: 1.25rem; font-weight: 700; color: #001233; margin: 0;
+      font-family: 'Playfair Display', serif; line-height: 1.3;
+      letter-spacing: -0.01em;
+    }
+    .story-step-desc {
+      color: #4B5563; font-size: 0.92rem; line-height: 1.65; margin: 0 0 0.6rem;
+      padding-left: 0.25rem;
+    }
+
+    /* Next step buttons — premium */
+    .story-next-btn {
+      display: block; margin: 0.85rem auto 0; padding: 0.8rem 2.25rem;
+      font-size: 0.9rem; border-radius: 2rem; position: relative; overflow: hidden;
+      transition: all 400ms cubic-bezier(0.34,1.56,0.64,1);
+    }
+    .story-next-btn::before {
+      content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+      transition: left 600ms ease;
+    }
+    .story-next-btn:hover::before { left: 100%; }
+    .story-next-btn:hover { transform: translateY(-3px); box-shadow: 0 12px 28px rgba(0,61,165,0.25); }
+    .story-next-btn:disabled {
+      opacity: 0.35; cursor: not-allowed; transform: none !important;
+      box-shadow: none !important; filter: grayscale(0.5);
+    }
+    .story-next-btn:disabled::before { display: none; }
+
+    /* ===== Paso 1 — Input premium ===== */
+    .story-input-wrapper {
+      margin: 1.25rem 0; text-align: center;
+      background: linear-gradient(135deg, rgba(0,61,165,0.03), rgba(212,175,55,0.02));
+      border-radius: 1rem; padding: 1.5rem; border: 1px solid rgba(0,61,165,0.06);
+    }
+    .story-input-label {
+      display: block; font-weight: 700; color: #003DA5; font-size: 0.8rem;
+      margin-bottom: 0.6rem; text-align: center; text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .story-input-big {
+      width: 100%; padding: 1rem 1.25rem; font-size: 1.5rem; font-weight: 700;
+      border: 2px solid rgba(0,61,165,0.15); border-radius: 0.85rem; text-align: center;
+      font-family: 'Montserrat', 'Inter', sans-serif; color: #001233;
+      background: white;
+      transition: border-color 400ms ease, box-shadow 400ms ease, transform 200ms ease;
+      box-shadow: 0 4px 16px rgba(0,18,51,0.06);
+    }
+    .story-input-big:focus {
+      outline: none; border-color: #003DA5; transform: scale(1.02);
+      box-shadow: 0 8px 30px rgba(0,61,165,0.12), 0 0 0 4px rgba(0,61,165,0.06);
+    }
+    .story-input-big::placeholder { color: #B8C0CC; font-weight: 400; font-size: 1.1rem; }
+    .story-input-preview {
+      display: inline-block; margin-top: 0.6rem; font-size: 0.85rem;
+      color: #003DA5; font-weight: 600;
+      background: linear-gradient(135deg, rgba(0,61,165,0.08), rgba(0,61,165,0.03));
+      padding: 0.3rem 1rem; border-radius: 2rem;
+      animation: storyChildStagger 0.4s ease forwards;
+    }
+
+    /* ===== Paso 2 — ISR Reveal premium ===== */
+    .story-isr-reveal {
+      text-align: center; padding: 2rem 1.5rem;
+      background: linear-gradient(160deg, #060a14 0%, #0a1225 40%, #0e1a33 100%);
+      border-radius: 1.25rem; margin: 1rem 0;
+      box-shadow: 0 16px 50px rgba(0,0,0,0.3), 0 0 80px rgba(224,82,82,0.05);
+      position: relative; overflow: hidden;
+    }
+    /* Animated border like tax-results */
+    .story-isr-reveal::before {
+      content: ''; position: absolute; inset: -1px; border-radius: 1.25rem; padding: 1px; z-index: 0;
+      background: linear-gradient(var(--border-angle, 0deg), rgba(224,82,82,0.5), rgba(0,61,165,0.2), rgba(224,82,82,0.1), rgba(212,175,55,0.2), rgba(224,82,82,0.5));
+      -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+      -webkit-mask-composite: xor; mask-composite: exclude;
+      animation: borderSpin 6s linear infinite;
+    }
+    /* Floating particles */
+    .story-isr-reveal::after {
+      content: ''; position: absolute; inset: 0; z-index: 0;
+      background:
+        radial-gradient(1.5px 1.5px at 20% 30%, rgba(224,82,82,0.25) 50%, transparent 50%),
+        radial-gradient(1px 1px at 70% 20%, rgba(255,255,255,0.12) 50%, transparent 50%),
+        radial-gradient(1.5px 1.5px at 80% 65%, rgba(224,82,82,0.18) 50%, transparent 50%),
+        radial-gradient(1px 1px at 40% 75%, rgba(255,255,255,0.08) 50%, transparent 50%);
+      animation: particleFloat 6s ease-in-out infinite alternate;
+    }
+    .story-isr-reveal > * { position: relative; z-index: 1; }
+    .story-isr-amount {
+      font-size: clamp(2.25rem, 6vw, 3.5rem); font-weight: 800; color: #E05252;
+      font-family: 'Montserrat', sans-serif; line-height: 1.1;
+      text-shadow: 0 0 40px rgba(224,82,82,0.35), 0 0 80px rgba(224,82,82,0.15);
+      animation: isrPulseGlow 3s ease-in-out infinite;
+    }
+    @keyframes isrPulseGlow {
+      0%, 100% { text-shadow: 0 0 30px rgba(224,82,82,0.3), 0 0 60px rgba(224,82,82,0.1); }
+      50% { text-shadow: 0 0 50px rgba(224,82,82,0.5), 0 0 100px rgba(224,82,82,0.2); }
+    }
+    .story-isr-label {
+      color: rgba(255,255,255,0.5); font-size: 0.9rem; margin-top: 0.4rem;
+      font-weight: 500; letter-spacing: 0.03em;
+    }
+
+    /* ===== Paso 3 — Deducciones premium ===== */
+    .story-deductions-list {
+      display: flex; flex-direction: column; gap: 0;
+      background: linear-gradient(135deg, #F7F8FC, #FFFFFF);
+      border-radius: 0.85rem; padding: 0.25rem 1rem;
+      border: 1px solid rgba(0,61,165,0.08); margin: 0.6rem 0;
+      box-shadow: 0 4px 20px rgba(0,18,51,0.04);
+    }
+    .story-deduction-row {
+      display: flex; align-items: center; gap: 0.6rem;
+      padding: 0.4rem 0.5rem; border-bottom: 1px solid rgba(0,61,165,0.06);
+      transition: background 300ms ease, transform 200ms ease;
+      border-radius: 0.5rem; margin: 0 -0.25rem;
+    }
+    .story-deduction-row:last-child { border-bottom: none; }
+    .story-deduction-row:hover { background: rgba(0,61,165,0.03); transform: translateX(4px); }
+    .story-deduction-icon {
+      font-size: 1rem; flex-shrink: 0; width: 28px; height: 28px;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(0,61,165,0.06); border-radius: 0.5rem;
+    }
+    .story-deduction-name { flex: 1; font-size: 0.82rem; color: #2D3436; font-weight: 500; }
+    .story-deduction-limit {
+      font-size: 0.68rem; color: #003DA5; font-weight: 700;
+      white-space: nowrap; background: linear-gradient(135deg, rgba(0,61,165,0.08), rgba(0,61,165,0.03));
+      padding: 0.2rem 0.55rem; border-radius: 2rem;
+      border: 1px solid rgba(0,61,165,0.08);
+    }
+
+    /* Alert OJO — premium */
+    .story-alert-ojo {
+      display: flex; gap: 0.7rem; align-items: flex-start;
+      background: linear-gradient(135deg, rgba(212,175,55,0.08), rgba(232,160,48,0.03));
+      border-left: 4px solid #D4AF37; border-radius: 0 1rem 1rem 0;
+      padding: 0.85rem 1.15rem; margin: 0.75rem 0;
+      font-size: 0.82rem; color: #4B5563; line-height: 1.6;
+      box-shadow: 0 4px 20px rgba(212,175,55,0.08);
+      position: relative; overflow: hidden;
+    }
+    .story-alert-ojo::before {
+      content: ''; position: absolute; top: 0; right: 0; width: 120px; height: 120px;
+      background: radial-gradient(circle, rgba(212,175,55,0.08), transparent 70%);
+      border-radius: 50%;
+    }
+    .story-alert-ojo-icon { font-size: 1.25rem; flex-shrink: 0; margin-top: 0.05rem; }
+    .story-alert-ojo strong { color: #996B00; font-weight: 700; }
+    .story-alert-tope {
+      font-size: 1.2rem; font-weight: 800; color: #003DA5;
+      font-family: 'Montserrat', sans-serif; margin-top: 0.35rem;
+      background: linear-gradient(135deg, #003DA5, #0067C5);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    /* ===== Paso 4 — PPR premium ===== */
+    .story-ppr-input {
+      margin: 1.25rem 0;
+      background: linear-gradient(135deg, rgba(201,168,76,0.05), rgba(201,168,76,0.01));
+      border-radius: 1rem; padding: 1.5rem; border: 1px solid rgba(201,168,76,0.12);
+    }
+    .story-ppr-cap {
+      display: block; font-size: 0.78rem; color: #8B7D3C;
+      margin-top: 0.5rem; text-align: center; font-weight: 500;
+    }
+    .story-comparison {
+      display: flex; align-items: stretch; gap: 0; justify-content: center;
+      margin: 1.5rem 0 0.75rem; position: relative;
+    }
+    .story-comparison-item {
+      flex: 1; min-width: 150px; text-align: center;
+      padding: 1.25rem 1rem; position: relative; overflow: hidden;
+    }
+    .story-comp-orange {
+      background: linear-gradient(160deg, rgba(232,160,48,0.06), rgba(232,160,48,0.02));
+      border: 1px solid rgba(232,160,48,0.15);
+      border-radius: 1rem 0 0 1rem; border-right: none;
+    }
+    .story-comp-green {
+      background: linear-gradient(160deg, rgba(52,211,153,0.06), rgba(52,211,153,0.02));
+      border: 1px solid rgba(52,211,153,0.15);
+      border-radius: 0 1rem 1rem 0; border-left: none;
+    }
+    .story-comp-label {
+      font-size: 0.68rem; font-weight: 700; color: #5A6577;
+      text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.4rem;
+    }
+    .story-comp-orange .story-comp-value {
+      font-size: 1.5rem; font-weight: 800; color: #E8A030;
+      font-family: 'Montserrat', sans-serif;
+    }
+    .story-comp-green .story-comp-value {
+      font-size: 1.5rem; font-weight: 800; color: #34D399;
+      font-family: 'Montserrat', sans-serif;
+    }
+    .story-comparison-arrow {
+      display: flex; align-items: center; justify-content: center;
+      width: 44px; flex-shrink: 0;
+      background: linear-gradient(135deg, #003DA5, #0052D4);
+      color: white; font-size: 1.2rem; font-weight: 700;
+      z-index: 1; box-shadow: 0 4px 16px rgba(0,61,165,0.3);
+    }
+    .story-comp-savings {
+      text-align: center; font-size: 0.95rem; color: #4B5563; margin: 0.75rem 0 0;
+      padding: 0.6rem 1rem; border-radius: 2rem;
+      background: linear-gradient(135deg, rgba(52,211,153,0.06), rgba(52,211,153,0.02));
+      border: 1px solid rgba(52,211,153,0.1);
+      display: inline-block;
+    }
+
+    /* ===== Paso 5 — Final CTA premium ===== */
+    .story-final-box {
+      background: linear-gradient(160deg, #001233 0%, #001845 40%, #002B75 100%);
+      border-radius: 1.25rem; padding: 2.5rem 2rem; text-align: center;
+      position: relative; overflow: hidden;
+      box-shadow: 0 20px 60px rgba(0,18,51,0.3), 0 0 80px rgba(212,175,55,0.05);
+    }
+    /* Animated border */
+    .story-final-box::before {
+      content: ''; position: absolute; inset: -1px; border-radius: 1.25rem; padding: 1px; z-index: 0;
+      background: linear-gradient(var(--border-angle, 0deg), rgba(212,175,55,0.5), rgba(0,61,165,0.2), rgba(52,211,153,0.2), rgba(212,175,55,0.5));
+      -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+      -webkit-mask-composite: xor; mask-composite: exclude;
+      animation: borderSpin 6s linear infinite;
+    }
+    /* Decorative glow */
+    .story-final-box::after {
+      content: ''; position: absolute; top: -60%; right: -30%; width: 400px; height: 400px;
+      background: radial-gradient(circle, rgba(212,175,55,0.1), transparent 60%);
+      border-radius: 50%; z-index: 0;
+    }
+    .story-final-box > * { position: relative; z-index: 1; }
+    .story-final-text {
+      color: rgba(255,255,255,0.88); font-size: 1.05rem; line-height: 1.75; margin: 0 0 1.75rem;
+      max-width: 520px; margin-left: auto; margin-right: auto;
+    }
+    .story-final-text strong { color: #D4AF37; }
+    .story-final-summary {
+      display: flex; gap: 0.85rem; margin-bottom: 2rem; justify-content: center; flex-wrap: wrap;
+    }
+    .story-final-stat {
+      flex: 1; min-width: 140px; padding: 1rem; border-radius: 1rem;
+      background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      transition: all 400ms cubic-bezier(0.34,1.56,0.64,1);
+    }
+    .story-final-stat:hover {
+      background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.15);
+      transform: translateY(-4px); box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+    }
+    .story-final-stat-highlight {
+      border-color: rgba(212,175,55,0.3);
+      background: linear-gradient(135deg, rgba(212,175,55,0.08), rgba(212,175,55,0.02));
+      animation: pulseGlow 3s ease-in-out infinite;
+    }
+    .story-final-stat-label {
+      font-size: 0.65rem; color: rgba(255,255,255,0.5); font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.3rem;
+    }
+    .story-final-stat-value {
+      font-size: 1.5rem; font-weight: 800; font-family: 'Montserrat', sans-serif;
+    }
+    .story-recalc-btn {
+      display: block; margin: 1.25rem auto 0; background: none; border: none;
+      color: rgba(255,255,255,0.45); font-size: 0.82rem; cursor: pointer;
+      font-family: 'Inter', sans-serif; font-weight: 500;
+      transition: all 300ms ease; padding: 0.4rem 1rem; border-radius: 2rem;
+    }
+    .story-recalc-btn:hover {
+      color: rgba(255,255,255,0.85);
+      background: rgba(255,255,255,0.06);
+    }
+
     /* ==================== Para Quien Block ==================== */
     /* ==================== Para Quién + Trust Combined ==================== */
     .landing-trust-bar { background: linear-gradient(160deg, #001233, #001845); }
@@ -1126,11 +1693,29 @@ export default function Landing() {
     }
     .sat-text-col {}
     .sat-badge-row { display: flex; align-items: center; gap: 0.75rem; }
+    .sat-cta-group {
+      display: flex; flex-direction: row; align-items: center; gap: 1.25rem; margin-top: 1.75rem; flex-wrap: wrap;
+    }
+    .sat-cta-btn {
+      padding: 0.95rem 2.25rem !important; font-size: 1.05rem !important; border-radius: 2rem !important;
+      font-weight: 700 !important; letter-spacing: 0.01em;
+      box-shadow: 0 8px 25px rgba(212,175,55,0.35) !important;
+      transition: all 400ms cubic-bezier(0.34,1.56,0.64,1) !important;
+    }
+    .sat-cta-btn:hover {
+      transform: translateY(-3px) !important; box-shadow: 0 14px 35px rgba(212,175,55,0.45) !important;
+    }
     .sat-ppr-badge {
       display: inline-flex; align-items: center; gap: 0.5rem;
-      background: linear-gradient(135deg, rgba(212,175,55,0.15), rgba(212,175,55,0.08));
-      border: 1px solid rgba(212,175,55,0.3); border-radius: 2rem;
-      padding: 0.5rem 1.25rem; color: #D4AF37; font-weight: 700; font-size: 0.85rem;
+      background: linear-gradient(135deg, rgba(34,197,94,0.15), rgba(34,197,94,0.06));
+      border: 1.5px solid rgba(34,197,94,0.5); border-radius: 2rem;
+      padding: 0.6rem 1.35rem; color: #22c55e; font-weight: 700; font-size: 0.88rem;
+      box-shadow: 0 4px 15px rgba(34,197,94,0.15);
+      transition: all 300ms ease;
+    }
+    .sat-ppr-badge:hover {
+      background: linear-gradient(135deg, rgba(34,197,94,0.22), rgba(34,197,94,0.1));
+      box-shadow: 0 6px 20px rgba(34,197,94,0.25);
     }
 
     /* ==================== Contact Form ==================== */
@@ -1403,11 +1988,14 @@ export default function Landing() {
       .landing-hero::after { width: 300px; height: 300px; bottom: -20%; left: -20%; }
 
       /* — Brand section — */
-      .brand-grid { grid-template-columns: 1fr; gap: 2rem; }
+      .brand-grid { grid-template-columns: 1fr; gap: 1.5rem; }
+      .brand-left { display: flex; justify-content: center !important; align-items: center; }
+      .brand-img-card { max-height: 340px !important; max-width: 80% !important; margin: 0 auto; border-radius: 1rem !important; }
       .brand-video-wrapper { max-height: 280px; aspect-ratio: 16/9; }
       .brand-name-highlight { font-size: 1.15rem; padding: 0.5rem 1.25rem; }
       .brand-quote { padding: 1.25rem; font-size: 0.95rem; }
-      .brand-text { font-size: 0.95rem; }
+      .brand-text { font-size: 0.95rem; text-align: center !important; }
+      .brand-right { text-align: center; }
 
       /* — Emotion section — */
       .emotion-grid { grid-template-columns: 1fr; gap: 2rem; }
@@ -1433,9 +2021,12 @@ export default function Landing() {
       .sat-video-wrapper { max-height: 320px; aspect-ratio: 3/4; margin: 0 auto; max-width: 280px; }
       .sat-badge-row { flex-wrap: wrap; justify-content: center; }
       .sat-ppr-badge { font-size: 0.8rem; }
+      .sat-cta-group { flex-direction: column; align-items: center; }
+      .sat-cta-btn { width: 100%; max-width: 320px; text-align: center; font-size: 0.95rem !important; padding: 0.85rem 1.75rem !important; }
 
       /* — Tax Calculator — */
       .tax-calc-container { padding: 1rem; }
+      .tax-calc-container.story-mode { padding: 1.25rem 1rem; }
       .tax-calc-grid { grid-template-columns: 1fr; }
       .tax-results { padding: 1rem; margin-top: 1rem; }
       .tax-results h3 { font-size: 0.9rem; }
@@ -1452,6 +2043,33 @@ export default function Landing() {
       .tax-toggle-advanced { font-size: 0.85rem; }
       .tax-input-group label { font-size: 0.75rem; }
       .tax-input-group input, .tax-input-group select { font-size: 0.8rem; padding: 0.4rem 0.6rem; }
+      /* — Storytelling mobile — */
+      .tax-calc-container.story-mode { padding: 1.5rem 1.15rem 1.25rem; }
+      .story-step-title { font-size: 1.05rem; }
+      .story-step-number { width: 36px; height: 36px; font-size: 0.85rem; }
+      .story-input-wrapper { padding: 1rem; }
+      .story-input-big { font-size: 1.15rem; padding: 0.85rem; }
+      .story-input-big::placeholder { font-size: 0.95rem; }
+      .story-isr-reveal { padding: 1.5rem 1rem; }
+      .story-isr-amount { font-size: 2.25rem; }
+      .story-comparison { flex-direction: column; gap: 0; }
+      .story-comparison-arrow {
+        width: 100%; height: 36px;
+        border-radius: 0;
+      }
+      .story-comp-orange { border-radius: 1rem 1rem 0 0; border-right: 1px solid rgba(232,160,48,0.15); border-bottom: none; }
+      .story-comp-green { border-radius: 0 0 1rem 1rem; border-left: 1px solid rgba(52,211,153,0.15); border-top: none; }
+      .story-final-summary { flex-direction: column; }
+      .story-final-box { padding: 1.5rem 1.15rem; }
+      .story-final-stat-value { font-size: 1.25rem; }
+      .story-alert-ojo { padding: 0.7rem 0.85rem; font-size: 0.78rem; }
+      .story-alert-tope { font-size: 1.05rem; }
+      .story-deduction-name { font-size: 0.78rem; }
+      .story-deduction-limit { font-size: 0.65rem; padding: 0.15rem 0.45rem; }
+      .story-deduction-icon { width: 24px; height: 24px; font-size: 0.85rem; }
+      .story-deduction-row { padding: 0.3rem 0.4rem; gap: 0.5rem; }
+      .story-ppr-input { padding: 1rem; }
+      .story-step-divider { height: 32px; }
 
       /* — Para Quién + Trust — */
       .paraquien-grid { grid-template-columns: 1fr; gap: 2rem; }
@@ -1506,6 +2124,7 @@ export default function Landing() {
       /* — Footer — */
       .landing-footer { padding: 2.5rem 1rem 1.25rem; }
       .landing-footer-content { grid-template-columns: 1fr; gap: 1.5rem; text-align: center; }
+      .landing-footer-column { display: flex; flex-direction: column; align-items: center; }
       .landing-footer-column h3 { margin-bottom: 0.75rem; }
       .landing-footer-column p { font-size: 0.9rem; }
       .landing-footer-column a { font-size: 0.9rem; margin-bottom: 0.65rem; }
@@ -1538,6 +2157,8 @@ export default function Landing() {
       .trust-stat-card { display: flex; align-items: center; gap: 1rem; text-align: left; padding: 1rem 1.25rem; }
       .trust-stat-number { font-size: 1.5rem; margin-bottom: 0; }
       .trust-stat-bg-icon { display: none; }
+
+      .brand-img-card { max-height: 300px !important; max-width: 70% !important; border-radius: 0.75rem !important; }
 
       .landing-cta-section { padding: 2.5rem 1rem; border-radius: 1rem; }
       .cta-btn-pulse { font-size: 0.85rem !important; padding: 0.9rem 1.25rem !important; letter-spacing: 0 !important; }
@@ -1631,17 +2252,16 @@ export default function Landing() {
       </section>
 
       {/* ==================== 2. IDENTIDAD DE MARCA ==================== */}
-      <section className="landing-section landing-section-light landing-section-padding">
-        <div className="brand-block" ref={(el) => (observerRefs.current[0] = el)} data-section="brand">
+      <section className="landing-section landing-section-light landing-section-padding" style={{ position: 'relative', overflow: 'hidden' }}>
+        <PremiumParticles color="gold" density={18} />
+        <div className="brand-block" ref={(el) => (observerRefs.current[0] = el)} data-section="brand" style={{ position: 'relative', zIndex: 1 }}>
           <div className={`landing-section-header ${visibleSections.brand ? 'revealed' : ''}`}>
             <span className="landing-section-subtitle">Nuestra Historia</span>
             <h2>¿Por qué <span style={{ color: '#003DA5' }}>Finance</span> S C<span className="oo-infinity">oo</span>l?</h2>
           </div>
           <div className={`brand-grid ${visibleSections.brand ? 'revealed' : ''}`}>
-            <div className="brand-left">
-              <div className="brand-video-wrapper">
-                <img src="/assets/ppr-hero.png" alt="Plan Personal de Retiro - Ahorra e Invierte a Largo Plazo" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
-              </div>
+            <div className="brand-left" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <img className="brand-img-card" src="https://res.cloudinary.com/dbowaer8j/image/upload/descarga_unbgiy" alt="Plan Personal de Retiro - Ahorra e Invierte a Largo Plazo" />
             </div>
             <div className="brand-right">
               <p className="brand-text" style={{ textAlign: 'justify' }}>
@@ -1668,8 +2288,9 @@ export default function Landing() {
       </section>
 
       {/* ==================== 3. CONEXION EMOCIONAL ==================== */}
-      <section className="landing-section landing-section-gray landing-section-padding">
-        <div style={{ maxWidth: '1200px', margin: '0 auto' }} ref={(el) => (observerRefs.current[1] = el)} data-section="emotion">
+      <section className="landing-section landing-section-gray landing-section-padding" style={{ position: 'relative', overflow: 'hidden' }}>
+        <PremiumParticles color="blue" density={12} />
+        <div style={{ maxWidth: '1200px', margin: '0 auto', position: 'relative', zIndex: 1 }} ref={(el) => (observerRefs.current[1] = el)} data-section="emotion">
           <div className={`landing-section-header ${visibleSections.emotion ? 'revealed' : ''}`}>
             <h2>Si el SAT, el retiro o los números te dan dolor de cabeza... <span style={{ color: '#003DA5' }}>no eres tú.</span></h2>
             <p>Es como te lo habían contado. La mayoría de las personas nunca recibió una guía real para entender:</p>
@@ -1688,7 +2309,7 @@ export default function Landing() {
                 <span className="emotion-badge">retiro</span>
               </div>
             </div>
-            <LazyVideo src="/assets/man-points.mp4" className="brand-video-wrapper" globalMuted={isMuted} />
+            <LazyVideo src="https://res.cloudinary.com/dbowaer8j/video/upload/Man_points_at_202603302047_ifuc9e.mp4" className="brand-video-wrapper" globalMuted={isMuted} />
           </div>
           <div className="emotion-cta-wrapper">
             <p className="emotion-cta">Menos confusión. Más claridad. Más control sobre tu futuro.</p>
@@ -1771,15 +2392,16 @@ export default function Landing() {
       </section>
 
       {/* ==================== 6. CONCEPTO VIRAL ==================== */}
-      <section className="landing-section landing-section-blue landing-section-padding" data-section="viral" ref={(el) => (sectionRefs.current.viral = el)}>
-        <div style={{ maxWidth: '1100px', margin: '0 auto' }}>
+      <section className="landing-section landing-section-blue landing-section-padding" data-section="viral" ref={(el) => (sectionRefs.current.viral = el)} style={{ position: 'relative', overflow: 'hidden' }}>
+        <PremiumParticles color="gold" density={14} />
+        <div style={{ maxWidth: '1100px', margin: '0 auto', position: 'relative', zIndex: 1 }}>
           <div className={`landing-section-header ${visibleSections.viral ? 'revealed' : ''}`} style={{ marginBottom: '1.5rem' }}>
             <span className="landing-section-subtitle" style={{ background: 'rgba(212,175,55,0.15)', color: '#D4AF37' }}>SAT vs Tu Estrategia</span>
             <h2 style={{ color: 'white' }}>Sí, el SAT puede sentirse como el villano... <span style={{ color: '#D4AF37' }}>pero no tienes que jugar sin estrategia</span></h2>
           </div>
           <div className="sat-grid">
             <div className="sat-video-col">
-              <LazyVideo src="/assets/hero-shield.mp4" className="sat-video-wrapper" globalMuted={isMuted} />
+              <LazyVideo src="https://res.cloudinary.com/dbowaer8j/video/upload/Hero_raises_shield_202603302047_cakk6l.mp4" className="sat-video-wrapper" globalMuted={isMuted} />
             </div>
             <div className="sat-text-col">
               <p style={{ color: 'rgba(255,255,255,0.95)', fontSize: '1.1rem', lineHeight: '1.8', marginBottom: '1.25rem' }}>
@@ -1789,130 +2411,231 @@ export default function Landing() {
                 Si ya generas ingresos, si ya pagas impuestos y si además quieres construir algo para ti,
                 vale la pena revisar si estás usando bien las herramientas que existen.
               </p>
-              <div className="sat-badge-row">
+              <div className="sat-cta-group">
+                <button className="landing-btn landing-btn-gold sat-cta-btn" onClick={() => scrollToSection('simulador')}>
+                  Quiero revisar mi caso →
+                </button>
                 <div className="sat-ppr-badge">
-                  <Shield size={18} strokeWidth={2} />
+                  <Shield size={16} strokeWidth={2} />
                   <span>Respaldado por tu PPR</span>
                 </div>
               </div>
-              <button className="landing-btn landing-btn-gold" onClick={() => scrollToSection('simulador')} style={{ marginTop: '1.5rem' }}>
-                Quiero revisar mi caso
-              </button>
             </div>
           </div>
         </div>
       </section>
 
-      {/* ==================== 7. CALCULADORA ISR 2026 ==================== */}
+      {/* ==================== 7. CALCULADORA ISR 2026 — STORYTELLING ==================== */}
       <section id="simulador" className="landing-section landing-section-light landing-section-padding" data-section="simulador" ref={(el) => (sectionRefs.current.simulador = el)}>
         <div style={{ maxWidth: '1100px', margin: '0 auto', width: '100%' }}>
           <div style={{ textAlign: 'center', marginBottom: '0.75rem' }}>
             <span className="landing-section-subtitle" style={{ marginBottom: '0.25rem' }}>Simulador Fiscal 2026</span>
             <h2 style={{ fontSize: 'clamp(1.25rem, 2.5vw, 1.75rem)', color: '#001233', fontFamily: "'Playfair Display', serif", fontWeight: 700, margin: 0 }}>¿Cuánto pagas de impuestos? Ponlo en números.</h2>
           </div>
-          <div className={`tax-calc-container ${visibleSections.simulador ? 'revealed' : ''}`}>
-            <div className="tax-calc-grid">
-              {/* LEFT: Input + Deducciones fijas */}
-              <div className="tax-calc-inputs">
-                <div className="tax-input-group">
-                  <label>Ingreso Anual Bruto</label>
-                  <input
-                    type="number" placeholder="Ej: 1,200,000"
-                    value={taxCalc.ingresoAnual || ''}
-                    onChange={(e) => setTaxCalc({ ...taxCalc, ingresoAnual: Number(e.target.value) })}
-                  />
-                </div>
-                <div className="tax-input-group">
-                  <label>Otros Ingresos Anuales</label>
-                  <input
-                    type="number" placeholder="Ej: 0"
-                    value={taxCalc.otrosIngresos || ''}
-                    onChange={(e) => setTaxCalc({ ...taxCalc, otrosIngresos: Number(e.target.value) })}
-                  />
-                </div>
+          <div className={`tax-calc-container story-mode ${visibleSections.simulador ? 'revealed' : ''}`}>
+            <PremiumParticles color="gold" density={6} />
 
-                {/* Deducciones personales - INFO FIJA */}
-                <div style={{ background: '#F7F8FC', borderRadius: '0.75rem', padding: '0.75rem 1rem', marginTop: '0.15rem', border: '1px solid rgba(0,61,165,0.08)' }}>
-                  <h4 style={{ color: '#003DA5', fontSize: '0.8rem', marginBottom: '0.3rem', fontWeight: 700 }}>Deducciones personales autorizadas</h4>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
-                    {[
-                      { name: 'Honorarios médicos y dentales', limit: 'Hasta 15% ingreso' },
-                      { name: 'Gastos funerarios', limit: 'Hasta $42,795' },
-                      { name: 'Donativos', limit: 'Hasta 7% ingreso' },
-                      { name: 'Intereses créditos hipotecarios', limit: 'Hasta 750k UDIs' },
-                      { name: 'Seguro de GMM', limit: 'Sin tope' },
-                      { name: 'Transporte escolar', limit: 'Sin tope' },
-                    ].map((d, i) => (
-                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.2rem 0', borderBottom: i < 5 ? '1px solid rgba(0,61,165,0.06)' : 'none' }}>
-                        <span style={{ fontSize: '0.75rem', color: '#2D3436', fontWeight: 500 }}>{d.name}</span>
-                        <span style={{ fontSize: '0.7rem', color: '#003DA5', fontWeight: 600, whiteSpace: 'nowrap', marginLeft: '0.5rem' }}>{d.limit}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{ marginTop: '0.3rem', background: 'linear-gradient(135deg, rgba(0,61,165,0.06), rgba(0,61,165,0.02))', borderRadius: '0.4rem', padding: '0.4rem 0.6rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '0.75rem', color: '#003DA5', fontWeight: 700 }}>Tope máximo deducible</span>
-                    <span style={{ fontSize: '0.9rem', color: '#003DA5', fontWeight: 700 }}>{formatMXN(taxResults.maxDeduciblePersonal)}</span>
-                  </div>
-                </div>
-
-                {/* PPR - APARTE de deducciones personales - INFO FIJA */}
-                <div style={{ background: 'linear-gradient(135deg, rgba(201,168,76,0.08), rgba(201,168,76,0.02))', borderRadius: '0.75rem', padding: '0.75rem 1rem', border: '1px solid rgba(201,168,76,0.2)' }}>
-                  <h4 style={{ color: '#003DA5', fontSize: '0.8rem', margin: '0 0 0.2rem', fontWeight: 700 }}>Plan Personal de Retiro (PPR)</h4>
-                  <p style={{ fontSize: '0.7rem', color: '#4B5563', margin: '0 0 0.15rem', lineHeight: 1.4 }}>Una deducción adicional e independiente a las personales. Tú decides cuánto aportar cada año.</p>
-                  <p style={{ fontSize: '0.65rem', color: '#9CA3AF', margin: 0, lineHeight: 1.4 }}>Incluye aportaciones a PPR y primas de seguros de retiro (Art. 185 LISR).</p>
-                </div>
+            {/* ===== PASO 1 — Ingreso ===== */}
+            <div className="story-step story-step-visible">
+              <div className="story-step-header">
+                <span className="story-step-number">1</span>
+                <h3 className="story-step-title">¿Tienes ingresos por salario?</h3>
               </div>
+              <p className="story-step-desc">Coloca aquí tu ingreso anual bruto para descubrir cuánto le entregas al SAT cada año.</p>
+              <div className="story-input-wrapper">
+                <label className="story-input-label">Ingreso Anual Bruto</label>
+                <input
+                  type="number"
+                  className="story-input-big"
+                  placeholder="Ej: 1,200,000"
+                  value={taxCalc.ingresoAnual || ''}
+                  onChange={(e) => {
+                    setTaxCalc({ ...taxCalc, ingresoAnual: Number(e.target.value) });
+                    if (storyStep > 1) setStoryStep(1);
+                  }}
+                />
+                {taxCalc.ingresoAnual > 0 && (
+                  <span className="story-input-preview">= {formatMXN(taxCalc.ingresoAnual)} al año</span>
+                )}
+              </div>
+              <button
+                className="landing-btn landing-btn-primary story-next-btn"
+                disabled={!taxCalc.ingresoAnual || taxCalc.ingresoAnual <= 0}
+                onClick={() => setStoryStep(2)}
+              >
+                Ver mi impuesto →
+              </button>
+            </div>
 
-              {/* RIGHT: Resultados Premium */}
-              <div className="tax-results">
-                <h3>Tu escenario fiscal 2026</h3>
+            {/* ===== PASO 2 — Lo que pagas ===== */}
+            {storyStep >= 2 && (
+              <div className="story-step story-step-enter" ref={(el) => (storyStepRefs.current[2] = el)}>
+                <div className="story-step-divider" />
+                <div className="story-step-header">
+                  <span className="story-step-number">2</span>
+                  <h3 className="story-step-title">Esto es lo que le pagas al SAT...</h3>
+                </div>
+                <div className="story-isr-reveal" style={{ position: 'relative', overflow: 'hidden' }}>
+                  <PremiumParticles color="blue" density={14} />
+                  <div className="story-isr-amount" style={{ position: 'relative', zIndex: 1 }}>{formatMXN(animatedISR)}</div>
+                  <div className="story-isr-label" style={{ position: 'relative', zIndex: 1 }}>al año en ISR</div>
+                </div>
+                <p className="story-step-desc" style={{ marginTop: '0.75rem' }}>
+                  Es lo que tu empresa retiene de tu nómina y le entrega al SAT cada año. Pero ojo: <strong style={{ color: '#003DA5' }}>una parte de ese dinero puede regresar a tu cartera.</strong>
+                </p>
+                <button
+                  className="landing-btn landing-btn-primary story-next-btn"
+                  onClick={() => setStoryStep(3)}
+                >
+                  ¿Y qué puedo hacer? →
+                </button>
+              </div>
+            )}
 
-                {/* Top stats */}
-                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.6rem' }}>
-                  <div className="tax-stat-card" style={{ flex: 1 }}>
-                    <div className="stat-label" style={{ color: '#E05252' }}>Pagas de impuestos</div>
-                    <div className="stat-value" style={{ color: '#E05252' }}>{formatMXN(taxResults.isrSinDed)}</div>
-                    <div className="stat-sub">sin deducciones</div>
-                  </div>
-                  <div className="tax-stat-card" style={{ flex: 1 }}>
-                    <div className="stat-label" style={{ color: '#E8A030' }}>Pierdes en deducciones</div>
-                    <div className="stat-value" style={{ color: '#E8A030' }}>{formatMXN(taxResults.deduciblesNoUsados)}</div>
-                    <div className="stat-sub">en ahorro fiscal</div>
+            {/* ===== PASO 3 — Deducciones personales ===== */}
+            {storyStep >= 3 && (
+              <div className="story-step story-step-enter" ref={(el) => (storyStepRefs.current[3] = el)}>
+                <div className="story-step-divider" />
+                <div className="story-step-header">
+                  <span className="story-step-number">3</span>
+                  <h3 className="story-step-title">La ley te permite recuperar parte de ese dinero…</h3>
+                </div>
+                <p className="story-step-desc">Estas son las <strong>deducciones personales autorizadas</strong> que puedes aplicar:</p>
+
+                <div className="story-deductions-list">
+                  {[
+                    { name: 'Honorarios médicos y dentales', limit: 'Hasta 15% ingreso', icon: '🏥' },
+                    { name: 'Gastos funerarios', limit: 'Hasta $42,795', icon: '⚱️' },
+                    { name: 'Donativos', limit: 'Hasta 7% ingreso', icon: '🤝' },
+                    { name: 'Intereses créditos hipotecarios', limit: 'Hasta 750k UDIs', icon: '🏠' },
+                    { name: 'Seguro de GMM', limit: 'Sin tope específico', icon: '🛡️' },
+                    { name: 'Transporte escolar', limit: 'Sin tope específico', icon: '🚌' },
+                  ].map((d, i) => (
+                    <div key={i} className="story-deduction-row">
+                      <span className="story-deduction-icon">{d.icon}</span>
+                      <span className="story-deduction-name">{d.name}</span>
+                      <span className="story-deduction-limit">{d.limit}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Alerta OJO */}
+                <div className="story-alert-ojo">
+                  <div className="story-alert-ojo-icon">⚠️</div>
+                  <div>
+                    <strong>Pero OJO</strong> — cada deducción tiene topes y montos máximos establecidos por ley que no siempre son tan favorecedores como parecen. El tope global para tu ingreso es:
+                    <div className="story-alert-tope">{formatMXN(taxResults.maxDeduciblePersonal)}</div>
                   </div>
                 </div>
 
-                {/* Hero result */}
-                <div className="tax-hero-card" style={{ marginBottom: '0.6rem' }}>
-                  <div style={{ fontSize: '0.6rem', color: '#34D399', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '0.15rem' }}>Con estrategia fiscal pagarías</div>
-                  <div style={{ fontSize: '2rem', fontWeight: 800, color: '#34D399', fontFamily: "'Montserrat', sans-serif", lineHeight: 1.1 }}>{formatMXN(taxResults.isrConDedConRetiro)}</div>
-                  <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)', marginTop: '0.2rem' }}>
-                    Ahorras <span style={{ color: '#34D399', fontWeight: 700, fontFamily: "'Montserrat', sans-serif" }}>{formatMXN(taxResults.devolucion)}</span> al año
-                  </div>
+                <button
+                  className="landing-btn landing-btn-primary story-next-btn"
+                  onClick={() => setStoryStep(4)}
+                >
+                  Hay más opciones →
+                </button>
+              </div>
+            )}
+
+            {/* ===== PASO 4 — Planes de retiro ===== */}
+            {storyStep >= 4 && (
+              <div className="story-step story-step-enter" ref={(el) => (storyStepRefs.current[4] = el)} style={{ position: 'relative', overflow: 'hidden' }}>
+                <PremiumParticles color="blue" density={10} />
+                <div className="story-step-divider" style={{ position: 'relative', zIndex: 1 }} />
+                <div className="story-step-header" style={{ position: 'relative', zIndex: 1 }}>
+                  <span className="story-step-number">4</span>
+                  <h3 className="story-step-title">Y además… la ley te permite hacer crecer ese retorno con Planes de Retiro</h3>
+                </div>
+                <p className="story-step-desc" style={{ position: 'relative', zIndex: 1 }}>
+                  Los Planes Personales de Retiro (PPR) son una deducción <strong>adicional e independiente</strong> a las personales. Están regulados bajo el Art. 151 y 185 de la LISR.
+                </p>
+
+                <div className="story-ppr-input" style={{ position: 'relative', zIndex: 1 }}>
+                  <label className="story-input-label">¿Cuánto aportarías a tu PPR al año?</label>
+                  <input
+                    type="number"
+                    className="story-input-big"
+                    placeholder="Ej: 100,000"
+                    value={taxCalc.ppr || ''}
+                    onChange={(e) => setTaxCalc({ ...taxCalc, ppr: Number(e.target.value) })}
+                  />
+                  <span className="story-ppr-cap">Tope deducible PPR para tu ingreso: {formatMXN(taxResults.capPPR)}</span>
                 </div>
 
-                {/* Detail rows */}
-                <div style={{ marginBottom: '0.5rem' }}>
-                  <div className="tax-result-row">
-                    <span className="tax-result-label">Ingreso real (después de ISR)</span>
-                    <span className="tax-result-value">{formatMXN(taxResults.ingresoReal)}</span>
+                <div className="story-comparison" style={{ position: 'relative', zIndex: 1 }}>
+                  <div className="story-comparison-item story-comp-orange">
+                    <div className="story-comp-label">ISR sin plan de retiro</div>
+                    <div className="story-comp-value">{formatMXN(taxResults.isrConDedSinRetiro)}</div>
                   </div>
-                  <div className="tax-result-row">
-                    <span className="tax-result-label">Promedio mensual</span>
-                    <span className="tax-result-value">{formatMXN(taxResults.mensual)}</span>
-                  </div>
-                  <div className="tax-result-row">
-                    <span className="tax-result-label">Tasa marginal</span>
-                    <span className="tax-result-value">{taxResults.pctRecup.toFixed(0)}%</span>
+                  <div className="story-comparison-arrow">→</div>
+                  <div className="story-comparison-item story-comp-green">
+                    <div className="story-comp-label">ISR con PPR</div>
+                    <div className="story-comp-value">{formatMXN(taxResults.isrConDedConRetiro)}</div>
                   </div>
                 </div>
+                <div style={{ textAlign: 'center', position: 'relative', zIndex: 1 }}>
+                  <p className="story-comp-savings">
+                    Ahorro adicional por PPR: <strong style={{ color: '#34D399' }}>{formatMXN(taxResults.devolucion - taxResults.devolucionSinRetiro)}</strong>
+                  </p>
+                </div>
 
-                <div style={{ textAlign: 'center' }}>
-                  <button className="landing-btn landing-btn-gold" onClick={() => scrollToSection('contacto')} style={{ fontSize: '0.8rem', padding: '0.65rem 1.5rem' }}>
-                    Quiero mi estrategia fiscal personalizada
+                <button
+                  className="landing-btn landing-btn-gold story-next-btn"
+                  onClick={() => setStoryStep(5)}
+                  style={{ position: 'relative', zIndex: 1 }}
+                >
+                  Quiero saber exactamente cuánto puedo recuperar →
+                </button>
+              </div>
+            )}
+
+            {/* ===== PASO 5 — CTA Final ===== */}
+            {storyStep >= 5 && (
+              <div className="story-step story-step-enter" ref={(el) => (storyStepRefs.current[5] = el)}>
+                <div className="story-step-divider" />
+                <div className="story-step-header">
+                  <span className="story-step-number story-step-number-gold">5</span>
+                  <h3 className="story-step-title">Agenda tu consultoría</h3>
+                </div>
+
+                <div className="story-final-box" style={{ position: 'relative', overflow: 'hidden' }}>
+                  <PremiumParticles color="gold" density={14} />
+                  <p className="story-final-text">
+                    Obtendrás un cálculo personalizado de tu esquema de deducciones y cómo puedes incrementar ese retorno de dinero… <strong>recuerda que ese dinero es tuyo y puede regresar a tus manos.</strong>
+                  </p>
+
+                  <div className="story-final-summary">
+                    <div className="story-final-stat">
+                      <div className="story-final-stat-label">Sin estrategia pagas</div>
+                      <div className="story-final-stat-value" style={{ color: '#E05252' }}>{formatMXN(taxResults.isrSinDed)}</div>
+                    </div>
+                    <div className="story-final-stat">
+                      <div className="story-final-stat-label">Con estrategia pagarías</div>
+                      <div className="story-final-stat-value" style={{ color: '#34D399' }}>{formatMXN(taxResults.isrConDedConRetiro)}</div>
+                    </div>
+                    <div className="story-final-stat story-final-stat-highlight">
+                      <div className="story-final-stat-label">Devolución estimada</div>
+                      <div className="story-final-stat-value" style={{ color: '#D4AF37' }}>{formatMXN(taxResults.devolucion)}</div>
+                    </div>
+                  </div>
+
+                  <button
+                    className="landing-btn landing-btn-gold"
+                    onClick={() => scrollToSection('contacto')}
+                    style={{ fontSize: '1rem', padding: '0.85rem 2.5rem', width: '100%', maxWidth: '400px' }}
+                  >
+                    Agendar mi consultoría
+                  </button>
+                  <button
+                    className="story-recalc-btn"
+                    onClick={() => { setStoryStep(1); setTaxCalc({ ...taxCalc, ingresoAnual: 0, ppr: 100000 }); }}
+                  >
+                    ↺ Recalcular con otro ingreso
                   </button>
                 </div>
               </div>
-            </div>
+            )}
+
           </div>
         </div>
       </section>
@@ -2121,8 +2844,9 @@ export default function Landing() {
       </section>
 
       {/* ==================== 12. CIERRE FINAL ==================== */}
-      <section className="landing-section landing-section-light landing-section-padding">
-        <div className="landing-cta-section">
+      <section className="landing-section landing-section-light landing-section-padding" style={{ position: 'relative', overflow: 'hidden' }}>
+        <div className="landing-cta-section" style={{ position: 'relative', overflow: 'hidden' }}>
+          <PremiumParticles color="blue" density={10} />
           {/* Floating particles */}
           <div className="cta-particles">
             {[...Array(12)].map((_, i) => (
