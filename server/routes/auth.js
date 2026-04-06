@@ -11,7 +11,8 @@ router.post('/login', async (req, res) => {
     if (!user || !bcrypt.compareSync(password, user.password))
       return res.status(401).json({ error: 'Credenciales incorrectas' });
     const token = generateToken(user);
-    res.cookie('token', token, { httpOnly: true, secure: process.env.NODE_ENV==='production', maxAge: 86400000, sameSite: 'lax' });
+    const isProd = process.env.NODE_ENV === 'production';
+    res.cookie('token', token, { httpOnly: true, secure: isProd, maxAge: 86400000, sameSite: isProd ? 'none' : 'lax' });
     res.json({ success: true, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
   } catch (err) {
     console.error('Login error:', err);
@@ -20,7 +21,8 @@ router.post('/login', async (req, res) => {
 });
 
 router.post('/logout', (req, res) => {
-  res.clearCookie('token');
+  const isProd = process.env.NODE_ENV === 'production';
+  res.clearCookie('token', { httpOnly: true, secure: isProd, sameSite: isProd ? 'none' : 'lax' });
   res.json({ success: true });
 });
 
