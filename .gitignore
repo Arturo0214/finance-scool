@@ -5,6 +5,23 @@ server/data/*.db
 .env
 *.log
 .DS_Store
+*.zip
 
 # Local Netlify folder
 .netlify
+
+# Docs/migration artifacts — keep out of repo
+CHANGES.md
+DEPLOY.md
+INSTRUCCIONES-ANTIGRAVITY.md
+MIGRATION_COMPLETE.md
+MIGRATION_SUMMARY.txt
+QUICK_START.md
+README_MIGRATION.md
+SETUP.md
+SETUP_GUIDE.txt
+SUPABASE_MIGRATION.md
+VERIFICATION.md
+CLAUDE.md
+push-to-github.sh
+scripts/
