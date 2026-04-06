@@ -556,7 +556,8 @@ export default function Landing() {
     e.preventDefault();
     setFormStatus('loading');
     try {
-      const response = await fetch('/api/leads', {
+      const API_URL = import.meta.env.VITE_API_URL || '/api';
+      const response = await fetch(`${API_URL}/leads`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
