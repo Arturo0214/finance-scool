@@ -296,6 +296,7 @@ export default function Landing() {
     declaracion: '', retiroPlan: ''
   });
   const [formStatus, setFormStatus] = useState('');
+  const [formErrors, setFormErrors] = useState({});
   const [openFaqIndex, setOpenFaqIndex] = useState(null);
   const [heroSlide, setHeroSlide] = useState(0);
   const [visibleSections, setVisibleSections] = useState({});
@@ -552,20 +553,47 @@ export default function Landing() {
     setIsMobileMenuOpen(false);
   };
 
+  const sanitize = (str) => str.replace(/[<>"'&]/g, '').trim();
+  const validateForm = () => {
+    const errors = {};
+    const name = formData.name.trim();
+    if (!name || name.length < 2 || name.length > 100) errors.name = 'Ingresa tu nombre completo';
+    if (!/^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s.'-]+$/.test(name)) errors.name = 'El nombre contiene caracteres no válidos';
+    const phone = formData.phone.replace(/[\s\-().+]/g, '');
+    if (!/^\d{10,15}$/.test(phone)) errors.phone = 'Ingresa un teléfono válido (10 dígitos mínimo)';
+    const email = formData.email.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) errors.email = 'Ingresa un correo electrónico válido';
+    if (!formData.incomeType) errors.incomeType = 'Selecciona tu tipo de ingreso';
+    if (!formData.approxIncome) errors.approxIncome = 'Selecciona tu ingreso aproximado';
+    return errors;
+  };
+
   const handleFormSubmit = async (e) => {
     e.preventDefault();
+    const errors = validateForm();
+    setFormErrors(errors);
+    if (Object.keys(errors).length > 0) return;
     setFormStatus('loading');
     try {
+      const cleanData = {
+        name: sanitize(formData.name),
+        phone: formData.phone.replace(/[^\d+\-() ]/g, ''),
+        email: formData.email.trim().toLowerCase(),
+        incomeType: formData.incomeType,
+        approxIncome: formData.approxIncome,
+        declaracion: formData.declaracion,
+        retiroPlan: formData.retiroPlan,
+      };
       const API_URL = import.meta.env.VITE_API_URL || '/api';
       const response = await fetch(`${API_URL}/leads`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(cleanData),
       });
       if (response.ok) {
         setFormStatus('success');
-        const savedName = formData.name;
-        const savedEmail = formData.email;
+        const savedName = cleanData.name;
+        const savedEmail = cleanData.email;
         setFormData({ name: '', phone: '', email: '', incomeType: '', approxIncome: '', declaracion: '', retiroPlan: '' });
         setTimeout(() => setFormStatus(''), 3000);
         if (window.Calendly) {
@@ -1762,6 +1790,7 @@ export default function Landing() {
     .landing-form-submit:disabled { opacity: 0.6; cursor: not-allowed; }
     .landing-form-success-message { background: #D1FAE5; border: 1.5px solid #10B981; color: #047857; padding: 1.25rem; border-radius: 0.75rem; margin-bottom: 1.5rem; text-align: center; font-weight: 500; }
     .landing-form-error-message { background: #FEE2E2; border: 1.5px solid #EF4444; color: #DC2626; padding: 1.25rem; border-radius: 0.75rem; margin-bottom: 1.5rem; text-align: center; font-weight: 500; }
+    .landing-form-field-error { display: block; color: #DC2626; font-size: 0.8rem; margin-top: 0.25rem; font-weight: 500; }
 
     /* ==================== Closing / CTA ==================== */
     .landing-cta-section {
@@ -2790,38 +2819,43 @@ export default function Landing() {
           <form onSubmit={handleFormSubmit}>
             <div className="landing-form-group">
               <label>Nombre</label>
-              <input type="text" placeholder="Tu nombre completo" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required />
+              <input type="text" placeholder="Tu nombre completo" maxLength={100} value={formData.name} onChange={(e) => { setFormData({ ...formData, name: e.target.value }); setFormErrors({ ...formErrors, name: '' }); }} required />
+              {formErrors.name && <span className="landing-form-field-error">{formErrors.name}</span>}
             </div>
             <div className="landing-form-row">
               <div className="landing-form-group">
                 <label>Teléfono</label>
-                <input type="tel" placeholder="+52 55 1234 5678" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} required />
+                <input type="tel" placeholder="+52 55 1234 5678" maxLength={20} value={formData.phone} onChange={(e) => { setFormData({ ...formData, phone: e.target.value.replace(/[^\d+\-() ]/g, '') }); setFormErrors({ ...formErrors, phone: '' }); }} required />
+                {formErrors.phone && <span className="landing-form-field-error">{formErrors.phone}</span>}
               </div>
               <div className="landing-form-group">
                 <label>Correo</label>
-                <input type="email" placeholder="tu@email.com" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} required />
+                <input type="email" placeholder="tu@email.com" maxLength={100} value={formData.email} onChange={(e) => { setFormData({ ...formData, email: e.target.value }); setFormErrors({ ...formErrors, email: '' }); }} required />
+                {formErrors.email && <span className="landing-form-field-error">{formErrors.email}</span>}
               </div>
             </div>
             <div className="landing-form-row">
               <div className="landing-form-group">
                 <label>Tipo de ingreso</label>
-                <select value={formData.incomeType} onChange={(e) => setFormData({ ...formData, incomeType: e.target.value })} required>
+                <select value={formData.incomeType} onChange={(e) => { setFormData({ ...formData, incomeType: e.target.value }); setFormErrors({ ...formErrors, incomeType: '' }); }} required>
                   <option value="">Selecciona...</option>
                   <option value="empleado">Empleado</option>
                   <option value="freelancer">Freelancer / Independiente</option>
                   <option value="empresario">Empresario</option>
                   <option value="mixto">Mixto</option>
                 </select>
+                {formErrors.incomeType && <span className="landing-form-field-error">{formErrors.incomeType}</span>}
               </div>
               <div className="landing-form-group">
                 <label>Ingreso aproximado mensual</label>
-                <select value={formData.approxIncome} onChange={(e) => setFormData({ ...formData, approxIncome: e.target.value })} required>
+                <select value={formData.approxIncome} onChange={(e) => { setFormData({ ...formData, approxIncome: e.target.value }); setFormErrors({ ...formErrors, approxIncome: '' }); }} required>
                   <option value="">Selecciona...</option>
                   <option value="20k-50k">$20,000 - $50,000</option>
                   <option value="50k-100k">$50,000 - $100,000</option>
                   <option value="100k-200k">$100,000 - $200,000</option>
                   <option value="200k+">$200,000+</option>
                 </select>
+                {formErrors.approxIncome && <span className="landing-form-field-error">{formErrors.approxIncome}</span>}
               </div>
             </div>
             <div className="landing-form-row">

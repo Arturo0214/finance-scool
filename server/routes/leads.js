@@ -7,8 +7,24 @@ router.post('/', async (req, res) => {
   try {
     const { name, email, phone, service, message } = req.body;
     if (!name || !phone) return res.status(400).json({ error: 'Nombre y teléfono requeridos' });
+    const cleanName = String(name).replace(/[<>"'&]/g, '').trim().slice(0, 100);
+    const cleanPhone = String(phone).replace(/[^\d+\-() ]/g, '').slice(0, 20);
+    const cleanEmail = email ? String(email).trim().toLowerCase().slice(0, 100) : null;
+    const cleanMessage = message ? String(message).replace(/[<>"'&]/g, '').trim().slice(0, 500) : '';
+    if (cleanName.length < 2 || !/^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s.'\-]+$/.test(cleanName)) {
+      return res.status(400).json({ error: 'Nombre no válido' });
+    }
+    const phoneDigits = cleanPhone.replace(/\D/g, '');
+    if (phoneDigits.length < 10 || phoneDigits.length > 15) {
+      return res.status(400).json({ error: 'Teléfono no válido' });
+    }
+    if (cleanEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(cleanEmail)) {
+      return res.status(400).json({ error: 'Correo no válido' });
+    }
+    const allowedServices = ['PPR', 'consulta', 'fiscal', 'retiro'];
+    const cleanService = allowedServices.includes(service) ? service : 'PPR';
     const r = await runQuery('INSERT INTO leads (name,email,phone,service,message,source) VALUES (?,?,?,?,?,?)',
-      [name, email||null, phone, service||'PPR', message||'', 'landing']);
+      [cleanName, cleanEmail, cleanPhone, cleanService, cleanMessage, 'landing']);
     res.json({ success: true, id: r.lastInsertRowid });
   } catch (err) {
     console.error('Create lead error:', err);
@@ -24,9 +40,10 @@ router.get('/', verifyToken, async (req, res) => {
     const p = [];
     if (status && status !== 'todos') { q += ' AND status=?'; cq += ' AND status=?'; p.push(status); }
     if (search) {
+      const cleanSearch = String(search).replace(/[%_]/g, '').slice(0, 50);
       q += ' AND (name LIKE ? OR email LIKE ? OR phone LIKE ?)';
       cq += ' AND (name LIKE ? OR email LIKE ? OR phone LIKE ?)';
-      p.push(`%${search}%`,`%${search}%`,`%${search}%`);
+      p.push(`%${cleanSearch}%`,`%${cleanSearch}%`,`%${cleanSearch}%`);
     }
     const countResult = await queryOne(cq, p);
     const total = countResult?.c || 0;
