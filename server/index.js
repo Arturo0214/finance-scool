@@ -11,6 +11,7 @@ const { initDB } = require('./models/database');
 const authRoutes = require('./routes/auth');
 const leadRoutes = require('./routes/leads');
 const apiRoutes = require('./routes/api');
+const whatsappRoutes = require('./routes/whatsapp');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -24,6 +25,8 @@ const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:5174',
   'https://finance-scool-104.netlify.app',
+  'https://financescool.com.mx',
+  'https://www.financescool.com.mx',
   process.env.CLIENT_URL
 ].filter(Boolean);
 
@@ -52,6 +55,7 @@ app.get('/api/health', (req, res) => {
 // API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/leads', leadRoutes);
+app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api', apiRoutes);
 
 // Serve React build in production

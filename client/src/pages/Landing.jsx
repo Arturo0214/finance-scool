@@ -564,8 +564,16 @@ export default function Landing() {
       });
       if (response.ok) {
         setFormStatus('success');
+        const savedName = formData.name;
+        const savedEmail = formData.email;
         setFormData({ name: '', phone: '', email: '', incomeType: '', approxIncome: '', declaracion: '', retiroPlan: '' });
         setTimeout(() => setFormStatus(''), 3000);
+        if (window.Calendly) {
+          window.Calendly.initPopupWidget({
+            url: 'https://calendly.com/ingrid-escobar-grupointegraccion/new-meeting',
+            prefill: { name: savedName, email: savedEmail },
+          });
+        }
       } else { setFormStatus('error'); }
     } catch { setFormStatus('error'); }
   };
