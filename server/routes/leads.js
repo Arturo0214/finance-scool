@@ -5,7 +5,7 @@ const router = express.Router();
 
 router.post('/', async (req, res) => {
   try {
-    const { name, email, phone, service, message } = req.body;
+    const { name, email, phone, service, message, incomeType, approxIncome, declaracion, retiroPlan } = req.body;
     if (!name || !phone) return res.status(400).json({ error: 'Nombre y teléfono requeridos' });
     const cleanName = String(name).replace(/[<>"'&]/g, '').trim().slice(0, 100);
     const cleanPhone = String(phone).replace(/[^\d+\-() ]/g, '').slice(0, 20);
@@ -23,8 +23,18 @@ router.post('/', async (req, res) => {
     }
     const allowedServices = ['PPR', 'consulta', 'fiscal', 'retiro'];
     const cleanService = allowedServices.includes(service) ? service : 'PPR';
-    const r = await runQuery('INSERT INTO leads (name,email,phone,service,message,source) VALUES (?,?,?,?,?,?)',
-      [cleanName, cleanEmail, cleanPhone, cleanService, cleanMessage, 'landing']);
+    const allowedIncomeTypes = ['empleado', 'freelancer', 'empresario', 'mixto'];
+    const allowedIncomeRanges = ['20k-50k', '50k-100k', '100k-200k', '200k+'];
+    const allowedDeclaracion = ['si', 'no', 'no_se'];
+    const allowedRetiro = ['si_ppr', 'si_otro', 'no', 'no_se'];
+    const cleanIncomeType = allowedIncomeTypes.includes(incomeType) ? incomeType : null;
+    const cleanApproxIncome = allowedIncomeRanges.includes(approxIncome) ? approxIncome : null;
+    const cleanDeclaracion = allowedDeclaracion.includes(declaracion) ? declaracion : null;
+    const cleanRetiroPlan = allowedRetiro.includes(retiroPlan) ? retiroPlan : null;
+    const r = await runQuery(
+      'INSERT INTO leads (name,email,phone,service,message,source,income_type,approx_income,declaracion,retiro_plan) VALUES (?,?,?,?,?,?,?,?,?,?)',
+      [cleanName, cleanEmail, cleanPhone, cleanService, cleanMessage, 'cta_landing', cleanIncomeType, cleanApproxIncome, cleanDeclaracion, cleanRetiroPlan]
+    );
     res.json({ success: true, id: r.lastInsertRowid });
   } catch (err) {
     console.error('Create lead error:', err);
