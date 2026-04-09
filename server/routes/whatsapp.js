@@ -294,48 +294,64 @@ router.get('/leads/:waId', async (req, res) => {
 router.get('/leads/:waId/window-status', async (req, res) => {
   try {
     const db = getDB();
-    const { data: lead } = await db.from('whatsapp_leads').select('last_message_at').eq('wa_id', req.params.waId).maybeSingle();
-    if (!lead) return res.status(404).json({ error: 'Lead no encontrado' });
-    res.json({ windowOpen: isWindowOpen(lead.last_message_at), lastMessageAt: lead.last_message_at });
+    const waId = req.params.waId;
+    const { data: lead } = await db.from('whatsapp_leads').select('last_message_at').eq('wa_id', waId).maybeSingle();
+    if (lead) return res.json({ windowOpen: isWindowOpen(lead.last_message_at), lastMessageAt: lead.last_message_at });
+    // Fallback: fsc_conversations - always assume window open (messages come from n8n webhook)
+    const { data: fsc } = await db.from('fsc_conversations').select('updated_at').eq('whatsapp_number', waId).maybeSingle();
+    if (fsc) return res.json({ windowOpen: isWindowOpen(fsc.updated_at), lastMessageAt: fsc.updated_at });
+    res.status(404).json({ error: 'Lead no encontrado' });
   } catch (err) {
     res.status(500).json({ error: 'Error' });
   }
 });
 
-// ─── POST /send ───
+// ─── POST /send (supports whatsapp_leads + fsc_conversations) ───
 router.post('/send', async (req, res) => {
   try {
     const db = getDB();
     const { wa_id, message } = req.body;
     if (!wa_id || !message) return res.status(400).json({ error: 'wa_id y message requeridos' });
-
-    const { data: lead } = await db.from('whatsapp_leads').select('*').eq('wa_id', wa_id).maybeSingle();
-    if (!lead) return res.status(404).json({ error: 'Lead no encontrado' });
-
-    const historial = JSON.parse(lead.historial_chat || '[]');
-    const windowOpen = isWindowOpen(lead.last_message_at);
     const now = new Date().toISOString();
 
-    if (windowOpen) {
-      const result = await sendWhatsApp(wa_id, 'text', { text: { body: message } });
-      const newMsg = { role: 'admin', body: message, type: 'text', timestamp: now, status: 'sent', wa_msg_id: result.messages?.[0]?.id, sender: req.user.name };
-      historial.push(newMsg);
-
-      const updates = { historial_chat: JSON.stringify(historial) };
-      if (!lead.assigned_to) updates.assigned_to = req.user.name;
-      await db.from('whatsapp_leads').update(updates).eq('wa_id', wa_id);
-
-      res.json({ success: true, sent: true, message: newMsg });
-    } else {
-      const newMsg = { role: 'admin', body: message, type: 'text', timestamp: now, status: 'pending', sender: req.user.name };
-      historial.push(newMsg);
-
-      const updates = { historial_chat: JSON.stringify(historial), mensaje_pendiente: message };
-      if (!lead.assigned_to) updates.assigned_to = req.user.name;
-      await db.from('whatsapp_leads').update(updates).eq('wa_id', wa_id);
-
-      res.json({ success: true, sent: false, queued: true, message: newMsg, note: 'Ventana de 24h expirada. Envía una plantilla para reabrir la conversación.' });
+    // Try whatsapp_leads first
+    const { data: lead } = await db.from('whatsapp_leads').select('*').eq('wa_id', wa_id).maybeSingle();
+    if (lead) {
+      const historial = JSON.parse(lead.historial_chat || '[]');
+      const windowOpen = isWindowOpen(lead.last_message_at);
+      if (windowOpen) {
+        const result = await sendWhatsApp(wa_id, 'text', { text: { body: message } });
+        const newMsg = { role: 'admin', body: message, type: 'text', timestamp: now, status: 'sent', wa_msg_id: result.messages?.[0]?.id, sender: req.user.name };
+        historial.push(newMsg);
+        const updates = { historial_chat: JSON.stringify(historial) };
+        if (!lead.assigned_to) updates.assigned_to = req.user.name;
+        await db.from('whatsapp_leads').update(updates).eq('wa_id', wa_id);
+        return res.json({ success: true, sent: true, message: newMsg });
+      } else {
+        const newMsg = { role: 'admin', body: message, type: 'text', timestamp: now, status: 'pending', sender: req.user.name };
+        historial.push(newMsg);
+        const updates = { historial_chat: JSON.stringify(historial), mensaje_pendiente: message };
+        if (!lead.assigned_to) updates.assigned_to = req.user.name;
+        await db.from('whatsapp_leads').update(updates).eq('wa_id', wa_id);
+        return res.json({ success: true, sent: false, queued: true, message: newMsg, note: 'Ventana de 24h expirada.' });
+      }
     }
+
+    // Fallback: fsc_conversations lead - send via WA API and save to conversation_history
+    const { data: fsc } = await db.from('fsc_conversations').select('*').eq('whatsapp_number', wa_id).maybeSingle();
+    if (fsc) {
+      // Send the message via WhatsApp
+      const result = await sendWhatsApp(wa_id, 'text', { text: { body: message } });
+      // Append to conversation_history
+      let history = [];
+      try { history = typeof fsc.conversation_history === 'string' ? JSON.parse(fsc.conversation_history) : (fsc.conversation_history || []); } catch {}
+      history.push({ role: 'assistant', content: `[HUMANO - ${req.user.name}]: ${message}` });
+      await db.from('fsc_conversations').update({ conversation_history: JSON.stringify(history), updated_at: now }).eq('whatsapp_number', wa_id);
+      const newMsg = { role: 'admin', body: message, type: 'text', timestamp: now, status: 'sent', wa_msg_id: result.messages?.[0]?.id, sender: req.user.name };
+      return res.json({ success: true, sent: true, message: newMsg });
+    }
+
+    res.status(404).json({ error: 'Lead no encontrado' });
   } catch (err) {
     console.error('WA send error:', err);
     res.status(500).json({ error: err.message || 'Error al enviar mensaje' });
