@@ -12,6 +12,10 @@ async function request(path, options = {}) {
 }
 
 export const api = {
+  // Generic
+  get: (path) => request(path),
+
+
   // Auth
   login: (email, password) => request('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
   logout: () => request('/auth/logout', { method: 'POST' }),
@@ -44,4 +48,27 @@ export const api = {
 
   // Users
   getUsers: () => request('/users'),
+
+  // Visits / Analytics
+  getVisitStats: () => request('/visits/stats'),
+
+  // Appointments
+  getAppointments: () => request('/appointments'),
+  createAppointment: (data) => request('/appointments', { method: 'POST', body: JSON.stringify(data) }),
+  updateAppointment: (id, data) => request(`/appointments/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+
+  // WhatsApp
+  getWhatsAppLeads: (params = {}) => {
+    const q = new URLSearchParams(params).toString();
+    return request(`/whatsapp/leads?${q}`);
+  },
+  getWhatsAppLead: (waId) => request(`/whatsapp/leads/${waId}`),
+  getWhatsAppWindowStatus: (waId) => request(`/whatsapp/leads/${waId}/window-status`),
+  sendWhatsAppMessage: (wa_id, message) => request('/whatsapp/send', { method: 'POST', body: JSON.stringify({ wa_id, message }) }),
+  sendWhatsAppTemplate: (wa_id, template_name, language) => request('/whatsapp/send-template', { method: 'POST', body: JSON.stringify({ wa_id, template_name, language }) }),
+  updateWhatsAppEstado: (waId, estado) => request(`/whatsapp/leads/${waId}/estado`, { method: 'PATCH', body: JSON.stringify({ estado }) }),
+  toggleWhatsAppModoHumano: (waId) => request(`/whatsapp/leads/${waId}/modo-humano`, { method: 'PATCH' }),
+  claimWhatsAppLead: (waId) => request(`/whatsapp/leads/${waId}/claim`, { method: 'PATCH' }),
+  toggleWhatsAppBlock: (waId) => request(`/whatsapp/leads/${waId}/block`, { method: 'PATCH' }),
+  getWhatsAppStats: () => request('/whatsapp/stats'),
 };

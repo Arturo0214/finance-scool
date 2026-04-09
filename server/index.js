@@ -12,6 +12,7 @@ const authRoutes = require('./routes/auth');
 const leadRoutes = require('./routes/leads');
 const apiRoutes = require('./routes/api');
 const whatsappRoutes = require('./routes/whatsapp');
+const fscRoutes = require('./routes/fsc');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -56,6 +57,7 @@ app.get('/api/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/leads', leadRoutes);
 app.use('/api/whatsapp', whatsappRoutes);
+app.use('/api/fsc', fscRoutes);
 app.use('/api', apiRoutes);
 
 // Serve React build in production

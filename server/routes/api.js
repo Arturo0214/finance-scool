@@ -169,4 +169,82 @@ router.get('/users', verifyToken, async (req, res) => {
   }
 });
 
+// Visit analytics
+router.get('/visits/stats', verifyToken, async (req, res) => {
+  try {
+    // Try to get visit data; table may not exist yet
+    const totalVisits = await queryOne('SELECT COUNT(*) as c FROM visits').catch(() => ({ c: 0 }));
+    const todayVisits = await queryOne("SELECT COUNT(*) as c FROM visits WHERE DATE(created_at) = DATE('now')").catch(() => ({ c: 0 }));
+    const uniqueVisitors = await queryOne('SELECT COUNT(DISTINCT ip) as c FROM visits').catch(() => ({ c: 0 }));
+    const pageViews = await queryAll('SELECT page, COUNT(*) as views FROM visits GROUP BY page ORDER BY views DESC LIMIT 10').catch(() => []);
+    const sourceData = await queryAll('SELECT source, COUNT(*) as count FROM visits GROUP BY source ORDER BY count DESC').catch(() => []);
+    const dailyVisits = await queryAll("SELECT DATE(created_at) as date, COUNT(*) as count FROM visits GROUP BY DATE(created_at) ORDER BY date DESC LIMIT 30").catch(() => []);
+
+    res.json({
+      totalVisits: totalVisits?.c || 0,
+      todayVisits: todayVisits?.c || 0,
+      uniqueVisitors: uniqueVisitors?.c || 0,
+      bounceRate: 0,
+      avgSessionDuration: '0:00',
+      pageViews: pageViews || [],
+      sourceData: sourceData || [],
+      dailyVisits: dailyVisits || [],
+    });
+  } catch (err) {
+    console.error('Visit stats error:', err);
+    res.json({ totalVisits: 0, todayVisits: 0, uniqueVisitors: 0, bounceRate: 0, avgSessionDuration: '0:00', pageViews: [], sourceData: [], dailyVisits: [] });
+  }
+});
+
+// Track page visit (no auth — called from landing page)
+router.post('/visits/track', async (req, res) => {
+  try {
+    const { page, source, referrer } = req.body;
+    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+    const userAgent = req.headers['user-agent'] || '';
+    await runQuery('INSERT INTO visits (page, source, referrer, ip, user_agent) VALUES (?,?,?,?,?)',
+      [page || '/', source || 'direct', referrer || '', ip, userAgent]).catch(() => {});
+    res.json({ success: true });
+  } catch (err) {
+    res.json({ success: false });
+  }
+});
+
+// Appointments / Citas
+router.get('/appointments', verifyToken, async (req, res) => {
+  try {
+    const appointments = await queryAll('SELECT a.*, l.name as lead_name, l.phone as lead_phone, u.name as advisor_name FROM appointments a LEFT JOIN leads l ON a.lead_id = l.id LEFT JOIN users u ON a.user_id = u.id ORDER BY a.date DESC').catch(() => []);
+    res.json(appointments || []);
+  } catch (err) {
+    console.error('Appointments error:', err);
+    res.json([]);
+  }
+});
+
+router.post('/appointments', verifyToken, async (req, res) => {
+  try {
+    const { lead_id, date, time, type, notes } = req.body;
+    if (!date) return res.status(400).json({ error: 'Fecha requerida' });
+    const r = await runQuery('INSERT INTO appointments (lead_id, user_id, date, time, type, notes, status) VALUES (?,?,?,?,?,?,?)',
+      [lead_id || null, req.user.id, date, time || '', type || 'consulta', notes || '', 'programada']);
+    const appointment = await queryOne('SELECT * FROM appointments WHERE id=?', [r.lastInsertRowid]);
+    res.json({ success: true, appointment });
+  } catch (err) {
+    console.error('Create appointment error:', err);
+    res.status(500).json({ error: 'Error al crear cita' });
+  }
+});
+
+router.put('/appointments/:id', verifyToken, async (req, res) => {
+  try {
+    const { status, notes } = req.body;
+    await runQuery('UPDATE appointments SET status=?, notes=? WHERE id=?', [status || 'programada', notes || '', +req.params.id]);
+    const appointment = await queryOne('SELECT * FROM appointments WHERE id=?', [+req.params.id]);
+    res.json({ success: true, appointment });
+  } catch (err) {
+    console.error('Update appointment error:', err);
+    res.status(500).json({ error: 'Error al actualizar cita' });
+  }
+});
+
 module.exports = router;
