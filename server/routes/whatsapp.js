@@ -148,61 +148,142 @@ router.use((req, res, next) => {
   next();
 });
 
-// ─── GET /leads ───
+// ─── GET /leads (merges whatsapp_leads + fsc_conversations) ───
 router.get('/leads', async (req, res) => {
   try {
     const db = getDB();
     const { estado, search, assigned_to, page = 1, limit = 50 } = req.query;
-    const offset = (parseInt(page) - 1) * parseInt(limit);
 
+    // 1. Get whatsapp_leads
     let query = db.from('whatsapp_leads')
-      .select('id, wa_id, contact_name, estado, origin, assigned_to, last_message_at, unread_count, blocked, modo_humano, created_at, historial_chat', { count: 'exact' });
-
+      .select('id, wa_id, contact_name, estado, origin, assigned_to, last_message_at, unread_count, blocked, modo_humano, created_at, historial_chat');
     if (estado && estado !== 'todos') query = query.eq('estado', estado);
     if (assigned_to) query = query.eq('assigned_to', assigned_to);
     if (search) query = query.or(`contact_name.ilike.%${search}%,wa_id.ilike.%${search}%`);
+    query = query.order('last_message_at', { ascending: false });
+    const { data: waLeads } = await query;
 
-    query = query.order('last_message_at', { ascending: false }).range(offset, offset + parseInt(limit) - 1);
+    // 2. Get fsc_conversations (SofIA bot)
+    let fscQuery = db.from('fsc_conversations')
+      .select('id, whatsapp_number, nombre_lead, lead_status, conversation_history, filtro_actual, prioridad, created_at, updated_at');
+    if (search) fscQuery = fscQuery.or(`nombre_lead.ilike.%${search}%,whatsapp_number.ilike.%${search}%`);
+    fscQuery = fscQuery.order('updated_at', { ascending: false });
+    const { data: fscLeads } = await fscQuery;
 
-    const { data: leads, count, error } = await query;
-    if (error) throw error;
+    // 3. Map fsc_conversations to whatsapp_leads format
+    const fscMapped = (fscLeads || []).map(f => {
+      let history = [];
+      try { history = typeof f.conversation_history === 'string' ? JSON.parse(f.conversation_history) : (f.conversation_history || []); } catch {}
+      const statusMap = { en_calificacion: 'en_proceso', cita_agendada: 'convertido', no_calificado: 'descartado', nuevo: 'nuevo', calificado: 'contactado' };
+      return {
+        id: 'fsc_' + f.id,
+        wa_id: f.whatsapp_number,
+        contact_name: f.nombre_lead || f.whatsapp_number,
+        estado: statusMap[f.lead_status] || 'en_proceso',
+        origin: 'sofia_bot',
+        assigned_to: null,
+        last_message_at: f.updated_at,
+        unread_count: 0,
+        blocked: false,
+        modo_humano: false,
+        created_at: f.created_at,
+        historial_chat: history,
+        _source: 'fsc'
+      };
+    });
 
-    // Build previews, strip full historial
-    const leadsWithPreview = (leads || []).map(l => {
+    // 4. Merge: deduplicate by wa_id (prefer whatsapp_leads if exists in both)
+    const waIds = new Set((waLeads || []).map(l => l.wa_id));
+    const merged = [...(waLeads || []), ...fscMapped.filter(f => !waIds.has(f.wa_id))];
+
+    // 5. Filter by estado if needed (for fsc entries)
+    let filtered = merged;
+    if (estado && estado !== 'todos') {
+      filtered = merged.filter(l => l.estado === estado);
+    }
+
+    // 6. Sort by last_message_at desc
+    filtered.sort((a, b) => new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0));
+
+    // 7. Paginate
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const paginated = filtered.slice(offset, offset + parseInt(limit));
+
+    // 8. Build previews
+    const leadsWithPreview = paginated.map(l => {
       let lastMessage = '';
       try {
-        const hist = JSON.parse(l.historial_chat || '[]');
+        const hist = typeof l.historial_chat === 'string' ? JSON.parse(l.historial_chat) : (l.historial_chat || []);
         if (hist.length > 0) {
           const last = hist[hist.length - 1];
-          const prefix = last.role === 'admin' ? 'Tú: ' : '';
-          lastMessage = prefix + (last.body || '').slice(0, 80);
+          if (last.body) {
+            const prefix = last.role === 'admin' ? 'Tú: ' : '';
+            lastMessage = prefix + last.body.slice(0, 80);
+          } else if (last.content) {
+            const prefix = last.role === 'assistant' ? 'SofIA: ' : '';
+            lastMessage = prefix + last.content.slice(0, 80);
+          }
         }
       } catch { /* ignore */ }
       const { historial_chat, ...rest } = l;
       return { ...rest, lastMessage };
     });
 
-    res.json({ leads: leadsWithPreview, total: count || 0, page: parseInt(page), limit: parseInt(limit) });
+    res.json({ leads: leadsWithPreview, total: filtered.length, page: parseInt(page), limit: parseInt(limit) });
   } catch (err) {
     console.error('WA leads error:', err);
     res.status(500).json({ error: 'Error al obtener leads de WhatsApp' });
   }
 });
 
-// ─── GET /leads/:waId ───
+// ─── GET /leads/:waId (checks whatsapp_leads then fsc_conversations) ───
 router.get('/leads/:waId', async (req, res) => {
   try {
     const db = getDB();
-    const { data: lead, error } = await db.from('whatsapp_leads').select('*').eq('wa_id', req.params.waId).maybeSingle();
-    if (error) throw error;
-    if (!lead) return res.status(404).json({ error: 'Lead no encontrado' });
+    const waId = req.params.waId;
 
-    lead.historial_chat = JSON.parse(lead.historial_chat || '[]');
-
-    if (lead.unread_count > 0) {
-      await db.from('whatsapp_leads').update({ unread_count: 0 }).eq('wa_id', req.params.waId);
+    // Try whatsapp_leads first
+    const { data: lead } = await db.from('whatsapp_leads').select('*').eq('wa_id', waId).maybeSingle();
+    if (lead) {
+      lead.historial_chat = JSON.parse(lead.historial_chat || '[]');
+      if (lead.unread_count > 0) {
+        await db.from('whatsapp_leads').update({ unread_count: 0 }).eq('wa_id', waId);
+      }
+      return res.json(lead);
     }
-    res.json(lead);
+
+    // Fallback to fsc_conversations
+    const { data: fsc } = await db.from('fsc_conversations').select('*').eq('whatsapp_number', waId).maybeSingle();
+    if (fsc) {
+      let history = [];
+      try { history = typeof fsc.conversation_history === 'string' ? JSON.parse(fsc.conversation_history) : (fsc.conversation_history || []); } catch {}
+      // Convert fsc format {role,content} to WA format {role,body,timestamp}
+      const converted = history.map((m, i) => ({
+        role: m.role === 'assistant' ? 'admin' : 'user',
+        body: m.content || m.body || '',
+        type: 'text',
+        timestamp: fsc.updated_at || fsc.created_at,
+        sender: m.role === 'assistant' ? 'SofIA' : undefined
+      }));
+      const statusMap = { en_calificacion: 'en_proceso', cita_agendada: 'convertido', no_calificado: 'descartado', nuevo: 'nuevo' };
+      return res.json({
+        id: 'fsc_' + fsc.id,
+        wa_id: fsc.whatsapp_number,
+        contact_name: fsc.nombre_lead || fsc.whatsapp_number,
+        estado: statusMap[fsc.lead_status] || 'en_proceso',
+        origin: 'sofia_bot',
+        historial_chat: converted,
+        last_message_at: fsc.updated_at,
+        created_at: fsc.created_at,
+        unread_count: 0,
+        blocked: false,
+        modo_humano: false,
+        _source: 'fsc',
+        _fsc_data: { lead_status: fsc.lead_status, filtro_actual: fsc.filtro_actual, prioridad: fsc.prioridad, regimen_fiscal: fsc.regimen_fiscal, rango_ingreso: fsc.rango_ingreso, objetivo: fsc.objetivo, edad: fsc.edad }
+      });
+    }
+
+    res.status(404).json({ error: 'Lead no encontrado' });
   } catch (err) {
     console.error('WA lead error:', err);
     res.status(500).json({ error: 'Error al obtener lead' });
