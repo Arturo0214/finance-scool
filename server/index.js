@@ -32,13 +32,10 @@ const allowedOrigins = [
 ].filter(Boolean);
 
 app.use(cors({
-  origin: isProd
-    ? (origin, cb) => {
-        // Allow requests with no origin (same-origin, mobile apps, curl)
-        if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
-        cb(null, false);
-      }
-    : 'http://localhost:5173',
+  origin: (origin, cb) => {
+    if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+    cb(null, false);
+  },
   credentials: true
 }));
 app.use(express.json());
