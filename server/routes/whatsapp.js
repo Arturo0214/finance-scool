@@ -170,22 +170,21 @@ router.get('/leads', async (req, res) => {
     fscQuery = fscQuery.order('updated_at', { ascending: false });
     const { data: fscLeads } = await fscQuery;
 
-    // 3. Map fsc_conversations to whatsapp_leads format
+    // 3. Map fsc_conversations to whatsapp_leads format (keep real FSC statuses)
     const fscMapped = (fscLeads || []).map(f => {
       let history = [];
       try { history = typeof f.conversation_history === 'string' ? JSON.parse(f.conversation_history) : (f.conversation_history || []); } catch {}
-      const statusMap = { en_calificacion: 'en_proceso', cita_agendada: 'convertido', no_calificado: 'descartado', nuevo: 'nuevo', calificado: 'contactado' };
       return {
         id: 'fsc_' + f.id,
         wa_id: f.whatsapp_number,
         contact_name: f.nombre_lead || f.whatsapp_number,
-        estado: statusMap[f.lead_status] || 'en_proceso',
+        estado: f.lead_status || 'nuevo',
         origin: 'sofia_bot',
         assigned_to: null,
         last_message_at: f.updated_at,
         unread_count: 0,
         blocked: false,
-        modo_humano: false,
+        modo_humano: f.modo_humano || false,
         created_at: f.created_at,
         historial_chat: history,
         _source: 'fsc'
@@ -267,19 +266,18 @@ router.get('/leads/:waId', async (req, res) => {
         sender: m.role === 'assistant' ? 'SofIA' : undefined,
         status: m.role === 'assistant' ? 'delivered' : undefined
       }));
-      const statusMap = { en_calificacion: 'en_proceso', cita_agendada: 'convertido', no_calificado: 'descartado', nuevo: 'nuevo' };
       return res.json({
         id: 'fsc_' + fsc.id,
         wa_id: fsc.whatsapp_number,
         contact_name: fsc.nombre_lead || fsc.whatsapp_number,
-        estado: statusMap[fsc.lead_status] || 'en_proceso',
+        estado: fsc.lead_status || 'nuevo',
         origin: 'sofia_bot',
         historial_chat: converted,
         last_message_at: fsc.updated_at,
         created_at: fsc.created_at,
         unread_count: 0,
         blocked: false,
-        modo_humano: false,
+        modo_humano: fsc.modo_humano || false,
         _source: 'fsc',
         _fsc_data: { lead_status: fsc.lead_status, filtro_actual: fsc.filtro_actual, prioridad: fsc.prioridad, regimen_fiscal: fsc.regimen_fiscal, rango_ingreso: fsc.rango_ingreso, objetivo: fsc.objetivo, edad: fsc.edad }
       });
@@ -385,11 +383,25 @@ router.patch('/leads/:waId/estado', async (req, res) => {
 router.patch('/leads/:waId/modo-humano', async (req, res) => {
   try {
     const db = getDB();
-    const { data: lead } = await db.from('whatsapp_leads').select('modo_humano').eq('wa_id', req.params.waId).maybeSingle();
-    if (!lead) return res.status(404).json({ error: 'Lead no encontrado' });
-    const newVal = !lead.modo_humano;
-    await db.from('whatsapp_leads').update({ modo_humano: newVal }).eq('wa_id', req.params.waId);
-    res.json({ success: true, modo_humano: newVal });
+    const waId = req.params.waId;
+
+    // Try whatsapp_leads first
+    const { data: lead } = await db.from('whatsapp_leads').select('modo_humano').eq('wa_id', waId).maybeSingle();
+    if (lead) {
+      const newVal = !lead.modo_humano;
+      await db.from('whatsapp_leads').update({ modo_humano: newVal }).eq('wa_id', waId);
+      return res.json({ success: true, modo_humano: newVal });
+    }
+
+    // Fallback to fsc_conversations
+    const { data: fsc } = await db.from('fsc_conversations').select('modo_humano').eq('whatsapp_number', waId).maybeSingle();
+    if (fsc) {
+      const newVal = !fsc.modo_humano;
+      await db.from('fsc_conversations').update({ modo_humano: newVal }).eq('whatsapp_number', waId);
+      return res.json({ success: true, modo_humano: newVal });
+    }
+
+    res.status(404).json({ error: 'Lead no encontrado' });
   } catch (err) {
     res.status(500).json({ error: 'Error' });
   }

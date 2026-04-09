@@ -13,16 +13,19 @@ import {
 } from 'lucide-react';
 import { api } from '../../../utils/api';
 
-/* ── Colores por estado ── */
+/* ── Colores por estado (FSC + HubSpot) ── */
 const EC = {
-  nuevo:      { bg: '#FEF3C7', text: '#92400E', dot: '#F59E0B' },
-  contactado: { bg: '#DBEAFE', text: '#1E40AF', dot: '#3B82F6' },
-  en_proceso: { bg: '#FFF7ED', text: '#9A3412', dot: '#F97316' },
-  convertido: { bg: '#D1FAE5', text: '#065F46', dot: '#10B981' },
-  descartado: { bg: '#FEE2E2', text: '#991B1B', dot: '#EF4444' },
-  bienvenida:           { bg: '#D1FAE5', text: '#065F46', dot: '#10B981' },
-  calificando:          { bg: '#DBEAFE', text: '#1E40AF', dot: '#3B82F6' },
-  esperando_aprobacion: { bg: '#FEF3C7', text: '#92400E', dot: '#F59E0B' },
+  nuevo:                { bg: '#FEF3C7', text: '#92400E', dot: '#F59E0B', label: 'Nuevo' },
+  en_calificacion:      { bg: '#DBEAFE', text: '#1E40AF', dot: '#3B82F6', label: 'En calificación' },
+  calificado:           { bg: '#E0E7FF', text: '#3730A3', dot: '#6366F1', label: 'Calificado' },
+  cita_agendada:        { bg: '#D1FAE5', text: '#065F46', dot: '#10B981', label: 'Cita agendada' },
+  no_calificado:        { bg: '#FEE2E2', text: '#991B1B', dot: '#EF4444', label: 'No calificado' },
+  cerrado_no_calificado:{ bg: '#F3F4F6', text: '#6B7280', dot: '#9CA3AF', label: 'Cerrado' },
+  // Legacy statuses (whatsapp_leads)
+  contactado:           { bg: '#DBEAFE', text: '#1E40AF', dot: '#3B82F6', label: 'Contactado' },
+  en_proceso:           { bg: '#FFF7ED', text: '#9A3412', dot: '#F97316', label: 'En proceso' },
+  convertido:           { bg: '#D1FAE5', text: '#065F46', dot: '#10B981', label: 'Convertido' },
+  descartado:           { bg: '#FEE2E2', text: '#991B1B', dot: '#EF4444', label: 'Descartado' },
 };
 
 /* ── Íconos de estado de mensaje ── */
@@ -241,14 +244,32 @@ export default function WhatsAppView() {
         .wa-warn { background:#fef3c7; color:#92400e; padding:6px 14px; font-size:11.5px; font-weight:500; display:flex; align-items:center; gap:6px; flex-shrink:0; border-bottom:1px solid #fde68a; }
 
         /* Messages */
-        .wa-msgs { flex:1; overflow-y:auto; padding:12px 18px; display:flex; flex-direction:column; gap:2px; }
-        .wa-m { max-width:65%; padding:6px 10px 3px; border-radius:7px; font-size:13px; line-height:1.45; word-wrap:break-word; box-shadow:0 1px 1px rgba(0,0,0,.07); }
-        .wa-m.u { align-self:flex-start; background:#fff; border-top-left-radius:0; }
-        .wa-m.a { align-self:flex-end; background:#d9fdd3; border-top-right-radius:0; }
-        .wa-m.t { align-self:flex-end; background:#fff9c4; border-top-right-radius:0; font-style:italic; }
-        .wa-m-sender { font-size:10.5px; font-weight:600; color:#075e54; margin-bottom:1px; }
-        .wa-m-foot { display:flex; align-items:center; justify-content:flex-end; gap:3px; margin-top:1px; }
-        .wa-m-foot span { font-size:9.5px; color:#667781; }
+        .wa-msgs { flex:1; overflow-y:auto; padding:8px 12px; display:flex; flex-direction:column; gap:4px; }
+        .wa-m {
+          max-width:80%; padding:8px 12px; border-radius:8px; font-size:0.88rem;
+          line-height:1.35; word-wrap:break-word; overflow-wrap:break-word;
+          box-shadow:0 1px 1px rgba(0,0,0,.1); min-width:80px; position:relative;
+          white-space:pre-wrap; word-break:break-word; color:#111;
+        }
+        .wa-m.u {
+          align-self:flex-start; background:#fff;
+          border-top-left-radius:2px;
+        }
+        .wa-m.a {
+          align-self:flex-end; background:#dcf8c6;
+          border-top-right-radius:2px;
+        }
+        .wa-m.t {
+          align-self:flex-end;
+          background:linear-gradient(135deg, #e8f5e9, #c8e6c9);
+          border:1px dashed #66bb6a;
+          border-top-right-radius:2px; font-style:italic;
+        }
+        .wa-m-sender { font-size:0.7rem; font-weight:600; color:#075e54; margin-bottom:2px; }
+        .wa-m.u .wa-m-sender { color:#6b7c85; }
+        .wa-m.t .wa-m-sender { color:#2e7d32; font-style:italic; }
+        .wa-m-foot { display:flex; align-items:center; justify-content:flex-end; gap:3px; margin-top:4px; }
+        .wa-m-foot span { font-size:0.65rem; color:#888; }
         .wa-ddiv { text-align:center; padding:8px 0; }
         .wa-ddiv span { background:#e2ddd5; padding:4px 12px; border-radius:8px; font-size:10.5px; color:#54656f; font-weight:500; display:inline-block; }
 
@@ -352,7 +373,7 @@ export default function WhatsAppView() {
                     <div className="wa-meta">
                       <span className="wa-badge" style={{ background: ec.bg, color: ec.text }}>
                         <span style={{ width:5, height:5, borderRadius:'50%', background:ec.dot, display:'inline-block' }} />
-                        {lead.estado || 'nuevo'}
+                        {ec.label || lead.estado || 'nuevo'}
                       </span>
                       {lead.assigned_to && (
                         <span className="wa-agent">
@@ -415,15 +436,16 @@ export default function WhatsAppView() {
                   <div className="wa-nodata"><MessageCircle size={28} color="#cbd5e1" /><p style={{ margin:0, fontSize:13 }}>Sin mensajes</p></div>
                 ) : (
                   Object.entries(groupedHist).map(([day, msgs]) => (
-                    <div key={day}>
+                    <div key={day} style={{ display:'flex', flexDirection:'column', gap:4 }}>
                       <div className="wa-ddiv"><span>{day}</span></div>
                       {msgs.map((msg, i) => {
-                        const dir = msg.direction || (msg.from_me ? 'outbound' : 'inbound');
-                        const isOut = dir === 'outbound' || dir === 'sent' || msg.from_me;
+                        const isOut = msg.role === 'admin' || msg.direction === 'outbound' || msg.direction === 'sent' || msg.from_me;
                         const isTpl = msg.type === 'template';
+                        const senderName = isOut ? (msg.sender || 'SofIA') : chatData.contact_name;
                         return (
                           <div key={i} className={`wa-m${isTpl ? ' t' : isOut ? ' a' : ' u'}`}>
-                            {!isOut && <div className="wa-m-sender">{chatData.contact_name}</div>}
+                            {!isOut && <div className="wa-m-sender">{senderName}</div>}
+                            {isOut && msg.sender && <div className="wa-m-sender" style={{ color: '#53bdeb' }}>{msg.sender}</div>}
                             <div>{msg.body || msg.text || msg.message || (msg.type && `[${msg.type}]`)}</div>
                             <div className="wa-m-foot"><span>{fmt(msg.timestamp || msg.created_at)}</span>{isOut && (MSI[msg.status] || MSI.sent)}</div>
                           </div>
