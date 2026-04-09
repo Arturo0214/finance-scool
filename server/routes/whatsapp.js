@@ -257,13 +257,15 @@ router.get('/leads/:waId', async (req, res) => {
     if (fsc) {
       let history = [];
       try { history = typeof fsc.conversation_history === 'string' ? JSON.parse(fsc.conversation_history) : (fsc.conversation_history || []); } catch {}
-      // Convert fsc format {role,content} to WA format {role,body,timestamp}
+      // Convert fsc format {role:'user'|'assistant', content} to WA format {role:'user'|'admin', body, sender}
+      const baseTime = new Date(fsc.created_at || Date.now()).getTime();
       const converted = history.map((m, i) => ({
         role: m.role === 'assistant' ? 'admin' : 'user',
         body: m.content || m.body || '',
         type: 'text',
-        timestamp: fsc.updated_at || fsc.created_at,
-        sender: m.role === 'assistant' ? 'SofIA' : undefined
+        timestamp: new Date(baseTime + i * 5000).toISOString(),
+        sender: m.role === 'assistant' ? 'SofIA' : undefined,
+        status: m.role === 'assistant' ? 'delivered' : undefined
       }));
       const statusMap = { en_calificacion: 'en_proceso', cita_agendada: 'convertido', no_calificado: 'descartado', nuevo: 'nuevo' };
       return res.json({

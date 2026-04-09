@@ -114,10 +114,11 @@ export default function WhatsAppView() {
   }, []);
 
   const checkNewMessages = useCallback((newLeads) => {
-    if (prevMapRef.current.size === 0) { const m = new Map(); newLeads.forEach(l => m.set(l.wa_id, l.updated_at)); prevMapRef.current = m; return; }
+    const getKey = l => (l.last_message_at || l.updated_at || '') + '_' + (l.unread_count || 0);
+    if (prevMapRef.current.size === 0) { const m = new Map(); newLeads.forEach(l => m.set(l.wa_id, getKey(l))); prevMapRef.current = m; return; }
     const newMsgs = [];
-    newLeads.forEach(l => { const p = prevMapRef.current.get(l.wa_id); if ((!p && l.lastMessage) || (p && l.updated_at !== p)) newMsgs.push(l); });
-    const m = new Map(); newLeads.forEach(l => m.set(l.wa_id, l.updated_at)); prevMapRef.current = m;
+    newLeads.forEach(l => { const p = prevMapRef.current.get(l.wa_id); const k = getKey(l); if (p && k !== p && l.unread_count > 0) newMsgs.push(l); });
+    const m = new Map(); newLeads.forEach(l => m.set(l.wa_id, getKey(l))); prevMapRef.current = m;
     if (newMsgs.length > 0) { playNotif(); showNotif(`💬 ${newMsgs.length} nuevo${newMsgs.length > 1 ? 's' : ''}`, newMsgs.slice(0,3).map(l => l.contact_name || l.wa_id).join(', ')); }
   }, [playNotif, showNotif]);
 
