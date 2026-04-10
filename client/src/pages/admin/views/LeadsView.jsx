@@ -73,6 +73,12 @@ export default function LeadsView({ leads, searchTerm, setSearchTerm, leadFilter
         .src-tab.active { background:${C.primary}; color:${C.white}; border-color:${C.primary}; }
         .lead-detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
         .cta-badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600; }
+        @media(max-width:768px){
+          .lead-detail-grid { grid-template-columns:1fr; }
+          .search-box { padding:8px 12px; }
+          .source-filters { overflow-x:auto; flex-wrap:nowrap; -webkit-overflow-scrolling:touch; }
+          .src-tab { flex-shrink:0; }
+        }
       `}</style>
     <div className="view">
       <h1 className="view-title">{SPANISH_LABELS.leads}</h1>

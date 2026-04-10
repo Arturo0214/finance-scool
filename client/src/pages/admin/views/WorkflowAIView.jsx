@@ -23,6 +23,13 @@ export default function WorkflowAIView({ metaToken, setMetaToken }) {
         .tpl-card:hover { box-shadow:0 4px 12px rgba(0,61,165,.06); }
         .tpl-card h3 { font-size:14px; font-weight:600; color:#0f172a; margin:0 0 8px; }
         .tpl-card p { font-size:13px; color:#64748b; margin:0; line-height:1.5; }
+        @media(max-width:768px){
+          .wf-diagram { flex-direction:column; align-items:stretch; }
+          .wf-arrow { transform:rotate(90deg); font-size:18px; }
+          .wf-stage { min-width:auto; }
+          .wf-branches { grid-template-columns:1fr; }
+          .tpl-grid { grid-template-columns:1fr; }
+        }
       `}</style>
     <div className="view">
       <h1 className="view-title">{SPANISH_LABELS.metaWorkflow}</h1>

@@ -269,7 +269,17 @@ export default function FSCConversationsView() {
      RENDER
      ═══════════════════════════════════ */
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#F8FAFC', overflow: 'hidden' }}>
+    <>
+    <style>{`
+      @media(max-width:768px) {
+        .fsc-wrap { height: 100% !important; }
+        .fsc-two-col { flex-direction: column !important; }
+        .fsc-left { width: 100% !important; min-width: auto !important; max-height: 45% !important; border-right: none !important; border-bottom: 1px solid #E2E8F0; }
+        .fsc-right { flex: 1 !important; min-height: 0; }
+        .fsc-pipeline { grid-template-columns: 1fr !important; overflow-x: auto; }
+      }
+    `}</style>
+    <div className="fsc-wrap" style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#F8FAFC', overflow: 'hidden' }}>
 
       {/* ── Tab bar ── */}
       <div style={{
@@ -302,12 +312,12 @@ export default function FSCConversationsView() {
 
       {/* ── Tab content ── */}
       {activeTab === 'conversations' ? (
-        <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+        <div className="fsc-two-col" style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
 
           {/* ══════════════════════════════
               LEFT COLUMN — Lead list
               ══════════════════════════════ */}
-          <div style={{
+          <div className="fsc-left" style={{
             width: 360, minWidth: 300, display: 'flex', flexDirection: 'column',
             borderRight: '1px solid #E2E8F0', background: '#fff', flexShrink: 0,
           }}>
@@ -489,7 +499,7 @@ export default function FSCConversationsView() {
           {/* ══════════════════════════════
               RIGHT COLUMN — Chat detail
               ══════════════════════════════ */}
-          <div style={{
+          <div className="fsc-right" style={{
             flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden',
             background: BG_CHAT,
             backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23c7d2fe' fill-opacity='0.25'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
@@ -829,5 +839,6 @@ export default function FSCConversationsView() {
         @keyframes fsc-spin { to { transform: rotate(360deg); } }
       `}</style>
     </div>
+    </>
   );
 }

@@ -290,7 +290,15 @@ export default function WhatsAppView() {
         .wa-nodata { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:32px; text-align:center; color:#64748b; gap:8px; }
 
         /* Responsive */
-        @media(max-width:600px) { .wa-left { display:${selectedLead ? 'none' : 'flex'}; width:100%; } .wa-right { display:${selectedLead ? 'flex' : 'none'}; } }
+        @media(max-width:768px) {
+          .wa-left { display:${selectedLead ? 'none' : 'flex'}; width:100%; }
+          .wa-right { display:${selectedLead ? 'flex' : 'none'}; width:100%; }
+          .wa-filters { grid-template-columns:1fr; }
+          .wa-ch-acts { flex-wrap:wrap; gap:4px; }
+          .wa-ch-btn { font-size:11px; padding:4px 8px; }
+          .wa-m { max-width:90%; }
+          .wa-back-btn { display:flex !important; }
+        }
       `}</style>
 
       <div className="wa">
@@ -404,6 +412,9 @@ export default function WhatsAppView() {
             <>
               {/* Chat header */}
               <div className="wa-ch-head">
+                <button className="wa-back-btn" onClick={() => setSelectedLead(null)} style={{ background:'none', border:'none', cursor:'pointer', color:'#075e54', padding:4, display:'none' }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
+                </button>
                 <div className="wa-av" style={{ background: avColor(chatData?.contact_name || selectedLead.contact_name), width:38, height:38, flexShrink:0 }}>
                   {(chatData?.contact_name || selectedLead.contact_name || '?')[0].toUpperCase()}
                 </div>

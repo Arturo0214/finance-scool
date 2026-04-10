@@ -54,6 +54,7 @@ export default function AdminPanel() {
   const navigate        = useNavigate();
   const { user, logout } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeView, setActiveView]   = useState('dashboard');
 
   /* ── Datos globales ── */
@@ -180,8 +181,11 @@ export default function AdminPanel() {
 
       <div className="admin-wrap">
 
+        {/* ══ Mobile overlay ══ */}
+        <div className={`sb-overlay${mobileMenuOpen ? ' visible' : ''}`} onClick={() => setMobileMenuOpen(false)} />
+
         {/* ══ Sidebar ══ */}
-        <aside className={`sb${sidebarOpen ? '' : ' closed'}`}>
+        <aside className={`sb${sidebarOpen ? '' : ' closed'}${mobileMenuOpen ? ' mobile-open' : ''}`}>
           <div className="sb-head">
             <div className="sb-logo">
               {sidebarOpen
@@ -206,7 +210,7 @@ export default function AdminPanel() {
                 <button
                   key={item.id}
                   className={`sb-item${activeView === item.id ? ' active' : ''}`}
-                  onClick={() => setActiveView(item.id)}
+                  onClick={() => { setActiveView(item.id); setMobileMenuOpen(false); }}
                   title={!sidebarOpen ? item.label : ''}
                 >
                   <Icon size={18} />
@@ -227,6 +231,9 @@ export default function AdminPanel() {
           {activeView !== 'whatsapp' && (
           <header className="topbar">
             <div className="topbar-left">
+              <button className="mobile-menu-btn" onClick={() => setMobileMenuOpen(o => !o)}>
+                <Menu size={22} />
+              </button>
               <span
                 className="role-badge"
                 style={{ background: `${roleBadgeColor}18`, color: roleBadgeColor, border: `1px solid ${roleBadgeColor}40` }}
@@ -242,6 +249,11 @@ export default function AdminPanel() {
           </header>
           )}
 
+          {activeView === 'whatsapp' && (
+            <button className="mobile-menu-btn" onClick={() => setMobileMenuOpen(o => !o)} style={{ position: 'absolute', top: 10, left: 10, zIndex: 10, background: '#fff', borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,.15)' }}>
+              <Menu size={22} />
+            </button>
+          )}
           <main className={activeView === 'whatsapp' ? 'content-wa' : 'content'}>
             {loading && <div className="loading-wrap"><div className="spinner" /><p>Cargando...</p></div>}
 

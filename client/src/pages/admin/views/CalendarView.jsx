@@ -61,6 +61,14 @@ export default function CalendarView({ events, showEventModal, setShowEventModal
         .cal-day.empty { background:#f8fafc; }
         .cal-day-num { font-size:13px; font-weight:600; color:#0f172a; margin-bottom:4px; }
         .cal-dot { width:6px; height:6px; background:#0088E0; border-radius:50%; display:inline-block; margin-right:3px; }
+        @media(max-width:768px){
+          .cal-head { flex-direction:column; align-items:flex-start; gap:12px; }
+          .cal-grid { gap:0; }
+          .cal-day { min-height:54px; padding:6px; }
+          .cal-dh { padding:6px; font-size:11px; }
+          .cal-day-num { font-size:12px; }
+          .cal-nav h2 { font-size:16px; }
+        }
       `}</style>
     <div className="view">
       <div className="cal-head">
