@@ -153,12 +153,13 @@ export default function WhatsAppView() {
     if (newMsgs.length > 0) { playNotif(); showNotif(`💬 ${newMsgs.length} nuevo${newMsgs.length > 1 ? 's' : ''}`, newMsgs.slice(0,3).map(l => l.contact_name || l.wa_id).join(', ')); }
   }, [playNotif, showNotif]);
 
+  const [loadError, setLoadError] = useState(null);
   const loadLeads = useCallback(async (silent = false) => {
     try {
       const p = {}; if (filterEstado !== 'todos') p.estado = filterEstado; if (filterAgent !== 'todos') p.assigned_to = filterAgent; if (searchTerm) p.search = searchTerm;
       const data = await api.getWhatsAppLeads(p); const list = data.leads || [];
-      if (silent) checkNewMessages(list); setLeads(list);
-    } catch {}
+      if (silent) checkNewMessages(list); setLeads(list); setLoadError(null);
+    } catch (e) { if (!silent) setLoadError(e.message || 'Error al cargar'); }
   }, [filterEstado, filterAgent, searchTerm, checkNewMessages]);
 
   const loadStats = async () => { try { setWaStats(await api.getWhatsAppStats()); } catch {} };
@@ -392,7 +393,8 @@ export default function WhatsAppView() {
             {!loading && leads.length === 0 && (
               <div className="wa-nodata">
                 <MessageCircle size={32} color="#cbd5e1" />
-                <p style={{ margin:0, fontSize:13 }}>Sin conversaciones</p>
+                <p style={{ margin:0, fontSize:13 }}>{loadError ? loadError : 'Sin conversaciones'}</p>
+                {loadError && <button onClick={() => { setLoadError(null); loadLeads(false); }} style={{ marginTop:8, padding:'6px 16px', background:'#25D366', color:'#fff', border:'none', borderRadius:6, fontSize:12, cursor:'pointer' }}>Reintentar</button>}
               </div>
             )}
             {leads.map(lead => {
