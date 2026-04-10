@@ -513,6 +513,18 @@ export default function WhatsAppView() {
                           <div key={i} className={`wa-m${isTpl ? ' t' : isOut ? ' a' : ' u'}`}>
                             {!isOut && <div className="wa-m-sender">{senderName}</div>}
                             {isOut && msg.sender && <div className="wa-m-sender" style={{ color: '#53bdeb' }}>{msg.sender}</div>}
+                            {msg.mediaUrl && msg.type === 'audio' && (
+                              <audio controls src={msg.mediaUrl} style={{ width:'100%', maxWidth:280, marginBottom:4 }} />
+                            )}
+                            {msg.mediaUrl && msg.type === 'image' && (
+                              <img src={msg.mediaUrl} alt="" style={{ maxWidth:'100%', maxHeight:240, borderRadius:6, marginBottom:4, cursor:'pointer' }} onClick={() => window.open(msg.mediaUrl, '_blank')} />
+                            )}
+                            {msg.mediaUrl && msg.type === 'video' && (
+                              <video controls src={msg.mediaUrl} style={{ maxWidth:'100%', maxHeight:240, borderRadius:6, marginBottom:4 }} />
+                            )}
+                            {msg.mediaUrl && msg.type === 'document' && (
+                              <a href={msg.mediaUrl} target="_blank" rel="noopener noreferrer" style={{ display:'flex', alignItems:'center', gap:6, padding:'6px 10px', background:'rgba(0,0,0,0.05)', borderRadius:6, marginBottom:4, fontSize:12, color:'#0066CC', textDecoration:'none' }}>📄 Abrir documento</a>
+                            )}
                             <div style={{ whiteSpace: 'pre-wrap' }}>{displayText}</div>
                             {stateEntries.length > 0 && (
                               <div style={{ marginTop:8, padding:'8px 10px', background:'rgba(0,0,0,0.04)', borderRadius:8, fontSize:11 }}>

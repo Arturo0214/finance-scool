@@ -2,7 +2,45 @@ const express = require('express');
 const { getDB } = require('../models/database');
 const { verifyToken } = require('../middleware/auth');
 const { createNotification } = require('./notifications');
+const cloudinary = require('../config/cloudinary');
 const router = express.Router();
+
+// Download media from Meta WhatsApp API and upload to Cloudinary
+async function downloadAndUploadMedia(mediaId, mimeType) {
+  try {
+    // Step 1: Get media URL from Meta
+    const urlRes = await fetch(`${GRAPH_URL}/${mediaId}`, {
+      headers: { Authorization: `Bearer ${WA_TOKEN}` },
+    });
+    const urlData = await urlRes.json();
+    if (!urlData.url) return null;
+
+    // Step 2: Download the media binary
+    const mediaRes = await fetch(urlData.url, {
+      headers: { Authorization: `Bearer ${WA_TOKEN}` },
+    });
+    const buffer = Buffer.from(await mediaRes.arrayBuffer());
+
+    // Step 3: Upload to Cloudinary
+    const isAudio = /audio|ogg|opus/i.test(mimeType || '');
+    const isVideo = /video/i.test(mimeType || '');
+    const resourceType = (isAudio || isVideo) ? 'video' : 'image';
+    const ext = isAudio ? 'ogg' : (mimeType || '').split('/')[1] || 'bin';
+    const base64 = `data:${mimeType};base64,${buffer.toString('base64')}`;
+
+    const result = await cloudinary.uploader.upload(base64, {
+      folder: 'financescool_wa_media',
+      resource_type: resourceType,
+      public_id: `${resourceType}_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      format: ext === 'ogg' ? 'ogg' : undefined,
+    });
+
+    return result.secure_url;
+  } catch (err) {
+    console.error('Media download/upload error:', err.message);
+    return null;
+  }
+}
 
 const WA_PHONE_ID = process.env.WA_PHONE_ID;
 const WA_TOKEN = process.env.WA_TOKEN;
@@ -66,15 +104,32 @@ router.post('/webhook', async (req, res) => {
         const timestamp = new Date(parseInt(msg.timestamp) * 1000).toISOString();
 
         let messageBody = '';
+        let mediaUrl = null;
         const messageType = msg.type || 'text';
-        if (msg.type === 'text') messageBody = msg.text?.body || '';
-        else if (msg.type === 'image') messageBody = '[Imagen]';
-        else if (msg.type === 'audio') messageBody = '[Audio]';
-        else if (msg.type === 'document') messageBody = '[Documento]';
-        else if (msg.type === 'video') messageBody = '[Video]';
-        else messageBody = `[${msg.type}]`;
 
-        const newMsg = { role: 'user', body: messageBody, type: messageType, timestamp, wa_msg_id: msg.id };
+        if (msg.type === 'text') {
+          messageBody = msg.text?.body || '';
+        } else if (['image', 'audio', 'video', 'document'].includes(msg.type)) {
+          const mediaObj = msg[msg.type];
+          const mediaId = mediaObj?.id;
+          const mimeType = mediaObj?.mime_type || `${msg.type}/*`;
+          const caption = mediaObj?.caption || '';
+          const labels = { image: 'Imagen', audio: 'Audio', video: 'Video', document: 'Documento' };
+
+          if (mediaId) {
+            mediaUrl = await downloadAndUploadMedia(mediaId, mimeType);
+          }
+          messageBody = mediaUrl
+            ? `[${labels[msg.type]}] ${caption}`.trim()
+            : `[${labels[msg.type]}]${caption ? ' ' + caption : ''}`;
+        } else {
+          messageBody = `[${msg.type}]`;
+        }
+
+        const newMsg = {
+          role: 'user', body: messageBody, type: messageType, timestamp, wa_msg_id: msg.id,
+          ...(mediaUrl && { mediaUrl, mimetype: msg[msg.type]?.mime_type }),
+        };
 
         // Check if lead exists
         const { data: existing } = await db.from('whatsapp_leads').select('*').eq('wa_id', waId).maybeSingle();
