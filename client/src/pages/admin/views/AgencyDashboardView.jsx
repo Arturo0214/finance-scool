@@ -5,10 +5,9 @@ import { Users, Percent, AlertCircle, Clock, TrendingUp, Phone, Activity, ArrowR
 function FunnelMini({ stats }) {
   const s = stats || {};
   const funnel = s.funnel || [
-    { stage: 'Nuevos',      count: s.newLeads || 0,                     color: C.amber },
-    { stage: 'Contactados', count: s.contactados || 0,                   color: C.blue  },
-    { stage: 'En Proceso',  count: s.enProceso || s.inProgress || 0,     color: '#EA580C' },
-    { stage: 'Convertidos', count: s.converted || 0,                     color: C.green },
+    { stage: 'Nuevos',            count: s.newLeads || 0,                     color: C.amber },
+    { stage: 'En calificación',   count: s.enProceso || s.inProgress || 0,    color: C.blue  },
+    { stage: 'Citas agendadas',   count: s.converted || 0,                    color: C.green },
   ];
   const maxCount = Math.max(...funnel.map(f => f.count), 1);
   return (
@@ -102,10 +101,10 @@ export default function AgencyDashboardView({ stats, leads }) {
   const kpis = [
     { label: 'Leads Totales',           value: total,                icon: Users,       color: C.primary, bg: C.blueBg,  cls: 'blue'  },
     { label: 'Tasa de Conversión',       value: `${convRate}%`,       icon: Percent,     color: C.green,   bg: C.greenBg, cls: 'green' },
-    { label: 'Nuevos (sin contactar)',   value: s.newLeads || 0,      icon: AlertCircle, color: C.amber,   bg: C.amberBg, cls: 'amber' },
-    { label: 'En Proceso',               value: s.enProceso || s.inProgress || 0, icon: Clock, color: '#EA580C', bg: '#FFF7ED', cls: 'amber' },
-    { label: 'Convertidos',              value: s.converted || 0,     icon: TrendingUp,  color: C.green,   bg: C.greenBg, cls: 'green' },
-    { label: 'Contactados',              value: s.contactados || 0,   icon: Phone,       color: C.accent,  bg: C.blueBg,  cls: 'cyan'  },
+    { label: 'Nuevos',                   value: s.newLeads || 0,      icon: AlertCircle, color: C.amber,   bg: C.amberBg, cls: 'amber' },
+    { label: 'En calificación',          value: s.enProceso || s.inProgress || 0, icon: Clock, color: '#EA580C', bg: '#FFF7ED', cls: 'amber' },
+    { label: 'Citas agendadas',          value: s.converted || 0,     icon: TrendingUp,  color: C.green,   bg: C.greenBg, cls: 'green' },
+    { label: 'Por WhatsApp',             value: s.contactados || 0,   icon: Phone,       color: C.accent,  bg: C.blueBg,  cls: 'cyan'  },
   ];
 
   return (
@@ -144,6 +143,22 @@ export default function AgencyDashboardView({ stats, leads }) {
           <SourceBars data={sourceData} total={total} />
         </div>
       </div>
+
+      {/* HubSpot Pipeline */}
+      {s.hubspotPipeline && s.hubspotPipeline.length > 0 && (
+        <div className="section" style={{ marginBottom: 24 }}>
+          <h2 className="section-title">Pipeline HubSpot</h2>
+          <p className="section-subtitle">{s.hubspotDeals || 0} deals en total</p>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))', gap:10 }}>
+            {s.hubspotPipeline.map(p => (
+              <div key={p.stage} style={{ background:'#f8fafc', borderRadius:10, padding:'14px 16px', border:'1px solid #e2e8f0', textAlign:'center' }}>
+                <div style={{ fontSize:28, fontWeight:800, color:'#0f172a' }}>{p.count}</div>
+                <div style={{ fontSize:11, color:'#64748b', fontWeight:500, marginTop:4 }}>{p.stage}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="two-col">
         <div className="section">

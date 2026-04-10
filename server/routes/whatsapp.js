@@ -1,6 +1,7 @@
 const express = require('express');
 const { getDB } = require('../models/database');
 const { verifyToken } = require('../middleware/auth');
+const { createNotification } = require('./notifications');
 const router = express.Router();
 
 const WA_PHONE_ID = process.env.WA_PHONE_ID;
@@ -112,6 +113,15 @@ router.post('/webhook', async (req, res) => {
             origin: 'whatsapp',
           }]);
         }
+
+        // Create notification for new WhatsApp message
+        const preview = messageBody.length > 50 ? messageBody.slice(0, 50) + '...' : messageBody;
+        createNotification({
+          type: 'whatsapp',
+          message: `💬 ${contactName}: ${preview}`,
+          data: { wa_id: waId, nombre: contactName },
+          link: '/admin/whatsapp',
+        });
       }
     }
 

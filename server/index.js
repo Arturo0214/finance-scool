@@ -55,6 +55,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/leads', leadRoutes);
 app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api/fsc', fscRoutes);
+app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api', apiRoutes);
 
 // Serve React build in production

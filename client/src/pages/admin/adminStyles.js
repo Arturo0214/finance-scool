@@ -183,10 +183,11 @@ export const getAdminCSS = () => `
     .sb { position:fixed !important; top:0; left:0; bottom:0; width:270px !important; z-index:2000; transform:translateX(-100%); transition:transform .3s ease; padding:20px 0 !important; overflow-y:auto !important; }
     .sb.closed { width:270px !important; }
     .sb.mobile-open { transform:translateX(0); }
-    .sb.mobile-open .sb-label { display:inline !important; }
-    .sb.mobile-open .sb-divider { display:block !important; }
-    .sb.mobile-open .sb-logo-full { display:inline-flex !important; }
-    .sb.mobile-open .sb-logo-mini { display:none !important; }
+    .sb.mobile-open .sb-label, .sb.closed.mobile-open .sb-label { display:inline !important; }
+    .sb.mobile-open .sb-divider, .sb.closed.mobile-open .sb-divider { display:block !important; }
+    .sb.mobile-open .sb-logo-full, .sb.closed.mobile-open .sb-logo-full { display:inline-flex !important; }
+    .sb.mobile-open .sb-logo-mini, .sb.closed.mobile-open .sb-logo-mini { display:none !important; }
+    .sb.closed.mobile-open { width:270px !important; }
 
     /* Overlay backdrop */
     .sb-overlay { display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(15,23,42,.5); z-index:1999; }

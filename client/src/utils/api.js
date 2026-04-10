@@ -71,4 +71,10 @@ export const api = {
   claimWhatsAppLead: (waId) => request(`/whatsapp/leads/${waId}/claim`, { method: 'PATCH' }),
   toggleWhatsAppBlock: (waId) => request(`/whatsapp/leads/${waId}/block`, { method: 'PATCH' }),
   getWhatsAppStats: () => request('/whatsapp/stats'),
+
+  // Notifications
+  getNotifications: () => request('/notifications'),
+  markNotificationRead: (id) => request(`/notifications/${id}/read`, { method: 'POST' }),
+  markAllNotificationsRead: () => request('/notifications/mark-all-read', { method: 'POST' }),
+  deleteNotification: (id) => request(`/notifications/${id}`, { method: 'DELETE' }),
 };

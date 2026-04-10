@@ -5,10 +5,11 @@
  * para optimizar el bundle en Netlify.
  */
 import { useState, useEffect, useRef, lazy, Suspense } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { api } from '../utils/api';
 import Logo from '../components/Logo';
+import NotificationDropdown from '../components/NotificationDropdown';
 import {
   Menu, X, LogOut, BarChart3, Users, Calendar, MessageSquare,
   MessageCircle, Link as LinkIcon, Zap, Eye, Settings,
@@ -52,11 +53,13 @@ function ViewSpinner() {
    ════════════════════════════════════════════════════ */
 export default function AdminPanel() {
   const navigate        = useNavigate();
+  const { view: urlView } = useParams();
   const { user, logout } = useAuth();
   const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
   const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [activeView, setActiveView]   = useState('dashboard');
+  const activeView = urlView || 'dashboard';
+  const setActiveView = (v) => navigate(`/admin/${v}`);
 
   /* ── Datos globales ── */
   const [stats, setStats]           = useState({ totalLeads: 0, newLeads: 0, inProgress: 0, converted: 0 });
@@ -116,7 +119,8 @@ export default function AdminPanel() {
   /* ── Carga inicial de datos ── */
   useEffect(() => {
     if (!user) { navigate('/admin/login'); return; }
-    setActiveView(userIsAgency ? 'agency-dashboard' : 'dashboard');
+    // Redirect to proper default if on generic /admin/dashboard and user is agency
+    if (userIsAgency && activeView === 'dashboard') navigate('/admin/agency-dashboard', { replace: true });
     loadData();
   }, [user, navigate]); // eslint-disable-line
 
@@ -239,7 +243,8 @@ export default function AdminPanel() {
                 {roleLabel}
               </span>
             </div>
-            <div className="topbar-user">
+            <div className="topbar-user" style={{ display:'flex', alignItems:'center', gap:8 }}>
+              <NotificationDropdown onNavigate={setActiveView} />
               <div className="topbar-avatar">{(user?.name || 'U')[0].toUpperCase()}</div>
               <span>{user?.name || 'Usuario'}</span>
             </div>

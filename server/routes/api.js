@@ -5,19 +5,45 @@ const router = express.Router();
 
 router.get('/stats', verifyToken, async (req, res) => {
   try {
-    const totalLeads = await queryOne('SELECT COUNT(*) as c FROM leads');
-    const newLeads = await queryOne("SELECT COUNT(*) as c FROM leads WHERE status='nuevo'");
-    const inProgress = await queryOne("SELECT COUNT(*) as c FROM leads WHERE status IN ('en_proceso','contactado')");
-    const converted = await queryOne("SELECT COUNT(*) as c FROM leads WHERE status='convertido'");
-    const leadsBySource = await queryAll('SELECT source,COUNT(*) as count FROM leads GROUP BY source');
-    const leadsByStatus = await queryAll('SELECT status,COUNT(*) as count FROM leads GROUP BY status');
-    const recentLeads = await queryAll('SELECT * FROM leads ORDER BY created_at DESC LIMIT 5');
+    const { getDB } = require('../models/database');
+    const db = getDB();
+
+    // Combine leads from both tables: form submissions (leads) + WhatsApp/Sofía (fsc_conversations)
+    const { count: formLeads } = await db.from('leads').select('id', { count: 'exact', head: true });
+    const { count: waLeads } = await db.from('fsc_conversations').select('id', { count: 'exact', head: true });
+    const totalLeads = (formLeads || 0) + (waLeads || 0);
+
+    // FSC conversation stats
+    const { count: fscNew } = await db.from('fsc_conversations').select('id', { count: 'exact', head: true }).eq('lead_status', 'nuevo');
+    const { count: fscCalif } = await db.from('fsc_conversations').select('id', { count: 'exact', head: true }).eq('lead_status', 'en_calificacion');
+    const { count: fscCita } = await db.from('fsc_conversations').select('id', { count: 'exact', head: true }).eq('lead_status', 'cita_agendada');
+    const { count: formNew } = await db.from('leads').select('id', { count: 'exact', head: true }).eq('status', 'nuevo');
+
+    // Recent leads from fsc_conversations
+    const { data: recentFsc } = await db.from('fsc_conversations')
+      .select('whatsapp_number, nombre_lead, lead_status, created_at')
+      .order('created_at', { ascending: false }).limit(5);
+    const recentLeads = (recentFsc || []).map(f => ({
+      name: f.nombre_lead, phone: f.whatsapp_number, status: f.lead_status, source: 'whatsapp', created_at: f.created_at
+    }));
+
+    // Status breakdown
+    const leadsByStatus = [
+      { status: 'nuevo', count: (fscNew || 0) + (formNew || 0) },
+      { status: 'en_calificacion', count: fscCalif || 0 },
+      { status: 'cita_agendada', count: fscCita || 0 },
+    ].filter(s => s.count > 0);
+
+    const leadsBySource = [
+      { source: 'whatsapp', count: waLeads || 0 },
+      { source: 'landing', count: formLeads || 0 },
+    ].filter(s => s.count > 0);
 
     res.json({
-      totalLeads: totalLeads?.c || 0,
-      newLeads: newLeads?.c || 0,
-      inProgress: inProgress?.c || 0,
-      converted: converted?.c || 0,
+      totalLeads,
+      newLeads: (fscNew || 0) + (formNew || 0),
+      inProgress: fscCalif || 0,
+      converted: fscCita || 0,
       todayEvents: 0,
       weekLeads: 0,
       leadsBySource,
@@ -38,50 +64,100 @@ router.get('/agency-stats', verifyToken, async (req, res) => {
       return res.status(403).json({ error: 'No autorizado — solo agencia' });
     }
 
-    const totalLeads = await queryOne('SELECT COUNT(*) as c FROM leads');
-    const newLeads = await queryOne("SELECT COUNT(*) as c FROM leads WHERE status='nuevo'");
-    const contactados = await queryOne("SELECT COUNT(*) as c FROM leads WHERE status='contactado'");
-    const enProceso = await queryOne("SELECT COUNT(*) as c FROM leads WHERE status='en_proceso'");
-    const converted = await queryOne("SELECT COUNT(*) as c FROM leads WHERE status='convertido'");
-    const leadsBySource = await queryAll('SELECT source,COUNT(*) as count FROM leads GROUP BY source');
-    const leadsByStatus = await queryAll('SELECT status,COUNT(*) as count FROM leads GROUP BY status');
-    const recentLeads = await queryAll('SELECT * FROM leads ORDER BY created_at DESC LIMIT 10');
+    const { getDB } = require('../models/database');
+    const db = getDB();
 
-    // Calculate conversion rates
-    const total = totalLeads?.c || 1;
-    const conversionRate = ((converted?.c || 0) / total * 100).toFixed(1);
-    const contactRate = ((contactados?.c || 0) / total * 100).toFixed(1);
-    const processRate = ((enProceso?.c || 0) / total * 100).toFixed(1);
+    // Combine data from leads + fsc_conversations
+    const { count: formLeads } = await db.from('leads').select('id', { count: 'exact', head: true });
+    const { count: waLeads } = await db.from('fsc_conversations').select('id', { count: 'exact', head: true });
+    const { count: fscNew } = await db.from('fsc_conversations').select('id', { count: 'exact', head: true }).eq('lead_status', 'nuevo');
+    const { count: fscCalif } = await db.from('fsc_conversations').select('id', { count: 'exact', head: true }).eq('lead_status', 'en_calificacion');
+    const { count: fscCita } = await db.from('fsc_conversations').select('id', { count: 'exact', head: true }).eq('lead_status', 'cita_agendada');
+    const { count: formNew } = await db.from('leads').select('id', { count: 'exact', head: true }).eq('status', 'nuevo');
 
-    // Funnel data
+    const totalLeadsCount = (formLeads || 0) + (waLeads || 0);
+    const total = totalLeadsCount || 1;
+    const newCount = (fscNew || 0) + (formNew || 0);
+    const califCount = fscCalif || 0;
+    const citaCount = fscCita || 0;
+
+    const conversionRate = (citaCount / total * 100).toFixed(1);
+    const contactRate = (califCount / total * 100).toFixed(1);
+
     const funnel = [
-      { stage: 'Nuevos', count: newLeads?.c || 0, color: '#D97706' },
-      { stage: 'Contactados', count: contactados?.c || 0, color: '#0066CC' },
-      { stage: 'En Proceso', count: enProceso?.c || 0, color: '#EA580C' },
-      { stage: 'Convertidos', count: converted?.c || 0, color: '#059669' },
+      { stage: 'Nuevos', count: newCount, color: '#D97706' },
+      { stage: 'En calificación', count: califCount, color: '#0066CC' },
+      { stage: 'Cita agendada', count: citaCount, color: '#059669' },
     ];
 
-    // Source performance with conversion data
-    const sourcePerformance = (leadsBySource || []).map(s => ({
-      source: s.source || 'Directo',
-      total: s.count || 0,
-      percentage: ((s.count || 0) / total * 100).toFixed(1),
+    const { data: recentFsc } = await db.from('fsc_conversations')
+      .select('whatsapp_number, nombre_lead, lead_status, created_at')
+      .order('created_at', { ascending: false }).limit(10);
+    const recentLeads = (recentFsc || []).map(f => ({
+      name: f.nombre_lead, phone: f.whatsapp_number, status: f.lead_status, source: 'whatsapp', created_at: f.created_at
     }));
 
+    const leadsBySource = [
+      { source: 'whatsapp', count: waLeads || 0 },
+      { source: 'landing', count: formLeads || 0 },
+    ].filter(s => s.count > 0);
+
+    const leadsByStatus = [
+      { status: 'nuevo', count: newCount },
+      { status: 'en_calificacion', count: califCount },
+      { status: 'cita_agendada', count: citaCount },
+    ].filter(s => s.count > 0);
+
+    // Fetch HubSpot pipeline data
+    let hubspotDeals = [];
+    let hubspotStages = {};
+    try {
+      const hsToken = process.env.HUBSPOT_TOKEN || '';
+      if (hsToken) {
+        const hsResp = await fetch('https://api.hubapi.com/crm/v3/objects/deals/search', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${hsToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            filterGroups: [{ filters: [{ propertyName: 'pipeline', operator: 'EQ', value: 'default' }] }],
+            properties: ['dealname', 'dealstage', 'createdate'],
+            limit: 100,
+          }),
+        });
+        if (hsResp.ok) {
+          const hsData = await hsResp.json();
+          hubspotDeals = hsData.results || [];
+          const stageLabels = {
+            '1099262896': 'Calificado', '1099262897': 'Cita agendada',
+            '1099262898': 'Análisis', '1099262899': 'Propuesta',
+            '1099262900': 'Seguimiento', '1099262901': 'Solicitud completada',
+            '1099262902': 'Cerrada ganada', '1099262903': 'Cerrada perdida',
+          };
+          hubspotDeals.forEach(d => {
+            const stage = stageLabels[d.properties.dealstage] || d.properties.dealstage;
+            hubspotStages[stage] = (hubspotStages[stage] || 0) + 1;
+          });
+        }
+      }
+    } catch (e) { console.error('HubSpot fetch error:', e.message); }
+
+    const hubspotPipeline = Object.entries(hubspotStages).map(([stage, count]) => ({ stage, count }));
+
     res.json({
-      totalLeads: totalLeads?.c || 0,
-      newLeads: newLeads?.c || 0,
-      contactados: contactados?.c || 0,
-      enProceso: enProceso?.c || 0,
-      converted: converted?.c || 0,
+      totalLeads: totalLeadsCount,
+      newLeads: newCount,
+      contactados: califCount,
+      enProceso: califCount,
+      converted: citaCount,
       conversionRate,
       contactRate,
-      processRate,
+      processRate: contactRate,
       funnel,
-      sourcePerformance,
+      sourcePerformance: leadsBySource.map(s => ({ source: s.source, total: s.count, percentage: (s.count / total * 100).toFixed(1) })),
       leadsBySource,
       leadsByStatus,
       recentLeads,
+      hubspotDeals: hubspotDeals.length,
+      hubspotPipeline,
     });
   } catch (err) {
     console.error('Agency stats error:', err);

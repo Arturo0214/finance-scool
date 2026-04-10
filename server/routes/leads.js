@@ -1,6 +1,7 @@
 const express = require('express');
 const { queryAll, queryOne, runQuery } = require('../models/database');
 const { verifyToken } = require('../middleware/auth');
+const { createNotification } = require('./notifications');
 const router = express.Router();
 
 router.post('/', async (req, res) => {
@@ -35,6 +36,12 @@ router.post('/', async (req, res) => {
       'INSERT INTO leads (name,email,phone,service,message,source,income_type,approx_income,declaracion,retiro_plan) VALUES (?,?,?,?,?,?,?,?,?,?)',
       [cleanName, cleanEmail, cleanPhone, cleanService, cleanMessage, 'cta_landing', cleanIncomeType, cleanApproxIncome, cleanDeclaracion, cleanRetiroPlan]
     );
+    createNotification({
+      type: 'lead',
+      message: `🆕 Nuevo lead desde landing: ${cleanName}`,
+      data: { name: cleanName, phone: cleanPhone, source: 'cta_landing' },
+      link: '/admin/leads',
+    });
     res.json({ success: true, id: r.lastInsertRowid });
   } catch (err) {
     console.error('Create lead error:', err);

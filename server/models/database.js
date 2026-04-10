@@ -48,54 +48,8 @@ async function initDB() {
     else console.error('Admin seed error:', error.message);
   }
 
-  // Seed team members
-  const seedUsers = [
-    { name: 'Ricardo Mendoza',  email: 'ricardo@financescool.com',  password: 'Ricardo2024!', role: 'admin'  },
-    { name: 'Gabriela Torres',  email: 'gabriela@financescool.com', password: 'Gaby2024!',    role: 'asesor' },
-    { name: 'Luis Hernández',   email: 'luis@financescool.com',     password: 'Luis2024!',    role: 'asesor' },
-    { name: 'Mariana Ríos',     email: 'mariana@financescool.com',  password: 'Mari2024!',    role: 'asesor' },
-  ];
-
-  for (const u of seedUsers) {
-    const { data: exists } = await db.from('users').select('id').eq('email', u.email).maybeSingle();
-    if (!exists) {
-      const hash = bcrypt.hashSync(u.password, 10);
-      const { error } = await db.from('users').insert([{ name: u.name, email: u.email, password: hash, role: u.role }]);
-      if (!error) console.log(`✅ ${u.role} created — ${u.email} / ${u.password}`);
-    }
-  }
-
-  // Seed demo leads if table is empty
-  const { count: leadCount } = await db.from('leads').select('id', { count: 'exact', head: true });
-
-  if (!leadCount || leadCount === 0) {
-    const demoLeads = [
-      { name: 'María González',  email: 'maria@email.com',   phone: '5551234567', service: 'PPR Prudential',        message: 'Me interesa un plan de retiro',    source: 'landing',   status: 'nuevo'      },
-      { name: 'Carlos Ramírez',  email: 'carlos@email.com',  phone: '5559876543', service: 'Estrategia Fiscal',     message: 'Quiero optimizar mis impuestos',   source: 'instagram', status: 'contactado' },
-      { name: 'Ana López',       email: 'ana@email.com',     phone: '5552468135', service: 'PPR + Fiscal',          message: 'Busco asesoría integral',          source: 'referido',  status: 'en_proceso' },
-      { name: 'Roberto Díaz',    email: 'roberto@email.com', phone: '5553691258', service: 'PPR Prudential',        message: 'Tengo 35 años',                    source: 'google',    status: 'nuevo'      },
-      { name: 'Laura Martínez',  email: 'laura@email.com',   phone: '5557894561', service: 'Educación Financiera',  message: 'Me interesa el curso',            source: 'instagram', status: 'convertido' },
-      { name: 'Pedro Sánchez',   email: 'pedro@email.com',   phone: '5558523697', service: 'PPR + Fiscal',          message: 'Quiero maximizar deducciones',     source: 'landing',   status: 'nuevo'      },
-      { name: 'Sofía Hernández', email: 'sofia@email.com',   phone: '5554789632', service: 'Estrategia Fiscal',     message: 'Duda sobre art. 151',             source: 'google',    status: 'contactado' },
-    ];
-    await db.from('leads').insert(demoLeads);
-
-    const now = new Date();
-    const demoEvents = [
-      { title: 'Asesoría PPR - María',         description: 'Primera consulta',         start_date: new Date(now.getTime() + 86400000).toISOString(),   color: '#C9A84C', user_id: 1, lead_id: 1 },
-      { title: 'Seguimiento - Carlos',          description: 'Revisión fiscal',          start_date: new Date(now.getTime() + 172800000).toISOString(),  color: '#3B82F6', user_id: 1, lead_id: 2 },
-      { title: 'Webinar Educación Financiera',  description: 'Sesión grupal PPR',        start_date: new Date(now.getTime() + 259200000).toISOString(),  color: '#10B981', user_id: 1 },
-      { title: 'Cierre - Ana López',            description: 'Firma de contrato',        start_date: new Date(now.getTime() + 345600000).toISOString(),  color: '#C9A84C', user_id: 1, lead_id: 3 },
-    ];
-    await db.from('events').insert(demoEvents);
-
-    const demoMessages = [
-      { sender_id: 1, content: '¡Bienvenidos al chat del equipo Finance SCool!',             channel: 'general' },
-      { sender_id: 1, content: 'Recordatorio: webinar de educación financiera este jueves',  channel: 'general' },
-    ];
-    await db.from('messages').insert(demoMessages);
-    console.log('✅ Demo data seeded');
-  }
+  // No seed users or demo data — team members are created via /admin/team
+  // All leads come from real sources (landing form, WhatsApp, Meta campaigns)
 }
 
 // ─── SQL-to-Supabase query translator ──────────────────────────────────────

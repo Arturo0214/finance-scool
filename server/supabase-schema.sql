@@ -148,6 +148,22 @@ CREATE TABLE IF NOT EXISTS appointments (
 CREATE INDEX IF NOT EXISTS appointments_date_idx ON appointments(date);
 CREATE INDEX IF NOT EXISTS appointments_user_id_idx ON appointments(user_id);
 
+-- Notifications table
+CREATE TABLE IF NOT EXISTS notifications (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT,
+  type TEXT NOT NULL DEFAULT 'info',
+  message TEXT NOT NULL,
+  data JSONB DEFAULT '{}'::jsonb,
+  link TEXT,
+  is_read BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS notifications_user_id_idx ON notifications(user_id);
+CREATE INDEX IF NOT EXISTS notifications_is_read_idx ON notifications(is_read);
+CREATE INDEX IF NOT EXISTS notifications_created_at_idx ON notifications(created_at DESC);
+
 -- Migration: ensure fsc_conversations has modo_humano column
 ALTER TABLE fsc_conversations ADD COLUMN IF NOT EXISTS modo_humano BOOLEAN DEFAULT FALSE;
 

@@ -5,10 +5,9 @@ export default function FunnelView({ stats }) {
   const s = stats || {};
   const total = s.totalLeads || 1;
   const stages = [
-    { name: 'Nuevo',      count: s.newLeads || 0,                      desc: 'Leads que acaban de entrar al sistema',         color: C.amber,    icon: AlertCircle },
-    { name: 'Contactado', count: s.contactados || 0,                   desc: 'Primer contacto realizado por el asesor',       color: C.blue,     icon: Phone       },
-    { name: 'En Proceso', count: s.enProceso || s.inProgress || 0,     desc: 'Negociación activa, posible cierre',            color: '#EA580C',  icon: Clock       },
-    { name: 'Convertido', count: s.converted || 0,                     desc: 'Lead convertido a cliente PPR',                 color: C.green,    icon: UserCheck   },
+    { name: 'Nuevo',              count: s.newLeads || 0,                      desc: 'Leads que acaban de escribir por primera vez',   color: C.amber,    icon: AlertCircle },
+    { name: 'En calificación',    count: s.enProceso || s.inProgress || 0,     desc: 'Sofía está calificando al lead',                color: C.blue,     icon: Phone       },
+    { name: 'Cita agendada',      count: s.converted || 0,                     desc: 'Cita confirmada con Ingrid',                    color: C.green,    icon: UserCheck   },
   ];
 
   return (

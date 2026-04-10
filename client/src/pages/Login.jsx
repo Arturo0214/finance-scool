@@ -15,7 +15,7 @@ export default function Login() {
 
   // If already logged in, redirect
   if (user) {
-    navigate('/admin');
+    navigate('/admin/dashboard');
     return null;
   }
 
@@ -25,7 +25,7 @@ export default function Login() {
     setIsLoading(true);
     try {
       await login(email, password);
-      navigate('/admin');
+      navigate('/admin/dashboard');
     } catch (err) {
       setError(err.message || 'Email o contraseña incorrectos');
     } finally {
