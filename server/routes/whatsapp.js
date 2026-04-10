@@ -163,7 +163,7 @@ router.get('/leads', async (req, res) => {
     query = query.order('last_message_at', { ascending: false });
     const { data: waLeads } = await query;
 
-    // 2. Get fsc_conversations (SofIA bot)
+    // 2. Get fsc_conversations (Sofía bot)
     let fscQuery = db.from('fsc_conversations')
       .select('id, whatsapp_number, nombre_lead, lead_status, conversation_history, filtro_actual, prioridad, created_at, updated_at');
     if (search) fscQuery = fscQuery.or(`nombre_lead.ilike.%${search}%,whatsapp_number.ilike.%${search}%`);
@@ -219,7 +219,7 @@ router.get('/leads', async (req, res) => {
             const prefix = last.role === 'admin' ? 'Tú: ' : '';
             lastMessage = prefix + last.body.slice(0, 80);
           } else if (last.content) {
-            const prefix = last.role === 'assistant' ? 'SofIA: ' : '';
+            const prefix = last.role === 'assistant' ? 'Sofía: ' : '';
             lastMessage = prefix + last.content.slice(0, 80);
           }
         }
@@ -263,7 +263,7 @@ router.get('/leads/:waId', async (req, res) => {
         body: m.content || m.body || '',
         type: 'text',
         timestamp: new Date(baseTime + i * 5000).toISOString(),
-        sender: m.role === 'assistant' ? 'SofIA' : undefined,
+        sender: m.role === 'assistant' ? 'Sofía' : undefined,
         status: m.role === 'assistant' ? 'delivered' : undefined
       }));
       return res.json({
@@ -279,7 +279,7 @@ router.get('/leads/:waId', async (req, res) => {
         blocked: false,
         modo_humano: fsc.modo_humano || false,
         _source: 'fsc',
-        _fsc_data: { lead_status: fsc.lead_status, filtro_actual: fsc.filtro_actual, prioridad: fsc.prioridad, regimen_fiscal: fsc.regimen_fiscal, rango_ingreso: fsc.rango_ingreso, objetivo: fsc.objetivo, edad: fsc.edad }
+        _fsc_data: { nombre: fsc.nombre_lead, declara_impuestos: fsc.declara_impuestos, regimen: fsc.regimen_fiscal, edad: fsc.edad, ingreso: fsc.rango_ingreso, situacion_laboral: fsc.situacion_laboral, objetivo: fsc.objetivo, prioridad: fsc.prioridad, fecha_cita: fsc.fecha_cita, hora_cita: fsc.hora_cita, consultor_asignado: fsc.consultor_asignado }
       });
     }
 

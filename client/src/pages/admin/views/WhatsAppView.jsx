@@ -13,20 +13,48 @@ import {
 } from 'lucide-react';
 import { api } from '../../../utils/api';
 
-/* ── Colores por estado (FSC + HubSpot) ── */
+/* ── Colores por estado (unificados: FSC + HubSpot pipeline) ── */
 const EC = {
-  nuevo:                { bg: '#FEF3C7', text: '#92400E', dot: '#F59E0B', label: 'Nuevo' },
-  en_calificacion:      { bg: '#DBEAFE', text: '#1E40AF', dot: '#3B82F6', label: 'En calificación' },
-  calificado:           { bg: '#E0E7FF', text: '#3730A3', dot: '#6366F1', label: 'Calificado' },
-  cita_agendada:        { bg: '#D1FAE5', text: '#065F46', dot: '#10B981', label: 'Cita agendada' },
-  no_calificado:        { bg: '#FEE2E2', text: '#991B1B', dot: '#EF4444', label: 'No calificado' },
-  cerrado_no_calificado:{ bg: '#F3F4F6', text: '#6B7280', dot: '#9CA3AF', label: 'Cerrado' },
-  // Legacy statuses (whatsapp_leads)
-  contactado:           { bg: '#DBEAFE', text: '#1E40AF', dot: '#3B82F6', label: 'Contactado' },
-  en_proceso:           { bg: '#FFF7ED', text: '#9A3412', dot: '#F97316', label: 'En proceso' },
-  convertido:           { bg: '#D1FAE5', text: '#065F46', dot: '#10B981', label: 'Convertido' },
-  descartado:           { bg: '#FEE2E2', text: '#991B1B', dot: '#EF4444', label: 'Descartado' },
+  nuevo:                    { bg: '#FEF3C7', text: '#92400E', dot: '#F59E0B', label: 'Nuevo' },
+  en_calificacion:          { bg: '#DBEAFE', text: '#1E40AF', dot: '#3B82F6', label: 'En calificación' },
+  calificado:               { bg: '#E0E7FF', text: '#3730A3', dot: '#6366F1', label: 'Calificado para asesoría' },
+  cita_agendada:            { bg: '#D1FAE5', text: '#065F46', dot: '#10B981', label: 'Cita agendada' },
+  analisis_necesidades:     { bg: '#FFF7ED', text: '#9A3412', dot: '#F97316', label: 'Análisis de necesidades' },
+  propuesta:                { bg: '#EDE9FE', text: '#5B21B6', dot: '#8B5CF6', label: 'Propuesta / cotización' },
+  seguimiento:              { bg: '#FCE7F3', text: '#9D174D', dot: '#EC4899', label: 'Seguimiento / objeciones' },
+  solicitud_completada:     { bg: '#CFFAFE', text: '#155E75', dot: '#06B6D4', label: 'Solicitud completada' },
+  cerrada_ganada:           { bg: '#D1FAE5', text: '#065F46', dot: '#10B981', label: 'Cerrada ganada' },
+  cerrada_perdida:          { bg: '#F3F4F6', text: '#6B7280', dot: '#9CA3AF', label: 'Cerrada perdida' },
+  no_calificado:            { bg: '#FEE2E2', text: '#991B1B', dot: '#EF4444', label: 'No calificado' },
+  cerrado_no_calificado:    { bg: '#F3F4F6', text: '#6B7280', dot: '#9CA3AF', label: 'Cerrado' },
 };
+
+/* ── Mapeo de IDs de botón a texto legible ── */
+const BUTTON_LABELS = {
+  btn_inicio_si: '¡Claro, vamos!', btn_inicio_info: 'Quiero más info',
+  btn_sat_si: 'Sí, declaro', btn_sat_no: 'No declaro',
+  ing_bajo: 'Hasta $30,000', ing_medio: '$30,000 - $70,000', ing_alto: 'Más de $70,000',
+  lab_asalariado: 'Asalariado', lab_honorarios: 'Honorarios', lab_empresarial: 'Empresario',
+  obj_fiscal: 'Reducir impuestos', obj_retiro: 'Planear mi retiro', obj_ambos: 'Ambos',
+  hr_manana: '9:00 - 11:00 AM', hr_mediodia: '11:00 AM - 2:00 PM', hr_tarde: '3:00 - 6:00 PM',
+  hr_sab_10: '10:00 AM', hr_sab_11: '11:00 AM', hr_sab_12: '12:00 PM',
+};
+
+/* ── Labels de datos recopilados ── */
+const STATE_LABELS = {
+  nombre: 'Nombre', declara_impuestos: 'Declara impuestos', regimen: 'Régimen fiscal',
+  edad: 'Edad', ingreso: 'Ingreso mensual', situacion_laboral: 'Sit. laboral',
+  objetivo: 'Objetivo', prioridad: 'Prioridad', fecha_cita: 'Fecha cita',
+  hora_cita: 'Hora cita', consultor_asignado: 'Email',
+};
+
+/* ── Formatear texto de mensaje (reemplazar IDs de botón) ── */
+function formatMessageText(text) {
+  if (!text) return '';
+  // Reemplazar [BUTTON_REPLY: id] con el label
+  return text.replace(/\[BUTTON_REPLY:\s*(\w+)\]/g, (_, id) => BUTTON_LABELS[id] || id)
+             .replace(/\[LIST_REPLY:\s*(.+?)\]/g, (_, text) => text);
+}
 
 /* ── Íconos de estado de mensaje ── */
 const MSI = {
@@ -346,11 +374,7 @@ export default function WhatsAppView() {
           <div className="wa-filters">
             <select className="wa-fsel" value={filterEstado} onChange={e => setFilterEstado(e.target.value)}>
               <option value="todos">Estado: Todos ({leads.length})</option>
-              <option value="nuevo">Nuevo</option>
-              <option value="contactado">Contactado</option>
-              <option value="en_proceso">En proceso</option>
-              <option value="convertido">Convertido</option>
-              <option value="descartado">Descartado</option>
+              {Object.entries(EC).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
             </select>
             {agents.length > 0 ? (
               <select className="wa-fsel" value={filterAgent} onChange={e => setFilterAgent(e.target.value)}>
@@ -440,7 +464,7 @@ export default function WhatsAppView() {
                 </div>
                 <div className="wa-ch-acts">
                   <select className="wa-ch-sel" value={chatData?.estado || 'nuevo'} onChange={e => handleEstadoChange(selectedLead.wa_id, e.target.value)}>
-                    <option value="nuevo">Nuevo</option><option value="contactado">Contactado</option><option value="en_proceso">En proceso</option><option value="convertido">Convertido</option><option value="descartado">Descartado</option>
+                    {Object.entries(EC).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                   </select>
                   {!chatData?.assigned_to && <button className="wa-ch-btn" onClick={() => handleClaim(selectedLead.wa_id)}><Zap size={12} /> Reclamar</button>}
                   <button className={`wa-ch-btn${chatData?.modo_humano ? ' on' : ''}`} onClick={handleToggleHuman} disabled={togglingHuman}>{chatData?.modo_humano ? '👤 Humano' : '🤖 AI'}</button>
@@ -468,18 +492,38 @@ export default function WhatsAppView() {
                       {msgs.map((msg, i) => {
                         const isOut = msg.role === 'admin' || msg.direction === 'outbound' || msg.direction === 'sent' || msg.from_me;
                         const isTpl = msg.type === 'template';
-                        const senderName = isOut ? (msg.sender || 'SofIA') : chatData.contact_name;
+                        const senderName = isOut ? (msg.sender || 'Sofía') : chatData.contact_name;
+                        const rawText = msg.body || msg.text || msg.content || msg.message || (msg.type && `[${msg.type}]`);
+                        const displayText = formatMessageText(rawText);
+                        // Extraer datos recopilados del lead para mostrar en mensajes del bot
+                        const showState = isOut && !msg.sender && chatData?._fsc_data;
                         return (
                           <div key={i} className={`wa-m${isTpl ? ' t' : isOut ? ' a' : ' u'}`}>
                             {!isOut && <div className="wa-m-sender">{senderName}</div>}
                             {isOut && msg.sender && <div className="wa-m-sender" style={{ color: '#53bdeb' }}>{msg.sender}</div>}
-                            <div>{msg.body || msg.text || msg.message || (msg.type && `[${msg.type}]`)}</div>
+                            <div style={{ whiteSpace: 'pre-wrap' }}>{displayText}</div>
                             <div className="wa-m-foot"><span>{fmt(msg.timestamp || msg.created_at)}</span>{isOut && (MSI[msg.status] || MSI.sent)}</div>
                           </div>
                         );
                       })}
                     </div>
                   ))
+                )}
+                {/* Datos recopilados card */}
+                {chatData?._fsc_data && Object.values(chatData._fsc_data).some(v => v) && (
+                  <div style={{ margin:'8px 12px', padding:'10px 14px', background:'rgba(0,0,0,0.04)', borderRadius:10, fontSize:12 }}>
+                    <div style={{ fontWeight:600, fontSize:13, marginBottom:6, display:'flex', alignItems:'center', gap:4 }}>🏷️ Datos recopilados</div>
+                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'3px 12px' }}>
+                      {Object.entries(chatData._fsc_data)
+                        .filter(([k, v]) => v && STATE_LABELS[k])
+                        .map(([k, v]) => (
+                          <div key={k} style={{ display:'flex', gap:4 }}>
+                            <span style={{ color:'#64748b', fontWeight:500 }}>{STATE_LABELS[k]}:</span>
+                            <span style={{ color:'#1e293b' }}>{String(v)}</span>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
                 )}
                 <div ref={chatEndRef} />
               </div>
