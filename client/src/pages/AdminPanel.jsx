@@ -189,10 +189,8 @@ export default function AdminPanel() {
         <aside className={`sb${sidebarOpen ? '' : ' closed'}${mobileMenuOpen ? ' mobile-open' : ''}`}>
           <div className="sb-head">
             <div className="sb-logo">
-              {sidebarOpen
-                ? <Logo height={32} variant="light" />
-                : <div className="sb-logo-icon"><Briefcase size={18} /></div>
-              }
+              <span className="sb-logo-full"><Logo height={32} variant="light" /></span>
+              <span className="sb-logo-mini"><div className="sb-logo-icon"><Briefcase size={18} /></div></span>
             </div>
             <button className="sb-toggle" onClick={() => setSidebarOpen(o => !o)}>
               {sidebarOpen ? <X size={18} /> : <Menu size={18} />}
@@ -202,9 +200,7 @@ export default function AdminPanel() {
           <nav className="sb-nav">
             {navItems.map(item => {
               if (item.id.startsWith('divider')) {
-                return sidebarOpen
-                  ? <div key={item.id} className="sb-divider">{item.label.replace(/─/g, '').trim()}</div>
-                  : null;
+                return <div key={item.id} className="sb-divider sb-label">{item.label.replace(/─/g, '').trim()}</div>;
               }
               const Icon = item.icon;
               return (
@@ -215,7 +211,7 @@ export default function AdminPanel() {
                   title={!sidebarOpen ? item.label : ''}
                 >
                   <Icon size={18} />
-                  {sidebarOpen && <span>{item.label}</span>}
+                  <span className="sb-label">{item.label}</span>
                 </button>
               );
             })}
@@ -223,7 +219,7 @@ export default function AdminPanel() {
 
           <button className="sb-logout" onClick={handleLogout} title={!sidebarOpen ? SPANISH_LABELS.logout : ''}>
             <LogOut size={18} />
-            {sidebarOpen && <span>{SPANISH_LABELS.logout}</span>}
+            <span className="sb-label">{SPANISH_LABELS.logout}</span>
           </button>
         </aside>
 

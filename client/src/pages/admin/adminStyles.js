@@ -24,6 +24,14 @@ export const getAdminCSS = () => `
   .sb-logo { display:flex; align-items:center; gap:10px; }
   .sb-logo-icon { width:32px; height:32px; background:rgba(255,255,255,.15); border-radius:8px; display:flex; align-items:center; justify-content:center; }
   .sb-logo span { font-size:15px; font-weight:700; white-space:nowrap; letter-spacing:-.3px; }
+
+  /* Label & logo visibility — CSS-driven instead of React conditional */
+  .sb-label { white-space:nowrap; overflow:hidden; transition:opacity .2s; }
+  .sb.closed .sb-label { display:none; }
+  .sb-logo-full { display:inline-flex; }
+  .sb-logo-mini { display:none; }
+  .sb.closed .sb-logo-full { display:none; }
+  .sb.closed .sb-logo-mini { display:inline-flex; }
   .sb-toggle { background:none; border:none; color:rgba(255,255,255,.7); cursor:pointer; padding:6px; display:flex; border-radius:6px; transition:background .2s; }
   .sb-toggle:hover { background:rgba(255,255,255,.1); }
   .sb-nav { flex:1; display:flex; flex-direction:column; gap:4px; padding:0 10px; overflow-y:auto; }
@@ -175,7 +183,10 @@ export const getAdminCSS = () => `
     .sb { position:fixed !important; top:0; left:0; bottom:0; width:270px !important; z-index:2000; transform:translateX(-100%); transition:transform .3s ease; padding:20px 0 !important; overflow-y:auto !important; }
     .sb.closed { width:270px !important; }
     .sb.mobile-open { transform:translateX(0); }
-    .sb.mobile-open span, .sb.mobile-open .sb-divider { display:block !important; }
+    .sb.mobile-open .sb-label { display:inline !important; }
+    .sb.mobile-open .sb-divider { display:block !important; }
+    .sb.mobile-open .sb-logo-full { display:inline-flex !important; }
+    .sb.mobile-open .sb-logo-mini { display:none !important; }
 
     /* Overlay backdrop */
     .sb-overlay { display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(15,23,42,.5); z-index:1999; }
