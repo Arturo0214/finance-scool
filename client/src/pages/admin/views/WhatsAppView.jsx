@@ -495,35 +495,28 @@ export default function WhatsAppView() {
                         const senderName = isOut ? (msg.sender || 'Sofía') : chatData.contact_name;
                         const rawText = msg.body || msg.text || msg.content || msg.message || (msg.type && `[${msg.type}]`);
                         const displayText = formatMessageText(rawText);
-                        // Extraer datos recopilados del lead para mostrar en mensajes del bot
-                        const showState = isOut && !msg.sender && chatData?._fsc_data;
+                        // Show state card inside the LAST bot message
+                        const isLastBotMsg = isOut && !msg.sender && i === msgs.length - 1 && chatData?._fsc_data;
+                        const stateEntries = isLastBotMsg ? Object.entries(chatData._fsc_data).filter(([k, v]) => v && STATE_LABELS[k]) : [];
                         return (
                           <div key={i} className={`wa-m${isTpl ? ' t' : isOut ? ' a' : ' u'}`}>
                             {!isOut && <div className="wa-m-sender">{senderName}</div>}
                             {isOut && msg.sender && <div className="wa-m-sender" style={{ color: '#53bdeb' }}>{msg.sender}</div>}
                             <div style={{ whiteSpace: 'pre-wrap' }}>{displayText}</div>
+                            {stateEntries.length > 0 && (
+                              <div style={{ marginTop:8, padding:'8px 10px', background:'rgba(0,0,0,0.04)', borderRadius:8, fontSize:11 }}>
+                                <div style={{ fontWeight:600, fontSize:12, marginBottom:4 }}>🏷️ Datos recopilados</div>
+                                {stateEntries.map(([k, v]) => (
+                                  <div key={k}><span style={{ color:'#64748b', fontWeight:500 }}>{STATE_LABELS[k]}:</span> <span style={{ color:'#1e293b' }}>{String(v)}</span></div>
+                                ))}
+                              </div>
+                            )}
                             <div className="wa-m-foot"><span>{fmt(msg.timestamp || msg.created_at)}</span>{isOut && (MSI[msg.status] || MSI.sent)}</div>
                           </div>
                         );
                       })}
                     </div>
                   ))
-                )}
-                {/* Datos recopilados card */}
-                {chatData?._fsc_data && Object.values(chatData._fsc_data).some(v => v) && (
-                  <div style={{ margin:'8px 12px', padding:'10px 14px', background:'rgba(0,0,0,0.04)', borderRadius:10, fontSize:12 }}>
-                    <div style={{ fontWeight:600, fontSize:13, marginBottom:6, display:'flex', alignItems:'center', gap:4 }}>🏷️ Datos recopilados</div>
-                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'3px 12px' }}>
-                      {Object.entries(chatData._fsc_data)
-                        .filter(([k, v]) => v && STATE_LABELS[k])
-                        .map(([k, v]) => (
-                          <div key={k} style={{ display:'flex', gap:4 }}>
-                            <span style={{ color:'#64748b', fontWeight:500 }}>{STATE_LABELS[k]}:</span>
-                            <span style={{ color:'#1e293b' }}>{String(v)}</span>
-                          </div>
-                        ))}
-                    </div>
-                  </div>
                 )}
                 <div ref={chatEndRef} />
               </div>

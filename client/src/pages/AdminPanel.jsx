@@ -100,7 +100,7 @@ export default function AdminPanel() {
         { id: 'whatsapp',         label: SPANISH_LABELS.whatsapp,         icon: MessageCircle },
         { id: 'hubspot',          label: SPANISH_LABELS.hubspot,          icon: LinkIcon   },
         { id: 'workflow',         label: SPANISH_LABELS.workflow,         icon: Zap        },
-        { id: 'sofia-bot',        label: 'SofIA Bot',                    icon: Bot        },
+        { id: 'sofia-bot',        label: 'Sofía Bot',                    icon: Bot        },
       ]
     : [
         { id: 'dashboard', label: SPANISH_LABELS.dashboard, icon: BarChart3    },
@@ -110,7 +110,7 @@ export default function AdminPanel() {
         { id: 'chat',      label: SPANISH_LABELS.chat,      icon: MessageSquare },
         { id: 'whatsapp',  label: SPANISH_LABELS.whatsapp,  icon: MessageCircle },
         ...(canManageTeam ? [{ id: 'team', label: SPANISH_LABELS.team, icon: Settings }] : []),
-        { id: 'sofia-bot', label: 'SofIA Bot', icon: Bot },
+        { id: 'sofia-bot', label: 'Sofía Bot', icon: Bot },
       ];
 
   /* ── Carga inicial de datos ── */

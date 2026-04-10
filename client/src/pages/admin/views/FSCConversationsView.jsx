@@ -1,7 +1,7 @@
 /**
  * FSCConversationsView — Finance S Cool
  * Two-tab view:
- *   Tab 1: "Conversaciones SofIA" — lead list + chat detail
+ *   Tab 1: "Conversaciones Sofía" — lead list + chat detail
  *   Tab 2: "Pipeline HubSpot"     — kanban-style deal board
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -291,7 +291,7 @@ export default function FSCConversationsView() {
         padding: '0 16px', flexShrink: 0,
       }}>
         {[
-          { key: 'conversations', label: 'Conversaciones SofIA', icon: <MessageCircle size={16} /> },
+          { key: 'conversations', label: 'Conversaciones Sofía', icon: <MessageCircle size={16} /> },
           { key: 'pipeline', label: 'Pipeline HubSpot', icon: <Briefcase size={16} /> },
         ].map(tab => (
           <button
@@ -333,7 +333,7 @@ export default function FSCConversationsView() {
               color: '#fff', flexShrink: 0,
             }}>
               <MessageCircle size={20} />
-              <span style={{ fontSize: 15, fontWeight: 600, flex: 1 }}>SofIA Bot</span>
+              <span style={{ fontSize: 15, fontWeight: 600, flex: 1 }}>Sofía Bot</span>
               <span style={{
                 fontSize: 11, background: 'rgba(255,255,255,.2)',
                 padding: '2px 8px', borderRadius: 10,
@@ -521,7 +521,7 @@ export default function FSCConversationsView() {
                 }}>
                   <MessageCircle size={36} color={PRIMARY} />
                 </div>
-                <p style={{ margin: 0, fontSize: 15, fontWeight: 600, color: '#475569' }}>Conversaciones SofIA</p>
+                <p style={{ margin: 0, fontSize: 15, fontWeight: 600, color: '#475569' }}>Conversaciones Sofía</p>
                 <p style={{ margin: 0, fontSize: 13 }}>Selecciona un lead para ver su conversacion</p>
               </div>
             ) : (
@@ -667,7 +667,7 @@ export default function FSCConversationsView() {
                               boxShadow: '0 1px 2px rgba(0,0,0,.06)',
                             }}>
                               <div style={{ fontSize: 10, fontWeight: 600, marginBottom: 2, opacity: 0.8 }}>
-                                {isBot ? 'SofIA' : leadName(selectedLead)}
+                                {isBot ? 'Sofía' : leadName(selectedLead)}
                               </div>
                               <div style={{ whiteSpace: 'pre-wrap' }}>{text}</div>
                               <div style={{
