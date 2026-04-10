@@ -75,3 +75,4 @@ initDB().catch(err => {
 app.listen(PORT, () => {
   console.log(`🚀 Finance SCool API running at http://localhost:${PORT}`);
 });
+// Force redeploy 1775865107
