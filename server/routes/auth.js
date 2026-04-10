@@ -11,8 +11,9 @@ router.post('/login', async (req, res) => {
     if (!user || !bcrypt.compareSync(password, user.password))
       return res.status(401).json({ error: 'Credenciales incorrectas' });
     const token = generateToken(user);
-    // Always use secure + sameSite none for cross-domain cookies (Netlify → Railway)
-    res.cookie('token', token, { httpOnly: true, secure: true, maxAge: 86400000, sameSite: 'none' });
+    // sameSite lax: requests go through Netlify proxy (same domain), no need for 'none'
+    // 'none' causes Safari ITP to restrict/delete the cookie on mobile
+    res.cookie('token', token, { httpOnly: true, secure: true, maxAge: 86400000, sameSite: 'lax', path: '/' });
     res.json({ success: true, token, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
   } catch (err) {
     console.error('Login error:', err);
@@ -21,7 +22,7 @@ router.post('/login', async (req, res) => {
 });
 
 router.post('/logout', (req, res) => {
-  res.clearCookie('token', { httpOnly: true, secure: true, sameSite: 'none' });
+  res.clearCookie('token', { httpOnly: true, secure: true, sameSite: 'lax', path: '/' });
   res.json({ success: true });
 });
 
