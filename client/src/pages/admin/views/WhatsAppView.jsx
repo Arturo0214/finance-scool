@@ -48,12 +48,22 @@ const STATE_LABELS = {
   hora_cita: 'Hora cita', consultor_asignado: 'Email',
 };
 
+/* ── Extraer [STATE:{...}] de un mensaje ── */
+function extractState(text) {
+  if (!text) return { clean: text || '', state: null };
+  const match = text.match(/\[STATE:(.*?)\]$/s);
+  if (!match) return { clean: text, state: null };
+  const clean = text.slice(0, match.index).trim();
+  try { return { clean, state: JSON.parse(match[1]) }; }
+  catch { return { clean, state: null }; }
+}
+
 /* ── Formatear texto de mensaje (reemplazar IDs de botón) ── */
 function formatMessageText(text) {
   if (!text) return '';
-  // Reemplazar [BUTTON_REPLY: id] con el label
   return text.replace(/\[BUTTON_REPLY:\s*(\w+)\]/g, (_, id) => BUTTON_LABELS[id] || id)
-             .replace(/\[LIST_REPLY:\s*(.+?)\]/g, (_, text) => text);
+             .replace(/\[LIST_REPLY:\s*(.+?)\]/g, (_, t) => t)
+             .replace(/\[HORARIOS YA OCUPADOS.*?\]/g, '');
 }
 
 /* ── Íconos de estado de mensaje ── */
@@ -496,10 +506,9 @@ export default function WhatsAppView() {
                         const isTpl = msg.type === 'template';
                         const senderName = isOut ? (msg.sender || 'Sofía') : chatData.contact_name;
                         const rawText = msg.body || msg.text || msg.content || msg.message || (msg.type && `[${msg.type}]`);
-                        const displayText = formatMessageText(rawText);
-                        // Show state card inside the LAST bot message
-                        const isLastBotMsg = isOut && !msg.sender && i === msgs.length - 1 && chatData?._fsc_data;
-                        const stateEntries = isLastBotMsg ? Object.entries(chatData._fsc_data).filter(([k, v]) => v && STATE_LABELS[k]) : [];
+                        const { clean: cleanText, state: msgState } = isOut ? extractState(rawText) : { clean: rawText, state: null };
+                        const displayText = formatMessageText(cleanText);
+                        const stateEntries = msgState ? Object.entries(msgState).filter(([k, v]) => v && STATE_LABELS[k]) : [];
                         return (
                           <div key={i} className={`wa-m${isTpl ? ' t' : isOut ? ' a' : ' u'}`}>
                             {!isOut && <div className="wa-m-sender">{senderName}</div>}
