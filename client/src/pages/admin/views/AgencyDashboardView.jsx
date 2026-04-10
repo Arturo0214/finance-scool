@@ -77,6 +77,17 @@ const KPI_CSS = `
   .kpi-val   { font-size:32px; font-weight:800; color:#0f172a; margin:0; line-height:1; }
   .kpi-label { font-size:12px; color:#64748b; margin:6px 0 0; font-weight:500; }
   .kpi-icon  { width:40px; height:40px; border-radius:10px; display:flex; align-items:center; justify-content:center; }
+  @media(max-width:768px) {
+    .kpi-grid { grid-template-columns:repeat(2,1fr) !important; gap:10px; }
+    .kpi-card { padding:14px; }
+    .kpi-val { font-size:24px; }
+    .kpi-label { font-size:11px; }
+    .kpi-icon { width:34px; height:34px; }
+  }
+  @media(max-width:480px) {
+    .kpi-grid { grid-template-columns:1fr !important; }
+    .kpi-val { font-size:22px; }
+  }
 `;
 
 export default function AgencyDashboardView({ stats, leads }) {

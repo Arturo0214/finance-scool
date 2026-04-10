@@ -41,6 +41,16 @@ export default function ChatView({ messages, onSendMessage, messageInputRef }) {
         .chat-input-bar input:focus { border-color:#003DA5; }
         .send-btn { background:#003DA5; color:#fff; border:none; border-radius:8px; padding:10px 16px; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:background .2s; }
         .send-btn:hover { background:#0066CC; }
+        @media(max-width:768px) {
+          .chat-wrap { height:auto !important; min-height:300px; max-height:calc(100vh - 240px); }
+          .msg-list { padding:12px; }
+          .msg-bubble { max-width:85%; }
+          .chat-input-bar { padding:10px; gap:6px; }
+          .chat-input-bar input { padding:10px; font-size:16px; }
+        }
+        @media(max-width:480px) {
+          .chat-wrap { max-height:calc(100vh - 200px); }
+        }
       `}</style>
     <div className="view">
       <h1 className="view-title">{SPANISH_LABELS.chat}</h1>

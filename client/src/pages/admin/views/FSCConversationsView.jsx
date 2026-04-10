@@ -272,11 +272,14 @@ export default function FSCConversationsView() {
     <>
     <style>{`
       @media(max-width:768px) {
-        .fsc-wrap { height: 100% !important; }
-        .fsc-two-col { flex-direction: column !important; }
-        .fsc-left { width: 100% !important; min-width: auto !important; max-height: 45% !important; border-right: none !important; border-bottom: 1px solid #E2E8F0; }
-        .fsc-right { flex: 1 !important; min-height: 0; }
-        .fsc-pipeline { grid-template-columns: 1fr !important; overflow-x: auto; }
+        .fsc-wrap { height: 100% !important; overflow: hidden; }
+        .fsc-two-col { flex-direction: column !important; height: 100% !important; }
+        .fsc-left { width: 100% !important; min-width: auto !important; max-height: 40vh !important; border-right: none !important; border-bottom: 1px solid #E2E8F0; overflow-y: auto !important; }
+        .fsc-right { flex: 1 !important; min-height: 0; width: 100% !important; overflow-y: auto; }
+        .fsc-pipeline { grid-template-columns: 1fr !important; overflow-x: auto; gap: 12px !important; padding: 10px !important; }
+      }
+      @media(max-width:480px) {
+        .fsc-left { max-height: 35vh !important; }
       }
     `}</style>
     <div className="fsc-wrap" style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#F8FAFC', overflow: 'hidden' }}>

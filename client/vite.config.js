@@ -3,15 +3,16 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
+  cacheDir: '/tmp/vite-cache-financescool',
   server: {
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://localhost:3001',
+        target: 'https://finance-scool-production.up.railway.app',
         changeOrigin: true,
-        secure: false
+        secure: true
       }
     }
   },
-  build: { outDir: 'dist', sourcemap: false }
+  build: { outDir: 'dist', sourcemap: false, emptyOutDir: false }
 })

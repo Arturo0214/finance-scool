@@ -291,13 +291,29 @@ export default function WhatsAppView() {
 
         /* Responsive */
         @media(max-width:768px) {
-          .wa-left { display:${selectedLead ? 'none' : 'flex'}; width:100%; }
-          .wa-right { display:${selectedLead ? 'flex' : 'none'}; width:100%; }
+          .wa { flex-direction:column; height:100%; }
+          .wa-left { display:${selectedLead ? 'none' : 'flex'}; width:100% !important; min-width:auto !important; border-right:none; height:100%; }
+          .wa-right { display:${selectedLead ? 'flex' : 'none'}; width:100% !important; height:100%; }
           .wa-filters { grid-template-columns:1fr; }
-          .wa-ch-acts { flex-wrap:wrap; gap:4px; }
-          .wa-ch-btn { font-size:11px; padding:4px 8px; }
-          .wa-m { max-width:90%; }
+          .wa-ch-head { padding:6px 10px; gap:8px; }
+          .wa-ch-acts { flex-wrap:wrap; gap:3px; }
+          .wa-ch-btn { font-size:10px; padding:3px 7px; }
+          .wa-ch-sel { font-size:10px; padding:3px 6px; }
+          .wa-m { max-width:88%; font-size:0.84rem; }
+          .wa-input { padding:6px 10px; }
+          .wa-input input { padding:8px 10px; font-size:14px; }
+          .wa-sbtn { width:36px; height:36px; }
           .wa-back-btn { display:flex !important; }
+          .wa-item { padding:8px 10px; }
+          .wa-av { width:38px; height:38px; font-size:13px; }
+          .wa-name { font-size:13px; }
+          .wa-warn { padding:5px 10px; font-size:11px; }
+          .wa-search input { font-size:14px; }
+        }
+        @media(max-width:480px) {
+          .wa-ch-acts { gap:2px; }
+          .wa-ch-btn { font-size:9px; padding:2px 6px; }
+          .wa-m { max-width:92%; }
         }
       `}</style>
 

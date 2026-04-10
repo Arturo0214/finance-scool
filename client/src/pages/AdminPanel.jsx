@@ -53,7 +53,8 @@ function ViewSpinner() {
 export default function AdminPanel() {
   const navigate        = useNavigate();
   const { user, logout } = useAuth();
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
+  const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeView, setActiveView]   = useState('dashboard');
 

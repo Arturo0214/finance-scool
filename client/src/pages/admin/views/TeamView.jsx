@@ -110,15 +110,17 @@ export default function TeamView({ userRole }) {
         </div>
       )}
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-        <div className="stats-grid" style={{ flex: 1, marginBottom: 0, marginRight: 16 }}>
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+          <button className="btn-primary" onClick={() => setShowAddModal(true)} style={{ whiteSpace: 'nowrap' }}>
+            <Plus size={16} /> Agregar Usuario
+          </button>
+        </div>
+        <div className="stats-grid">
           <div className="stat-card"><div className="stat-icon" style={{ background: C.blueBg, color: C.primary }}><Users size={22} /></div><div><p className="stat-label">Total Usuarios</p><p className="stat-value">{users.length}</p></div></div>
           <div className="stat-card"><div className="stat-icon" style={{ background: C.greenBg, color: C.green }}><UserCheck size={22} /></div><div><p className="stat-label">Asesores</p><p className="stat-value">{users.filter(u => u.role === 'asesor').length}</p></div></div>
           <div className="stat-card"><div className="stat-icon" style={{ background: C.amberBg, color: C.amber }}><Settings size={22} /></div><div><p className="stat-label">Admins</p><p className="stat-value">{users.filter(u => u.role === 'admin').length}</p></div></div>
         </div>
-        <button className="btn-primary" onClick={() => setShowAddModal(true)} style={{ whiteSpace: 'nowrap', height: 'fit-content' }}>
-          <Plus size={16} /> Agregar Usuario
-        </button>
       </div>
 
       <div className="section">

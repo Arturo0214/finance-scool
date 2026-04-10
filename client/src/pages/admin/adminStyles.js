@@ -10,8 +10,12 @@ export const getAdminCSS = () => `
   @keyframes spin    { to { transform:rotate(360deg); } }
   @keyframes fadeIn  { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
 
+  /* ══ Global reset para móvil ══ */
+  *, *::before, *::after { box-sizing:border-box; }
+  html, body { overflow-x:hidden; width:100%; }
+
   /* ══ Layout raíz ══ */
-  .admin-wrap { display:flex; height:100vh; font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif; background:${C.bg}; color:${C.text}; }
+  .admin-wrap { display:flex; height:100vh; font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif; background:${C.bg}; color:${C.text}; overflow-x:hidden; width:100%; max-width:100vw; }
 
   /* ══ Sidebar ══ */
   .sb { width:260px; background:linear-gradient(180deg,${C.primary} 0%,${C.primaryDark} 100%); color:#fff; display:flex; flex-direction:column; padding:20px 0; transition:width .25s ease; flex-shrink:0; }
@@ -31,7 +35,7 @@ export const getAdminCSS = () => `
   .sb-logout:hover { color:#fff; background:rgba(220,38,38,.25); }
 
   /* ══ Área principal ══ */
-  .main { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+  .main { flex:1; display:flex; flex-direction:column; overflow:hidden; min-width:0; }
   .topbar { background:${C.white}; padding:14px 28px; border-bottom:1px solid ${C.border}; display:flex; justify-content:space-between; align-items:center; flex-shrink:0; }
   .topbar-left { display:flex; align-items:center; gap:10px; }
   .role-badge { display:inline-flex; align-items:center; gap:4px; padding:4px 10px; border-radius:20px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; }
@@ -45,8 +49,8 @@ export const getAdminCSS = () => `
   .content-wa { flex:1; overflow:hidden; padding:0; display:flex; flex-direction:column; }
 
   /* ══ Contenedor de vistas ══ */
-  .view { max-width:1400px; margin:0 auto; width:100%; animation:fadeIn .3s ease; }
-  .view-title { font-size:26px; font-weight:700; color:${C.text}; margin-bottom:6px; letter-spacing:-.3px; }
+  .view { max-width:1400px; margin:0 auto; width:100%; animation:fadeIn .3s ease; overflow-x:hidden; }
+  .view-title { font-size:26px; font-weight:700; color:${C.text}; margin-bottom:6px; letter-spacing:-.3px; word-break:break-word; }
   .view-subtitle { font-size:14px; color:${C.textMuted}; margin-bottom:24px; }
 
   /* ══ Tarjetas de estadísticas ══ */
@@ -159,8 +163,8 @@ export const getAdminCSS = () => `
   .sb-overlay { display:none; }
 
   /* ══ Responsive ══ */
-  @media(max-width:1100px){ .two-col,.three-col { grid-template-columns:1fr; } }
-  @media(max-width:900px){
+  @media(max-width:1100px) and (min-width:769px){ .two-col,.three-col { grid-template-columns:1fr; } }
+  @media(max-width:900px) and (min-width:769px){
     .sb { width:72px !important; }
     .sb span, .sb-divider { display:none !important; }
     .content { padding:18px; }
@@ -168,7 +172,8 @@ export const getAdminCSS = () => `
   }
   @media(max-width:768px){
     /* Sidebar as overlay drawer */
-    .sb { position:fixed !important; top:0; left:0; bottom:0; width:270px !important; z-index:2000; transform:translateX(-100%); transition:transform .3s ease; padding:20px 0 !important; overflow:visible !important; }
+    .sb { position:fixed !important; top:0; left:0; bottom:0; width:270px !important; z-index:2000; transform:translateX(-100%); transition:transform .3s ease; padding:20px 0 !important; overflow-y:auto !important; }
+    .sb.closed { width:270px !important; }
     .sb.mobile-open { transform:translateX(0); }
     .sb.mobile-open span, .sb.mobile-open .sb-divider { display:block !important; }
 
@@ -182,67 +187,127 @@ export const getAdminCSS = () => `
     /* Hide desktop toggle inside sidebar */
     .sb-toggle { display:none; }
 
+    /* Main content takes full width */
+    .main { width:100%; max-width:100vw; }
+
     /* Topbar adjustments */
-    .topbar { padding:10px 16px; }
+    .topbar { padding:10px 14px; gap:8px; }
+    .topbar-user span { display:none; }
+    .topbar-user { gap:4px; }
 
     /* Content area */
-    .content { padding:16px; }
+    .content { padding:14px; overflow-x:hidden; }
     .content-wa { padding:0; }
 
     /* Stats */
     .stats-grid { grid-template-columns:repeat(2,1fr); gap:10px; }
 
     /* View */
-    .view-title { font-size:22px; }
-    .view-subtitle { font-size:13px; margin-bottom:16px; }
+    .view { overflow-x:hidden; }
+    .view-title { font-size:20px; }
+    .view-subtitle { font-size:12px; margin-bottom:14px; }
 
     /* Tables scroll horizontally */
-    .tbl-wrap { margin:0 -4px; }
-    table { font-size:12.5px; }
+    .tbl-wrap { margin:0 -2px; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+    table { font-size:12px; min-width:500px; }
     thead th, tbody td { padding:8px 10px; white-space:nowrap; }
 
     /* Modals full-width on mobile */
-    .modal { max-width:95%; width:95%; margin:16px; }
-    .modal-head { padding:16px; }
-    .modal-body { padding:16px; }
-    .modal-foot { padding:14px 16px; }
+    .modal { max-width:96%; width:96%; margin:10px auto; max-height:85vh; }
+    .modal-head { padding:14px 16px; }
+    .modal-body { padding:14px 16px; }
+    .modal-foot { padding:12px 16px; flex-wrap:wrap; }
+    .modal-foot .btn-primary, .modal-foot .btn-secondary { flex:1; justify-content:center; min-width:0; }
 
     /* Filter tabs scroll */
-    .filter-tabs { overflow-x:auto; flex-wrap:nowrap; padding-bottom:4px; -webkit-overflow-scrolling:touch; }
-    .f-tab { flex-shrink:0; }
+    .filter-tabs { overflow-x:auto; flex-wrap:nowrap; padding-bottom:4px; -webkit-overflow-scrolling:touch; gap:4px; }
+    .f-tab { flex-shrink:0; padding:6px 12px; font-size:12px; }
 
     /* Buttons */
     .btn-primary, .btn-secondary { padding:9px 14px; font-size:13px; }
 
     /* Sections */
-    .section { padding:16px; margin-bottom:14px; }
+    .section { padding:14px; margin-bottom:12px; border-radius:10px; }
 
     /* Charts */
-    .chart-label { width:70px; font-size:12px; }
-    .source-name { width:80px; font-size:12px; }
+    .chart-bars { gap:8px; }
+    .chart-row { gap:8px; }
+    .chart-label { width:60px; font-size:11px; overflow:hidden; text-overflow:ellipsis; }
+    .source-name { width:60px; font-size:11px; overflow:hidden; text-overflow:ellipsis; }
+
+    /* Two/three col become single col */
+    .two-col, .three-col { grid-template-columns:1fr !important; gap:12px; }
 
     /* KPI cards */
     .kpi-grid { grid-template-columns:repeat(2,1fr) !important; gap:10px; }
-    .kpi-val { font-size:24px !important; }
+    .kpi-val { font-size:22px !important; }
 
     /* Stat cards */
-    .stat-card { padding:14px; gap:10px; }
+    .stat-card { padding:12px; gap:10px; }
     .stat-icon { width:36px; height:36px; }
-    .stat-value { font-size:22px; }
+    .stat-value { font-size:20px; }
     .stat-label { font-size:11px; }
+
+    /* Funnel responsive */
+    .funnel-stage { padding:12px 14px; gap:10px; }
+    .funnel-count { font-size:22px; min-width:44px; }
+    .funnel-name { font-size:13px; }
+    .funnel-pct { font-size:11px; }
+
+    /* Source bars */
+    .source-bar { gap:8px; padding:10px 0; }
+
+    /* Info box */
+    .info-box { font-size:12px; padding:10px 12px; flex-wrap:wrap; }
+
+    /* Role badge */
+    .role-badge { font-size:10px; padding:3px 8px; }
+
+    /* Events */
+    .event-card { padding:10px 12px; flex-direction:column; align-items:flex-start; gap:6px; }
+    .event-card h3 { font-size:13px; }
+
+    /* Config panel */
+    .config-panel { padding:14px; }
+
+    /* Field inputs */
+    .field input, .field select, .field textarea { font-size:16px; padding:10px; }
+    .field label { font-size:12px; }
   }
 
   @media(max-width:480px){
-    .stats-grid { grid-template-columns:1fr; }
+    .stats-grid { grid-template-columns:1fr; gap:8px; }
     .kpi-grid { grid-template-columns:1fr !important; }
+
+    /* Content even tighter */
+    .content { padding:10px; }
+    .topbar { padding:8px 10px; }
+
+    /* View titles */
+    .view-title { font-size:18px; }
 
     /* Calendar grid smaller cells */
     .cal-grid { font-size:11px; }
-    .cal-day { min-height:50px !important; padding:6px !important; }
-    .cal-dh { padding:6px !important; font-size:10px !important; }
+    .cal-day { min-height:44px !important; padding:4px !important; }
+    .cal-dh { padding:4px !important; font-size:9px !important; }
 
     /* Chat full height */
-    .chat-wrap { height:400px !important; }
-    .msg-bubble { max-width:85% !important; }
+    .chat-wrap { height:360px !important; }
+    .msg-bubble { max-width:88% !important; }
+
+    /* Tables */
+    table { min-width:420px; font-size:11px; }
+    thead th, tbody td { padding:6px 8px; }
+
+    /* Stat cards even more compact */
+    .stat-card { padding:10px; gap:8px; }
+    .stat-icon { width:32px; height:32px; }
+    .stat-value { font-size:18px; }
+
+    /* Buttons full width */
+    .btn-primary, .btn-secondary { width:100%; justify-content:center; }
+
+    /* Modal */
+    .modal { max-width:100%; width:100%; margin:0; border-radius:12px 12px 0 0; max-height:90vh; }
   }
 `;
