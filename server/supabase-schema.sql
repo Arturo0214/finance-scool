@@ -147,3 +147,9 @@ CREATE TABLE IF NOT EXISTS appointments (
 
 CREATE INDEX IF NOT EXISTS appointments_date_idx ON appointments(date);
 CREATE INDEX IF NOT EXISTS appointments_user_id_idx ON appointments(user_id);
+
+-- Migration: ensure fsc_conversations has modo_humano column
+ALTER TABLE fsc_conversations ADD COLUMN IF NOT EXISTS modo_humano BOOLEAN DEFAULT FALSE;
+
+-- Migration: ensure lead_states has modo_humano column (used by n8n workflow)
+ALTER TABLE lead_states ADD COLUMN IF NOT EXISTS modo_humano BOOLEAN DEFAULT FALSE;

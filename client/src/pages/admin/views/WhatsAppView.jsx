@@ -155,7 +155,7 @@ export default function WhatsAppView() {
   const hist    = chatData?.historial_chat || [];
   const agents  = [...new Set(leads.map(l => l.assigned_to).filter(Boolean))];
   const st      = waStats || {};
-  const expired = windowStatus && !windowStatus.open;
+  const expired = windowStatus && !windowStatus.windowOpen;
 
   const groupedHist = hist.reduce((acc, msg) => {
     const day = new Date(msg.timestamp || msg.created_at).toLocaleDateString('es-MX', { weekday:'long', day:'numeric', month:'long' });
