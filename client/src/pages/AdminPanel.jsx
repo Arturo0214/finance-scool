@@ -54,7 +54,7 @@ function ViewSpinner() {
 export default function AdminPanel() {
   const navigate        = useNavigate();
   const { view: urlView } = useParams();
-  const { user, logout } = useAuth();
+  const { user, loading: authLoading, logout } = useAuth();
   const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
   const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -118,11 +118,12 @@ export default function AdminPanel() {
 
   /* ── Carga inicial de datos ── */
   useEffect(() => {
+    if (authLoading) return; // Wait for auth check to finish before deciding
     if (!user) { navigate('/admin/login'); return; }
     // Redirect to proper default if on generic /admin/dashboard and user is agency
     if (userIsAgency && activeView === 'dashboard') navigate('/admin/agency-dashboard', { replace: true });
     loadData();
-  }, [user, navigate]); // eslint-disable-line
+  }, [user, authLoading, navigate]); // eslint-disable-line
 
   const loadData = async () => {
     try {
@@ -180,6 +181,18 @@ export default function AdminPanel() {
   /* ════════════════════════════════
      RENDER
      ════════════════════════════════ */
+  // Show spinner while verifying auth — prevents false "No autorizado" on mobile
+  if (authLoading) {
+    return (
+      <>
+        <style>{getAdminCSS()}</style>
+        <div className="admin-wrap" style={{ display:'flex', alignItems:'center', justifyContent:'center', minHeight:'100vh' }}>
+          <div className="loading-wrap"><div className="spinner" /><p>Verificando sesión...</p></div>
+        </div>
+      </>
+    );
+  }
+
   return (
     <>
       <style>{getAdminCSS()}</style>

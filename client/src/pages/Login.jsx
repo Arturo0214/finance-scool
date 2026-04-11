@@ -11,12 +11,21 @@ export default function Login() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const navigate = useNavigate();
-  const { user, login } = useAuth();
+  const { user, loading: authLoading, login } = useAuth();
 
   // If already logged in, redirect
   if (user) {
     navigate('/admin/dashboard');
     return null;
+  }
+
+  // Wait for auth check before showing login form
+  if (authLoading) {
+    return (
+      <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'Inter, sans-serif' }}>
+        <p style={{ color:'#64748B' }}>Verificando sesión...</p>
+      </div>
+    );
   }
 
   const handleSubmit = async (e) => {
