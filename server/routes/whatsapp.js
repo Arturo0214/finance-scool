@@ -137,46 +137,51 @@ router.get('/leads', async (req, res) => {
     const db = getDB();
     const { estado, search, assigned_to, page = 1, limit = 50 } = req.query;
 
-    // 1. Get whatsapp_leads
+    // 1. Get whatsapp_leads (sin historial_chat para que la lista cargue rápido)
     let query = db.from('whatsapp_leads')
-      .select('id, wa_id, contact_name, estado, origin, assigned_to, last_message_at, unread_count, blocked, modo_humano, created_at, historial_chat');
+      .select('id, wa_id, contact_name, estado, origin, assigned_to, last_message_at, unread_count, blocked, modo_humano, created_at, last_message_preview');
     if (estado && estado !== 'todos') query = query.eq('estado', estado);
     if (assigned_to) query = query.eq('assigned_to', assigned_to);
     if (search) query = query.or(`contact_name.ilike.%${search}%,wa_id.ilike.%${search}%`);
     query = query.order('last_message_at', { ascending: false });
-    const { data: waLeads } = await query;
+    const { data: waLeads, error: waError } = await query;
+    // Si last_message_preview no existe como columna, hacer fallback sin historial
+    if (waError && waError.message && waError.message.includes('last_message_preview')) {
+      query = db.from('whatsapp_leads')
+        .select('id, wa_id, contact_name, estado, origin, assigned_to, last_message_at, unread_count, blocked, modo_humano, created_at');
+      if (estado && estado !== 'todos') query = query.eq('estado', estado);
+      if (assigned_to) query = query.eq('assigned_to', assigned_to);
+      if (search) query = query.or(`contact_name.ilike.%${search}%,wa_id.ilike.%${search}%`);
+      query = query.order('last_message_at', { ascending: false });
+    }
+    const waLeadsFinal = waError ? (await query).data : waLeads;
 
-    // 2. Get fsc_conversations (Sofía bot)
+    // 2. Get fsc_conversations (Sofía bot) — sin conversation_history para rendimiento
     let fscQuery = db.from('fsc_conversations')
-      .select('id, whatsapp_number, nombre_lead, lead_status, conversation_history, filtro_actual, prioridad, created_at, updated_at');
+      .select('id, whatsapp_number, nombre_lead, lead_status, filtro_actual, prioridad, modo_humano, created_at, updated_at');
     if (search) fscQuery = fscQuery.or(`nombre_lead.ilike.%${search}%,whatsapp_number.ilike.%${search}%`);
     fscQuery = fscQuery.order('updated_at', { ascending: false });
     const { data: fscLeads } = await fscQuery;
 
-    // 3. Map fsc_conversations to whatsapp_leads format (keep real FSC statuses)
-    const fscMapped = (fscLeads || []).map(f => {
-      let history = [];
-      try { history = typeof f.conversation_history === 'string' ? JSON.parse(f.conversation_history) : (f.conversation_history || []); } catch {}
-      return {
-        id: 'fsc_' + f.id,
-        wa_id: f.whatsapp_number,
-        contact_name: f.nombre_lead || f.whatsapp_number,
-        estado: f.lead_status || 'nuevo',
-        origin: 'sofia_bot',
-        assigned_to: null,
-        last_message_at: f.updated_at,
-        unread_count: 0,
-        blocked: false,
-        modo_humano: f.modo_humano || false,
-        created_at: f.created_at,
-        historial_chat: history,
-        _source: 'fsc'
-      };
-    });
+    // 3. Map fsc_conversations to whatsapp_leads format (sin historial para la lista)
+    const fscMapped = (fscLeads || []).map(f => ({
+      id: 'fsc_' + f.id,
+      wa_id: f.whatsapp_number,
+      contact_name: f.nombre_lead || f.whatsapp_number,
+      estado: f.lead_status || 'nuevo',
+      origin: 'sofia_bot',
+      assigned_to: null,
+      last_message_at: f.updated_at,
+      unread_count: 0,
+      blocked: false,
+      modo_humano: f.modo_humano || false,
+      created_at: f.created_at,
+      _source: 'fsc'
+    }));
 
     // 4. Merge: deduplicate by wa_id (prefer whatsapp_leads if exists in both)
-    const waIds = new Set((waLeads || []).map(l => l.wa_id));
-    const merged = [...(waLeads || []), ...fscMapped.filter(f => !waIds.has(f.wa_id))];
+    const waIds = new Set((waLeadsFinal || []).map(l => l.wa_id));
+    const merged = [...(waLeadsFinal || []), ...fscMapped.filter(f => !waIds.has(f.wa_id))];
 
     // 5. Filter by estado if needed (for fsc entries)
     let filtered = merged;
@@ -191,24 +196,10 @@ router.get('/leads', async (req, res) => {
     const offset = (parseInt(page) - 1) * parseInt(limit);
     const paginated = filtered.slice(offset, offset + parseInt(limit));
 
-    // 8. Build previews
+    // 8. Build previews (ligero — sin parsear historial completo)
     const leadsWithPreview = paginated.map(l => {
-      let lastMessage = '';
-      try {
-        const hist = typeof l.historial_chat === 'string' ? JSON.parse(l.historial_chat) : (l.historial_chat || []);
-        if (hist.length > 0) {
-          const last = hist[hist.length - 1];
-          if (last.body) {
-            const prefix = last.role === 'admin' ? 'Tú: ' : '';
-            lastMessage = prefix + last.body.slice(0, 80);
-          } else if (last.content) {
-            const prefix = last.role === 'assistant' ? 'Sofía: ' : '';
-            lastMessage = prefix + last.content.slice(0, 80);
-          }
-        }
-      } catch { /* ignore */ }
-      const { historial_chat, ...rest } = l;
-      return { ...rest, lastMessage };
+      const { historial_chat, last_message_preview, ...rest } = l;
+      return { ...rest, lastMessage: last_message_preview || '' };
     });
 
     res.json({ leads: leadsWithPreview, total: filtered.length, page: parseInt(page), limit: parseInt(limit) });
@@ -306,14 +297,14 @@ router.post('/send', async (req, res) => {
         const result = await sendWhatsApp(wa_id, 'text', { text: { body: message } });
         const newMsg = { role: 'admin', body: message, type: 'text', timestamp: now, status: 'sent', wa_msg_id: result.messages?.[0]?.id, sender: req.user.name };
         historial.push(newMsg);
-        const updates = { historial_chat: JSON.stringify(historial) };
+        const updates = { historial_chat: JSON.stringify(historial), last_message_preview: 'Tú: ' + message.slice(0, 80) };
         if (!lead.assigned_to) updates.assigned_to = req.user.name;
         await db.from('whatsapp_leads').update(updates).eq('wa_id', wa_id);
         return res.json({ success: true, sent: true, message: newMsg });
       } else {
         const newMsg = { role: 'admin', body: message, type: 'text', timestamp: now, status: 'pending', sender: req.user.name };
         historial.push(newMsg);
-        const updates = { historial_chat: JSON.stringify(historial), mensaje_pendiente: message };
+        const updates = { historial_chat: JSON.stringify(historial), mensaje_pendiente: message, last_message_preview: 'Tú: ' + message.slice(0, 80) };
         if (!lead.assigned_to) updates.assigned_to = req.user.name;
         await db.from('whatsapp_leads').update(updates).eq('wa_id', wa_id);
         return res.json({ success: true, sent: false, queued: true, message: newMsg, note: 'Ventana de 24h expirada.' });
