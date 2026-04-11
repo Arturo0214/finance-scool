@@ -1,9 +1,17 @@
 const API = import.meta.env.VITE_API_URL || '/api';
 
+// Token fallback for mobile browsers where cookies through proxies fail
+function getToken() { return localStorage.getItem('fsc_token'); }
+function setToken(t) { if (t) localStorage.setItem('fsc_token', t); }
+function clearToken() { localStorage.removeItem('fsc_token'); }
+
 async function request(path, options = {}) {
+  const token = getToken();
+  const headers = { 'Content-Type': 'application/json', ...options.headers };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
   const res = await fetch(`${API}${path}`, {
     credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...options.headers },
+    headers,
     ...options,
   });
   const data = await res.json();
@@ -17,9 +25,16 @@ export const api = {
 
 
   // Auth
-  login: (email, password) => request('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
-  logout: () => request('/auth/logout', { method: 'POST' }),
-  me: () => request('/auth/me'),
+  login: async (email, password) => {
+    const data = await request('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+    if (data.token) setToken(data.token);
+    return data;
+  },
+  logout: async () => {
+    clearToken();
+    return request('/auth/logout', { method: 'POST' });
+  },
+  me: () => request('/auth/me').catch(err => { if (err.message === 'No autorizado' || err.message === 'Token inválido') clearToken(); throw err; }),
   register: (data) => request('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
 
   // Leads

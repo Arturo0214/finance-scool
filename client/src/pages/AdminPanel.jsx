@@ -305,7 +305,7 @@ export default function AdminPanel() {
                 <ChatView messages={messages} onSendMessage={handleSendMessage} messageInputRef={messageInputRef} />}
               {!loading && activeView === 'visitas' &&
                 <VisitasView />}
-              {!loading && activeView === 'whatsapp' &&
+              {activeView === 'whatsapp' &&
                 <WhatsAppView />}
               {!loading && activeView === 'team' && canManageTeam &&
                 <TeamView userRole={user?.role} />}
