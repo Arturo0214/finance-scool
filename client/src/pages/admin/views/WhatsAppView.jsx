@@ -201,7 +201,16 @@ export default function WhatsAppView() {
 
   const loadStats = async () => { try { setWaStats(await api.getWhatsAppStats()); } catch {} };
 
-  useEffect(() => { (async () => { setLoading(true); await Promise.all([loadLeads(false), loadStats()]); setLoading(false); })(); pollRef.current = setInterval(() => loadLeads(true), 12000); return () => clearInterval(pollRef.current); }, []); // eslint-disable-line
+  // Initial load
+  useEffect(() => { (async () => { setLoading(true); await Promise.all([loadLeads(false), loadStats()]); setLoading(false); })(); }, []); // eslint-disable-line
+
+  // Poll every 12s — restart interval when filters change so it always uses current filters
+  useEffect(() => {
+    pollRef.current = setInterval(() => loadLeads(true), 12000);
+    return () => clearInterval(pollRef.current);
+  }, [loadLeads]);
+
+  // Reload when filters change
   useEffect(() => { loadLeads(false); }, [filterEstado, filterAgent, searchTerm]); // eslint-disable-line
 
   const selectLead = async (lead) => {
