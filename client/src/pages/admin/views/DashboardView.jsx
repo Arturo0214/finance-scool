@@ -1,5 +1,5 @@
 import { C, SPANISH_LABELS, STATUS_COLORS } from '../constants';
-import { Users, AlertCircle, Clock, TrendingUp, Search } from 'lucide-react';
+import { Users, AlertCircle, Clock, TrendingUp, Search, Phone, Briefcase, Eye } from 'lucide-react';
 
 function SimpleBarChart({ data }) {
   const items = (data || []).map(d => ({ source: d.source || 'Directo', count: d.count || 0 }));
@@ -73,7 +73,9 @@ export default function DashboardView({ stats, leads, events }) {
 
       <div className="section">
         <h2 className="section-title">{SPANISH_LABELS.recentLeads}</h2>
-        <div className="tbl-wrap">
+
+        {/* Desktop table */}
+        <div className="tbl-wrap desktop-only-table">
           {leads.length === 0 ? <p className="empty">{SPANISH_LABELS.noLeads}</p> : (
             <table>
               <thead><tr>
@@ -93,6 +95,27 @@ export default function DashboardView({ stats, leads, events }) {
               </tbody>
             </table>
           )}
+        </div>
+
+        {/* Mobile lead cards */}
+        <div className="mobile-lead-cards mobile-only-cards">
+          {leads.length === 0 ? <p className="empty">{SPANISH_LABELS.noLeads}</p> :
+            leads.slice(0, 5).map(lead => {
+              const sc = STATUS_COLORS[lead.status] || { bg: C.bg, text: C.textMuted };
+              return (
+                <div key={lead.id} className="mobile-lead-card">
+                  <div className="mlc-top">
+                    <span className="mlc-name">{lead.name}</span>
+                    <span className="badge" style={{ backgroundColor: sc.bg, color: sc.text }}>{lead.status}</span>
+                  </div>
+                  <div className="mlc-row"><Phone size={14} /> {lead.phone}</div>
+                  <div className="mlc-bottom">
+                    <span className="mlc-service"><Briefcase size={12} style={{ marginRight: 4, verticalAlign: -1 }} />{lead.service || 'PPR'}</span>
+                  </div>
+                </div>
+              );
+            })
+          }
         </div>
       </div>
     </div>

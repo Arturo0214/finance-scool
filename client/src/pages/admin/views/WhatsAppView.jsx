@@ -32,13 +32,18 @@ const EC = {
 /* ── Mapeo de IDs de botón a texto legible ── */
 const BUTTON_LABELS = {
   btn_inicio_si: '¡Claro, vamos!', btn_inicio_info: 'Quiero más info',
-  btn_sat_si: 'Sí, declaro', btn_sat_no: 'No declaro',
-  ing_bajo: 'Hasta $30,000', ing_medio: '$30,000 - $70,000', ing_alto: 'Más de $70,000',
+  btn_sat_si: 'Sí, declaro', btn_sat_no: 'No declaro', btn_sat_nosabe: 'No sé',
+  ing_bajo: 'Hasta $30,000', ing_medio: '$30,000 - $70,000', ing_alto: 'Más de $70,000', ing_hasta15: 'Hasta $15,000',
   lab_asalariado: 'Asalariado', lab_honorarios: 'Honorarios', lab_empresarial: 'Empresario',
   obj_fiscal: 'Reducir impuestos', obj_retiro: 'Planear mi retiro', obj_ambos: 'Ambos',
   hr_manana: '9:00 - 11:00 AM', hr_mediodia: '11:00 AM - 2:00 PM', hr_tarde: '3:00 - 6:00 PM',
   hr_sab_10: '10:00 AM', hr_sab_11: '11:00 AM', hr_sab_12: '12:00 PM',
+  reg_asalariado: 'Asalariado', reg_honorarios: 'Honorarios', reg_empresarial: 'Empresario', reg_nosabe: 'No sé',
+  cita_si: 'Sí, agendar', cita_no: 'Ahora no', cita_info: 'Más información',
+  si_declaro: 'Sí, declaro', no_declaro: 'No declaro', no_se: 'No sé',
 };
+/* Fallback: convierte IDs desconocidos a texto legible (ej: "reg_nosabe" → "No sabe") */
+const friendlyBtnId = (id) => BUTTON_LABELS[id] || id.replace(/^(btn_|reg_|ing_|lab_|obj_|hr_|cita_|sat_)/, '').replace(/_/g, ' ');
 
 /* ── Labels de datos recopilados ── */
 const STATE_LABELS = {
@@ -58,12 +63,34 @@ function extractState(text) {
   catch { return { clean, state: null }; }
 }
 
-/* ── Formatear texto de mensaje (reemplazar IDs de botón) ── */
+/* ── Formatear texto de mensaje (reemplazar IDs de botón, JSON de opciones, markdown) ── */
 function formatMessageText(text) {
   if (!text) return '';
-  return text.replace(/\[BUTTON_REPLY:\s*(\w+)\]/g, (_, id) => BUTTON_LABELS[id] || id)
-             .replace(/\[LIST_REPLY:\s*(.+?)\]/g, (_, t) => t)
-             .replace(/\[HORARIOS YA OCUPADOS.*?\]/g, '');
+  let t = text
+    // Reemplazar BUTTON_REPLY / LIST_REPLY tags
+    .replace(/\[BUTTON_REPLY:\s*(\w+)\]/g, (_, id) => friendlyBtnId(id))
+    .replace(/\[LIST_REPLY:\s*(.+?)\]/g, (_, t) => t)
+    .replace(/\[HORARIOS YA OCUPADOS.*?\]/g, '');
+
+  // Si el texto completo es un ID de botón conocido (ej: "reg_nosabe"), reemplazar
+  const trimmed = t.trim();
+  if (/^[a-z][a-z0-9_]+$/.test(trimmed) && (BUTTON_LABELS[trimmed] || /^(btn_|reg_|ing_|lab_|obj_|hr_|cita_|sat_|si_|no_)/.test(trimmed))) {
+    return '🔘 ' + friendlyBtnId(trimmed);
+  }
+
+  // Limpiar JSON arrays de botones/opciones que Sofía envía como texto
+  // Ej: [{"id":"obj_fiscal","title":"Reducir impuestos"},...]
+  t = t.replace(/\[(\s*\{[^[\]]*"id"\s*:\s*"[^"]*"[^[\]]*"title"\s*:\s*"[^"]*"[^[\]]*\}\s*,?\s*)+\]/g, (match) => {
+    try {
+      const opts = JSON.parse(match);
+      if (Array.isArray(opts) && opts.length > 0 && opts[0].title) {
+        return opts.map(o => `• ${o.title}`).join('\n');
+      }
+    } catch {}
+    return match;
+  });
+
+  return t;
 }
 
 /* ── Íconos de estado de mensaje ── */
@@ -235,6 +262,9 @@ export default function WhatsAppView() {
         /* Lista de leads */
         .wa-list { flex:1; overflow-y:auto; }
 
+        /* Section headers (grouped by status) */
+        .wa-section-hdr { padding:8px 14px; font-size:11.5px; font-weight:700; letter-spacing:0.3px; text-transform:uppercase; display:flex; align-items:center; gap:6px; border-bottom:1px solid rgba(0,0,0,.06); position:sticky; top:0; z-index:2; }
+
         /* Lead card */
         .wa-item { display:flex; align-items:flex-start; gap:10px; padding:10px 14px; cursor:pointer; border-bottom:1px solid #f0f0f0; transition:background .12s; }
         .wa-item:hover { background:#f5f5f5; }
@@ -242,19 +272,19 @@ export default function WhatsAppView() {
         .wa-item.human { border-left:3px solid #ff9800; }
         .wa-item.sel.human { border-left:3px solid #ff9800; background:#fff3e0; }
 
-        .wa-av { position:relative; width:42px; height:42px; border-radius:50%; background:#dfe5e7; display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:700; flex-shrink:0; color:#fff; }
+        .wa-av { position:relative; width:46px; height:46px; border-radius:50%; background:#dfe5e7; display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:700; flex-shrink:0; color:#fff; }
         .wa-av-badge { position:absolute; bottom:-2px; right:-2px; background:#ff9800; color:#fff; border-radius:50%; width:16px; height:16px; display:flex; align-items:center; justify-content:center; font-size:8px; font-weight:700; border:2px solid #fff; }
 
         .wa-info { flex:1; min-width:0; overflow:hidden; }
-        .wa-row1 { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:2px; }
-        .wa-name { font-weight:600; font-size:14px; color:#111; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .wa-row1 { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:1px; }
+        .wa-name { font-weight:600; font-size:14.5px; color:#111; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .wa-time { font-size:11px; color:#999; white-space:nowrap; margin-left:6px; flex-shrink:0; }
-        .wa-prev { font-size:12.5px; color:#667; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-bottom:3px; display:flex; align-items:center; justify-content:space-between; }
-        .wa-prev-text { overflow:hidden; text-overflow:ellipsis; }
-        .wa-unread { background:#25D366; color:#fff; font-size:10px; font-weight:700; min-width:18px; height:18px; border-radius:9px; display:flex; align-items:center; justify-content:center; padding:0 4px; flex-shrink:0; }
+        .wa-prev { font-size:12.5px; color:#667; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-bottom:4px; display:flex; align-items:center; justify-content:space-between; gap:6px; min-height:18px; }
+        .wa-prev-text { overflow:hidden; text-overflow:ellipsis; flex:1; }
+        .wa-unread { background:#25D366; color:#fff; font-size:10px; font-weight:700; min-width:20px; height:20px; border-radius:10px; display:flex; align-items:center; justify-content:center; padding:0 5px; flex-shrink:0; }
         .wa-meta { display:flex; align-items:center; gap:5px; flex-wrap:wrap; }
         .wa-badge { display:inline-flex; align-items:center; gap:3px; padding:2px 7px; border-radius:10px; font-size:10px; font-weight:700; white-space:nowrap; }
-        .wa-agent { font-size:10px; color:#999; display:flex; align-items:center; gap:3px; }
+        .wa-agent { font-size:10px; color:#666; display:flex; align-items:center; gap:3px; background:#f1f5f9; padding:1px 6px; border-radius:8px; }
 
         /* ══════════════════════════════
            COLUMNA DERECHA — Chat
@@ -397,7 +427,7 @@ export default function WhatsAppView() {
             )}
           </div>
 
-          {/* Lista de leads */}
+          {/* Lista de leads — agrupada por secciones como Tesipedia */}
           <div className="wa-list">
             {loading && <div style={{ display:'flex', justifyContent:'center', padding:20 }}><div className="wa-spin" /></div>}
             {!loading && leads.length === 0 && (
@@ -407,44 +437,72 @@ export default function WhatsAppView() {
                 {loadError && <button onClick={() => { setLoadError(null); loadLeads(false); }} style={{ marginTop:8, padding:'6px 16px', background:'#25D366', color:'#fff', border:'none', borderRadius:6, fontSize:12, cursor:'pointer' }}>Reintentar</button>}
               </div>
             )}
-            {leads.map(lead => {
-              const ec  = EC[lead.estado] || EC.nuevo;
-              const sel = selectedLead?.wa_id === lead.wa_id;
-              const unr = lead.unread_count > 0;
-              return (
-                <div
-                  key={lead.wa_id}
-                  className={`wa-item${sel ? ' sel' : ''}${lead.modo_humano ? ' human' : ''}`}
-                  onClick={() => selectLead(lead)}
-                >
-                  <div className="wa-av" style={{ background: avColor(lead.contact_name) }}>
-                    {(lead.contact_name || '?')[0].toUpperCase()}
-                    {lead.modo_humano && <span className="wa-av-badge">H</span>}
+            {(() => {
+              // Agrupar leads por sección (como Tesipedia)
+              const SECTIONS = [
+                { key: 'mensajes_nuevos', label: '✉️ Mensajes nuevos', bg: '#D1FAE5', color: '#065F46', match: l => l.unread_count > 0 || l.estado === 'nuevo' },
+                { key: 'en_calificacion', label: '⏳ En calificación', bg: '#DBEAFE', color: '#1E40AF', match: l => l.estado === 'en_calificacion' },
+                { key: 'calificado',      label: '✅ Calificado para asesoría', bg: '#E0E7FF', color: '#3730A3', match: l => l.estado === 'calificado' },
+                { key: 'cita_agendada',   label: '📅 Cita agendada', bg: '#D1FAE5', color: '#065F46', match: l => l.estado === 'cita_agendada' },
+                { key: 'seguimiento',     label: '🔄 Seguimiento / objeciones', bg: '#FCE7F3', color: '#9D174D', match: l => ['analisis_necesidades','propuesta','seguimiento','solicitud_completada'].includes(l.estado) },
+                { key: 'cerradas',        label: '🏁 Cerradas', bg: '#F3F4F6', color: '#6B7280', match: l => ['cerrada_ganada','cerrada_perdida','no_calificado','cerrado_no_calificado'].includes(l.estado) },
+              ];
+              const assigned = new Set();
+              const grouped = SECTIONS.map(sec => {
+                const items = leads.filter(l => !assigned.has(l.wa_id) && sec.match(l));
+                items.forEach(l => assigned.add(l.wa_id));
+                return { ...sec, items };
+              });
+              // Leads sin sección
+              const rest = leads.filter(l => !assigned.has(l.wa_id));
+              if (rest.length > 0) grouped.push({ key: 'otros', label: '📋 Otros', bg: '#F9FAFB', color: '#374151', items: rest });
+
+              return grouped.filter(g => g.items.length > 0).map(group => (
+                <div key={group.key}>
+                  <div className="wa-section-hdr" style={{ background: group.bg, color: group.color }}>
+                    {group.label} ({group.items.length})
                   </div>
-                  <div className="wa-info">
-                    <div className="wa-row1">
-                      <span className="wa-name">{lead.contact_name || lead.wa_id}</span>
-                      <span className="wa-time">{fmt(lead.updated_at)}</span>
-                    </div>
-                    <div className="wa-prev">
-                      <span className="wa-prev-text">{lead.lastMessage || lead.last_message || ''}</span>
-                      {unr && <span className="wa-unread">{lead.unread_count}</span>}
-                    </div>
-                    <div className="wa-meta">
-                      <span className="wa-badge" style={{ background: ec.bg, color: ec.text }}>
-                        <span style={{ width:5, height:5, borderRadius:'50%', background:ec.dot, display:'inline-block' }} />
-                        {ec.label || lead.estado || 'nuevo'}
-                      </span>
-                      {lead.assigned_to && (
-                        <span className="wa-agent">
-                          <Users size={9} /> {lead.assigned_to}
-                        </span>
-                      )}
-                    </div>
-                  </div>
+                  {group.items.map(lead => {
+                    const ec  = EC[lead.estado] || EC.nuevo;
+                    const sel = selectedLead?.wa_id === lead.wa_id;
+                    const unr = lead.unread_count > 0;
+                    return (
+                      <div
+                        key={lead.wa_id}
+                        className={`wa-item${sel ? ' sel' : ''}${lead.modo_humano ? ' human' : ''}`}
+                        onClick={() => selectLead(lead)}
+                      >
+                        <div className="wa-av" style={{ background: avColor(lead.contact_name) }}>
+                          {(lead.contact_name || '?')[0].toUpperCase()}
+                          {lead.modo_humano && <span className="wa-av-badge">H</span>}
+                        </div>
+                        <div className="wa-info">
+                          <div className="wa-row1">
+                            <span className="wa-name">{lead.contact_name || lead.wa_id}</span>
+                            <span className="wa-time">{fmt(lead.last_message_at || lead.updated_at)}</span>
+                          </div>
+                          <div className="wa-prev">
+                            <span className="wa-prev-text">{lead.lastMessage || lead.last_message || ''}</span>
+                            {unr && <span className="wa-unread">{lead.unread_count}</span>}
+                          </div>
+                          <div className="wa-meta">
+                            <span className="wa-badge" style={{ background: ec.bg, color: ec.text }}>
+                              <span style={{ width:5, height:5, borderRadius:'50%', background:ec.dot, display:'inline-block' }} />
+                              {ec.label || lead.estado || 'nuevo'}
+                            </span>
+                            {lead.assigned_to && (
+                              <span className="wa-agent">
+                                <Users size={9} /> {lead.assigned_to}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
+              ));
+            })()}
           </div>
         </div>
 
@@ -525,7 +583,7 @@ export default function WhatsAppView() {
                             {msg.mediaUrl && msg.type === 'document' && (
                               <a href={msg.mediaUrl} target="_blank" rel="noopener noreferrer" style={{ display:'flex', alignItems:'center', gap:6, padding:'6px 10px', background:'rgba(0,0,0,0.05)', borderRadius:6, marginBottom:4, fontSize:12, color:'#0066CC', textDecoration:'none' }}>📄 Abrir documento</a>
                             )}
-                            <div style={{ whiteSpace: 'pre-wrap' }}>{displayText}</div>
+                            <div style={{ whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: displayText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\*(.+?)\*/g, '<i>$1</i>') }} />
                             {stateEntries.length > 0 && (
                               <div style={{ marginTop:8, padding:'8px 10px', background:'rgba(0,0,0,0.04)', borderRadius:8, fontSize:11 }}>
                                 <div style={{ fontWeight:600, fontSize:12, marginBottom:4 }}>🏷️ Datos recopilados</div>

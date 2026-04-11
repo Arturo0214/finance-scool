@@ -196,10 +196,33 @@ router.get('/leads', async (req, res) => {
     const offset = (parseInt(page) - 1) * parseInt(limit);
     const paginated = filtered.slice(offset, offset + parseInt(limit));
 
-    // 8. Build previews (ligero — sin parsear historial completo)
+    // 8. Build previews — para leads FSC, traer conversation_history solo de los paginados
+    const fscIds = paginated.filter(l => l._source === 'fsc').map(l => l.id.replace('fsc_', ''));
+    let fscPreviews = {};
+    if (fscIds.length > 0) {
+      const { data: fscHist } = await db.from('fsc_conversations')
+        .select('id, conversation_history')
+        .in('id', fscIds);
+      for (const f of (fscHist || [])) {
+        try {
+          const hist = typeof f.conversation_history === 'string' ? JSON.parse(f.conversation_history) : (f.conversation_history || []);
+          if (hist.length > 0) {
+            const last = hist[hist.length - 1];
+            const text = (last.content || last.body || '').slice(0, 80);
+            fscPreviews[f.id] = last.role === 'assistant' ? 'Sofía: ' + text : text;
+          }
+        } catch {}
+      }
+    }
+
     const leadsWithPreview = paginated.map(l => {
-      const { historial_chat, last_message_preview, ...rest } = l;
-      return { ...rest, lastMessage: last_message_preview || '' };
+      const { historial_chat, last_message_preview, _source, ...rest } = l;
+      let preview = last_message_preview || '';
+      if (!preview && _source === 'fsc') {
+        const fscId = l.id.replace('fsc_', '');
+        preview = fscPreviews[fscId] || '';
+      }
+      return { ...rest, lastMessage: preview };
     });
 
     res.json({ leads: leadsWithPreview, total: filtered.length, page: parseInt(page), limit: parseInt(limit) });

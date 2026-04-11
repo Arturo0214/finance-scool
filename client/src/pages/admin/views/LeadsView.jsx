@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { C, SPANISH_LABELS, STATUS_COLORS } from '../constants';
-import { Search, Eye, X } from 'lucide-react';
+import { Search, Eye, X, Phone, Mail, Calendar } from 'lucide-react';
 
 const INCOME_TYPE_LABELS = { empleado: 'Empleado', freelancer: 'Freelancer', empresario: 'Empresario', mixto: 'Mixto' };
 const INCOME_RANGE_LABELS = { '20k-50k': '$20k–$50k', '50k-100k': '$50k–$100k', '100k-200k': '$100k–$200k', '200k+': '$200k+' };
@@ -103,7 +103,8 @@ export default function LeadsView({ leads, searchTerm, setSearchTerm, leadFilter
         </div>
       </div>
 
-      <div className="tbl-wrap">
+      {/* Desktop table */}
+      <div className="tbl-wrap desktop-only-table">
         {filteredLeads.length === 0 ? <p className="empty">{SPANISH_LABELS.noLeads}</p> : (
           <table>
             <thead>
@@ -140,6 +141,37 @@ export default function LeadsView({ leads, searchTerm, setSearchTerm, leadFilter
             </tbody>
           </table>
         )}
+      </div>
+
+      {/* Mobile lead cards */}
+      <div className="mobile-lead-cards mobile-only-cards">
+        {filteredLeads.length === 0 ? <p className="empty">{SPANISH_LABELS.noLeads}</p> :
+          filteredLeads.map(lead => {
+            const sc = STATUS_COLORS[lead.status] || { bg: C.bg, text: C.textMuted };
+            const isCTA = lead.source === 'cta_landing';
+            return (
+              <div key={lead.id} className="mobile-lead-card" onClick={() => { setSelectedLead(lead); setShowLeadModal(true); }}>
+                <div className="mlc-top">
+                  <span className="mlc-name">{lead.name}</span>
+                  <span className="badge" style={{ backgroundColor: sc.bg, color: sc.text }}>{lead.status}</span>
+                </div>
+                <div className="mlc-row"><Phone size={14} color={C.textLight} /> {lead.phone}</div>
+                {lead.email && <div className="mlc-row"><Mail size={14} color={C.textLight} /> {lead.email}</div>}
+                <div className="mlc-bottom">
+                  <span className="mlc-service">
+                    <span className="cta-badge" style={{ background: isCTA ? '#EFF6FF' : '#F0FDF4', color: isCTA ? C.primary : C.green }}>
+                      {isCTA ? 'CTA' : lead.source || 'Web'}
+                    </span>
+                  </span>
+                  <span className="mlc-row" style={{ fontSize: 12 }}>
+                    <Calendar size={12} color={C.textLight} />
+                    {new Date(lead.created_at || lead.createdAt || Date.now()).toLocaleDateString('es-MX')}
+                  </span>
+                </div>
+              </div>
+            );
+          })
+        }
       </div>
 
       {showLeadModal && selectedLead && (

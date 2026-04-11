@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { C } from '../constants';
-import { Eye, Activity, Users, Clock } from 'lucide-react';
+import { Eye, Activity, Users, Clock, Calendar, User, Briefcase } from 'lucide-react';
 import { api } from '../../../utils/api';
 
 export default function VisitasView() {
@@ -95,28 +95,48 @@ export default function VisitasView() {
         <div className="section">
           <h2 className="section-title">Registro de Citas</h2>
           {appointments.length === 0 ? <p className="empty">No hay citas registradas</p> : (
-            <div className="tbl-wrap">
-              <table>
-                <thead><tr><th>Fecha</th><th>Hora</th><th>Lead</th><th>Asesor</th><th>Tipo</th><th>Estado</th></tr></thead>
-                <tbody>
-                  {appointments.map(a => (
-                    <tr key={a.id}>
-                      <td>{new Date(a.date).toLocaleDateString('es-MX')}</td>
-                      <td>{a.time || '—'}</td>
-                      <td>{a.lead_name || '—'}</td>
-                      <td>{a.advisor_name || '—'}</td>
-                      <td>{a.type || 'consulta'}</td>
-                      <td>
-                        <span className="badge" style={{
-                          backgroundColor: a.status === 'completada' ? C.greenBg : C.amberBg,
-                          color: a.status === 'completada' ? C.green : C.amber,
-                        }}>{a.status}</span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <>
+              <div className="tbl-wrap desktop-only-table">
+                <table>
+                  <thead><tr><th>Fecha</th><th>Hora</th><th>Lead</th><th>Asesor</th><th>Tipo</th><th>Estado</th></tr></thead>
+                  <tbody>
+                    {appointments.map(a => (
+                      <tr key={a.id}>
+                        <td>{new Date(a.date).toLocaleDateString('es-MX')}</td>
+                        <td>{a.time || '—'}</td>
+                        <td>{a.lead_name || '—'}</td>
+                        <td>{a.advisor_name || '—'}</td>
+                        <td>{a.type || 'consulta'}</td>
+                        <td>
+                          <span className="badge" style={{
+                            backgroundColor: a.status === 'completada' ? C.greenBg : C.amberBg,
+                            color: a.status === 'completada' ? C.green : C.amber,
+                          }}>{a.status}</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="mobile-lead-cards mobile-only-cards">
+                {appointments.map(a => (
+                  <div key={a.id} className="mobile-lead-card">
+                    <div className="mlc-top">
+                      <span className="mlc-name">{a.lead_name || '—'}</span>
+                      <span className="badge" style={{
+                        backgroundColor: a.status === 'completada' ? C.greenBg : C.amberBg,
+                        color: a.status === 'completada' ? C.green : C.amber,
+                      }}>{a.status}</span>
+                    </div>
+                    <div className="mlc-row"><Calendar size={14} color={C.textLight} /> {new Date(a.date).toLocaleDateString('es-MX')} — {a.time || 'Sin hora'}</div>
+                    <div className="mlc-row"><User size={14} color={C.textLight} /> {a.advisor_name || '—'}</div>
+                    <div className="mlc-bottom">
+                      <span className="mlc-service"><Briefcase size={12} style={{ marginRight: 4, verticalAlign: -1 }} />{a.type || 'consulta'}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
         </div>
       )}

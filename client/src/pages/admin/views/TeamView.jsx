@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { C } from '../constants';
-import { Users, UserCheck, Settings, Plus, AlertCircle, X } from 'lucide-react';
+import { Users, UserCheck, Settings, Plus, AlertCircle, X, Mail, Calendar } from 'lucide-react';
 import { api } from '../../../utils/api';
 
 const isAgencyRole = (role) => ['superadmin', 'agencia'].includes(role);
@@ -125,29 +125,53 @@ export default function TeamView({ userRole }) {
 
       <div className="section">
         <h2 className="section-title">Usuarios del Sistema</h2>
-        <div className="tbl-wrap">
-          {loadingUsers ? (
-            <div className="loading-wrap" style={{ minHeight: 120 }}><div className="spinner" /></div>
-          ) : (
-            <table>
-              <thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Creado</th></tr></thead>
-              <tbody>
-                {users.map(u => {
+        {loadingUsers ? (
+          <div className="loading-wrap" style={{ minHeight: 120 }}><div className="spinner" /></div>
+        ) : (
+          <>
+            <div className="tbl-wrap desktop-only-table">
+              <table>
+                <thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Creado</th></tr></thead>
+                <tbody>
+                  {users.map(u => {
+                    const rc = ROLE_COLORS[u.role] || { bg: C.bg, text: C.textMuted };
+                    return (
+                      <tr key={u.id}>
+                        <td><strong>{u.name}</strong></td>
+                        <td>{u.email}</td>
+                        <td><span className="badge" style={{ backgroundColor: rc.bg, color: rc.text }}>{ROLE_LABELS[u.role] || u.role}</span></td>
+                        <td>{new Date(u.created_at || Date.now()).toLocaleDateString('es-MX')}</td>
+                      </tr>
+                    );
+                  })}
+                  {users.length === 0 && <tr><td colSpan={4} className="empty">No hay usuarios registrados</td></tr>}
+                </tbody>
+              </table>
+            </div>
+            <div className="mobile-lead-cards mobile-only-cards">
+              {users.length === 0 ? <p className="empty">No hay usuarios registrados</p> :
+                users.map(u => {
                   const rc = ROLE_COLORS[u.role] || { bg: C.bg, text: C.textMuted };
                   return (
-                    <tr key={u.id}>
-                      <td><strong>{u.name}</strong></td>
-                      <td>{u.email}</td>
-                      <td><span className="badge" style={{ backgroundColor: rc.bg, color: rc.text }}>{ROLE_LABELS[u.role] || u.role}</span></td>
-                      <td>{new Date(u.created_at || Date.now()).toLocaleDateString('es-MX')}</td>
-                    </tr>
+                    <div key={u.id} className="mobile-lead-card">
+                      <div className="mlc-top">
+                        <span className="mlc-name">{u.name}</span>
+                        <span className="badge" style={{ backgroundColor: rc.bg, color: rc.text }}>{ROLE_LABELS[u.role] || u.role}</span>
+                      </div>
+                      <div className="mlc-row"><Mail size={14} color={C.textLight} /> {u.email}</div>
+                      <div className="mlc-bottom">
+                        <span className="mlc-row" style={{ fontSize: 12 }}>
+                          <Calendar size={12} color={C.textLight} />
+                          {new Date(u.created_at || Date.now()).toLocaleDateString('es-MX')}
+                        </span>
+                      </div>
+                    </div>
                   );
-                })}
-                {users.length === 0 && <tr><td colSpan={4} className="empty">No hay usuarios registrados</td></tr>}
-              </tbody>
-            </table>
-          )}
-        </div>
+                })
+              }
+            </div>
+          </>
+        )}
       </div>
 
       {showAddModal && <AddUserModal onClose={() => setShowAddModal(false)} onSubmit={handleAddUser} isAgency={isAgency} />}
