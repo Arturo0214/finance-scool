@@ -1,0 +1,436 @@
+{
+  "nodes": [
+    {
+      "id": "n1",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 300],
+      "webhookId": "fsc-wa",
+      "parameters": {
+        "path": "whatsapp-fsc",
+        "httpMethod": "POST",
+        "responseMode": "lastNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "n2",
+      "name": "Is Text Message",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [220, 200],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "cond1",
+              "leftValue": "={{ $json.body.entry[0].changes[0].value.messages[0].type }}",
+              "rightValue": "text",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n3",
+      "name": "Parse WA Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 200],
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body;\nconst entry = body.entry[0].changes[0].value;\nconst msg = entry.messages[0];\nconst contact = entry.contacts ? entry.contacts[0] : null;\n\nreturn [{\n  json: {\n    phone: msg.from,\n    message: msg.text.body,\n    sender_name: contact ? contact.profile.name : 'Desconocido',\n    message_id: msg.id,\n    timestamp: msg.timestamp\n  }\n}];"
+      }
+    },
+    {
+      "id": "n15",
+      "name": "Check Human Mode",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 200],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://jisfqytmoiaikaohyens.supabase.co/rest/v1/fsc_conversations?whatsapp_number=eq.{{ $('Parse WA Data').first().json.phone }}&select=modo_humano",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $credentials.supabaseApi.serviceRole }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $credentials.supabaseApi.serviceRole }}" },
+            { "name": "Prefer", "value": "return=representation" }
+          ]
+        },
+        "options": { "response": { "response": { "responseFormat": "json" } } }
+      },
+      "credentials": { "supabaseApi": { "id": "supabase-cred", "name": "Supabase account" } }
+    },
+    {
+      "id": "n16",
+      "name": "Is Human Mode",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [880, 200],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "cond_human",
+              "leftValue": "={{ $json[0]?.modo_humano }}",
+              "rightValue": "={{ true }}",
+              "operator": { "type": "boolean", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n17",
+      "name": "Respond OK Human Mode",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1100, 400],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"status\": \"skipped\", \"reason\": \"modo_humano_active\" }",
+        "options": { "responseCode": 200 }
+      }
+    },
+    {
+      "id": "n4",
+      "name": "Get Lead State",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1100, 100],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://jisfqytmoiaikaohyens.supabase.co/rest/v1/lead_states?phone=eq.{{ $('Parse WA Data').first().json.phone }}&select=*",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $credentials.supabaseApi.serviceRole }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $credentials.supabaseApi.serviceRole }}" },
+            { "name": "Prefer", "value": "return=representation" }
+          ]
+        },
+        "options": { "response": { "response": { "responseFormat": "json" } } }
+      },
+      "credentials": { "supabaseApi": { "id": "supabase-cred", "name": "Supabase account" } }
+    },
+    {
+      "id": "n5",
+      "name": "Build Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 100],
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst parseData = items[0].json;\n\n// Get previous node data (Parse WA Data)\nconst phone = $('Parse WA Data').first().json.phone;\nconst message = $('Parse WA Data').first().json.message;\nconst sender_name = $('Parse WA Data').first().json.sender_name;\nconst message_id = $('Parse WA Data').first().json.message_id;\n\n// Get lead state from Supabase (may be empty array)\nlet leadData = {};\nif (Array.isArray(parseData) && parseData.length > 0) {\n  leadData = parseData[0];\n} else if (parseData && parseData.phone) {\n  leadData = parseData;\n}\n\nlet history = [];\nif (leadData.conversation_history) {\n  try {\n    history = typeof leadData.conversation_history === 'string' \n      ? JSON.parse(leadData.conversation_history) \n      : leadData.conversation_history;\n  } catch(e) { history = []; }\n}\n\n// Add current message\nhistory.push({ role: 'user', content: message });\n\n// Keep last 20 messages\nif (history.length > 20) history = history.slice(-20);\n\nreturn [{\n  json: {\n    phone,\n    sender_name,\n    message_id,\n    messages: history,\n    lead_exists: !!leadData.phone,\n    lead_status: leadData.lead_status || 'nuevo',\n    filtro_actual: leadData.filtro_actual || 1\n  }\n}];"
+      }
+    },
+    {
+      "id": "n_get_slots",
+      "name": "Get Available Slots",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1380, 100],
+      "parameters": {
+        "url": "=https://finance-scool-production.up.railway.app/api/whatsapp/available-slots?duration={{ $json.ingreso && ($json.ingreso.includes('bajo') || $json.ingreso.includes('15')) ? 15 : 30 }}&days=7",
+        "options": { "response": { "response": { "responseFormat": "json" } } }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "id": "n_avail",
+      "name": "Check Availability",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1480, 100],
+      "parameters": {
+        "jsCode": "const prev = $('Build Context').first().json;\nconst slotsResp = $('Get Available Slots').first().json;\n\nlet slotsText = '';\ntry {\n  const slots = slotsResp.slots || [];\n  const duration = slotsResp.duration || 30;\n  if (slots.length > 0) {\n    slotsText = '[HORARIOS_DISPONIBLES]\\nDuración de cita: ' + duration + ' minutos\\nConsultora: Ingrid Escobar\\n\\n';\n    for (const day of slots.slice(0, 5)) {\n      slotsText += '📅 ' + day.label + ' (' + day.date + '):\\n';\n      slotsText += day.available.slice(0, 10).join(', ') + '\\n\\n';\n    }\n    slotsText += '[/HORARIOS_DISPONIBLES]';\n  } else {\n    slotsText = '[HORARIOS_DISPONIBLES]\\nNo hay horarios disponibles esta semana. Pide disculpas y sugiere la próxima semana.\\n[/HORARIOS_DISPONIBLES]';\n  }\n} catch(e) {\n  slotsText = '[HORARIOS_DISPONIBLES]\\nError al consultar agenda. Pide al lead que elija día y hora y confirma.\\n[/HORARIOS_DISPONIBLES]';\n}\n\nreturn [{ json: { ...prev, available_slots: slotsText } }];"
+      }
+    },
+    {
+      "id": "n6",
+      "name": "Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1540, 100],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "ANTHROPIC_API_KEY_PLACEHOLDER" },
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 1000,\n  \"system\": \"Eres un asistente de Finance S Cool, empresa especializada en planeación de retiro y deducciones fiscales legales en México. Tu nombre es Ana.\\n\\nTu único objetivo es tener una conversación natural y amable con el prospecto para entender su situación y, si califica, agendar una cita con la consultora Ingrid Escobar.\\n\\nREGLAS ESTRICTAS:\\n- Nunca uses: \\\"garantizado\\\", \\\"rendimiento seguro\\\", \\\"sin riesgo\\\", ni prometas montos exactos.\\n- Siempre aclara que la información es orientativa y que el consultor dará el diagnóstico formal.\\n- Haz UNA sola pregunta por mensaje. Nunca lances dos preguntas juntas.\\n- Si el lead no califica, cierra con amabilidad y sin presionar.\\n- Si el lead califica, agenda la cita con entusiasmo pero sin ser invasivo.\\n- Adapta tu tono al del lead: si es formal, sé formal. Si es casual, sé casual.\\n- Si el lead se desvía del tema, redirige con amabilidad hacia el flujo de calificación.\\n\\nFLUJO DE CALIFICACIÓN (en orden estricto):\\n\\nPASO 1 — SALUDO Y GANCHO\\nSaluda: \\\"Hola, gracias por contactarnos. En Finance S Cool ayudamos a personas como tú a aprovechar deducciones fiscales permitidas por la ley y a estructurar tu retiro. Para saber si podemos ayudarte, ¿me permites hacerte unas preguntas rápidas?\\\"\\n\\nPASO 2 — FILTRO 1: ¿Declara impuestos?\\n\\\"¿Actualmente declaras impuestos ante el SAT?\\\"\\nSÍ → Paso 3 | NO → CIERRE AMABLE\\n\\nPASO 3 — FILTRO 2: Régimen fiscal\\n\\\"¿Sabes en qué régimen fiscal estás dado de alta ante el SAT?\\\"\\nPRIORITARIO (Sueldos y Salarios, Actividades Empresariales, RESICO, Personas Morales) → normal\\nCONDICIONAL (RIF, Arrendamiento) → prioridad media\\nNO SABE → \\\"No te preocupes, tu consultor puede ayudarte.\\\" → continúa\\n\\nPASO 4 — FILTRO 3: Ingreso mensual\\n\\\"¿Tu ingreso mensual aproximado en qué rango está: menos de $15,000, entre $15,000 y $30,000, entre $30,000 y $70,000, o más de $70,000?\\\"\\n<$15k → CIERRE | $15k-$30k → solo si régimen prioritario | $30k-$70k → calificado | >$70k → prioritario\\n\\nPASO 5 — FILTRO 4: Situación laboral\\n\\\"¿Eres asalariado, trabajas por honorarios o tienes actividad empresarial propia?\\\"\\n\\nPASO 6 — FILTRO 5: Objetivo\\n\\\"¿Qué te interesa más: reducir impuestos, planear tu retiro, o ambos?\\\"\\n\\nPASO 7 — AGENDAR CITA\\nIMPORTANTE: SOLO ofrece horarios del bloque [HORARIOS_DISPONIBLES] que se incluye abajo. NUNCA inventes horarios.\\nPrimero pregunta qué día prefiere (ofrece los días disponibles). Luego pregunta el horario de ese día.\\nDuración: 15 min si ingreso < $30,000, 30 min si ingreso >= $30,000.\\nConfirma con fecha, hora y consultora Ingrid Escobar.\\nSi el lead pide un horario ocupado, dile que no está disponible y muestra las opciones libres.\\n\\nCIERRE AMABLE: \\\"Gracias por tu tiempo. Por el momento nuestro servicio está orientado a perfiles con cierto nivel de actividad fiscal. ¡Mucho éxito!\\\"\\n\\nCONFIRMACIÓN: \\\"¡Listo, tu cita está confirmada! 📅 Fecha: [DÍA] 🕐 Hora: [HORA] 👤 Consultora: Ingrid Escobar. ¡Te mando un recordatorio antes!\\\"\\n\\nIMPORTANTE: Al final de CADA respuesta incluye:\\n---FSC_META---\\n{\\\"status\\\":\\\"en_calificacion|cita_agendada|no_calificado\\\",\\\"filtro_actual\\\":1-7,\\\"declara_impuestos\\\":null,\\\"regimen\\\":null,\\\"ingreso\\\":null,\\\"situacion_laboral\\\":null,\\\"objetivo\\\":null,\\\"prioridad\\\":null,\\\"fecha_cita\\\":null,\\\"hora_cita\\\":null,\\\"consultor_asignado\\\":null}\\n---END_FSC_META---\\n\\n\" + {{ JSON.stringify($json.available_slots || '') }},\n  \"messages\": {{ JSON.stringify($json.messages) }}\n}",
+        "options": { "response": { "response": { "responseFormat": "json" } } }
+      }
+    },
+    {
+      "id": "n7",
+      "name": "Parse Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1760, 100],
+      "parameters": {
+        "jsCode": "const fullResponse = $input.first().json.content[0].text;\nconst phone = $('Build Context').first().json.phone;\nconst sender_name = $('Build Context').first().json.sender_name;\nconst messages = $('Build Context').first().json.messages;\n\nconst metaIdx = fullResponse.indexOf('---FSC_META---');\nlet cleanResponse = fullResponse;\nlet meta = {};\n\nif (metaIdx !== -1) {\n  cleanResponse = fullResponse.substring(0, metaIdx).trim();\n  const endIdx = fullResponse.indexOf('---END_FSC_META---');\n  if (endIdx !== -1) {\n    const metaStr = fullResponse.substring(metaIdx + 14, endIdx).trim();\n    try { meta = JSON.parse(metaStr); } catch(e) { meta = {}; }\n  }\n}\n\n// Add assistant response to history\nmessages.push({ role: 'assistant', content: cleanResponse });\n\nreturn [{\n  json: {\n    phone,\n    sender_name,\n    response: cleanResponse,\n    conversation_history: messages,\n    lead_status: meta.status || 'en_calificacion',\n    filtro_actual: meta.filtro_actual || 1,\n    declara_impuestos: meta.declara_impuestos || null,\n    regimen: meta.regimen || null,\n    ingreso: meta.ingreso || null,\n    situacion_laboral: meta.situacion_laboral || null,\n    objetivo: meta.objetivo || null,\n    prioridad: meta.prioridad || null,\n    fecha_cita: meta.fecha_cita || null,\n    hora_cita: meta.hora_cita || null\n  }\n}];"
+      }
+    },
+    {
+      "id": "n8",
+      "name": "Upsert Lead State",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1980, 100],
+      "parameters": {
+        "method": "POST",
+        "url": "https://jisfqytmoiaikaohyens.supabase.co/rest/v1/lead_states",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $credentials.supabaseApi.serviceRole }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $credentials.supabaseApi.serviceRole }}" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "resolution=merge-duplicates,return=representation" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"phone\": \"{{ $json.phone }}\",\n  \"name\": \"{{ $json.sender_name }}\",\n  \"conversation_history\": {{ JSON.stringify($json.conversation_history) }},\n  \"lead_status\": \"{{ $json.lead_status }}\",\n  \"filtro_actual\": {{ $json.filtro_actual }},\n  \"declara_impuestos\": {{ $json.declara_impuestos === null ? 'null' : $json.declara_impuestos }},\n  \"regimen\": {{ $json.regimen ? '\"' + $json.regimen + '\"' : 'null' }},\n  \"ingreso\": {{ $json.ingreso ? '\"' + $json.ingreso + '\"' : 'null' }},\n  \"situacion_laboral\": {{ $json.situacion_laboral ? '\"' + $json.situacion_laboral + '\"' : 'null' }},\n  \"objetivo\": {{ $json.objetivo ? '\"' + $json.objetivo + '\"' : 'null' }},\n  \"prioridad\": {{ $json.prioridad ? '\"' + $json.prioridad + '\"' : 'null' }},\n  \"fecha_cita\": {{ $json.fecha_cita ? '\"' + $json.fecha_cita + '\"' : 'null' }},\n  \"hora_cita\": {{ $json.hora_cita ? '\"' + $json.hora_cita + '\"' : 'null' }},\n  \"updated_at\": \"now()\"\n}",
+        "options": { "response": { "response": { "responseFormat": "json" } } }
+      },
+      "credentials": { "supabaseApi": { "id": "supabase-cred", "name": "Supabase account" } }
+    },
+    {
+      "id": "n9",
+      "name": "Send WA Reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2200, 100],
+      "parameters": {
+        "method": "POST",
+        "url": "https://graph.facebook.com/v19.0/PHONE_NUMBER_ID_PLACEHOLDER/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $json.phone }}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": {{ JSON.stringify($json.response) }}\n  }\n}",
+        "options": {}
+      },
+      "credentials": { "httpHeaderAuth": { "id": "bearer-cred", "name": "Bearer Auth account" } }
+    },
+    {
+      "id": "n10",
+      "name": "Router",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [2420, 100],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "outputKey": "cita_agendada",
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+                "conditions": [
+                  { "leftValue": "={{ $json.lead_status }}", "rightValue": "cita_agendada", "operator": { "type": "string", "operation": "equals" } }
+                ]
+              }
+            },
+            {
+              "outputKey": "no_calificado",
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+                "conditions": [
+                  { "leftValue": "={{ $json.lead_status }}", "rightValue": "no_calificado", "operator": { "type": "string", "operation": "equals" } }
+                ]
+              }
+            }
+          ]
+        },
+        "options": { "fallbackOutput": "extra" }
+      }
+    },
+    {
+      "id": "n11",
+      "name": "Notificar Arturo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2640, 0],
+      "parameters": {
+        "method": "POST",
+        "url": "https://graph.facebook.com/v19.0/PHONE_NUMBER_ID_PLACEHOLDER/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"5215512345678\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"🔔 Nueva cita agendada\\n\\nNombre: {{ $json.sender_name }}\\nTeléfono: {{ $json.phone }}\\nFecha: {{ $json.fecha_cita }}\\nHora: {{ $json.hora_cita }}\\nRégimen: {{ $json.regimen }}\\nIngreso: {{ $json.ingreso }}\\nObjetivo: {{ $json.objetivo }}\\nPrioridad: {{ $json.prioridad }}\"\n  }\n}",
+        "options": {}
+      },
+      "credentials": { "httpHeaderAuth": { "id": "bearer-cred", "name": "Bearer Auth account" } }
+    },
+    {
+      "id": "n12",
+      "name": "Cerrar Lead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2640, 200],
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://jisfqytmoiaikaohyens.supabase.co/rest/v1/lead_states?phone=eq.{{ $json.phone }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $credentials.supabaseApi.serviceRole }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $credentials.supabaseApi.serviceRole }}" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "return=representation" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{ \"lead_status\": \"cerrado_no_calificado\" }",
+        "options": {}
+      },
+      "credentials": { "supabaseApi": { "id": "supabase-cred", "name": "Supabase account" } }
+    },
+    {
+      "id": "n13",
+      "name": "Is Verification",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [220, 500],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "cond_verify",
+              "leftValue": "={{ $json.query['hub.mode'] }}",
+              "rightValue": "subscribe",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n14",
+      "name": "Respond Challenge",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [440, 500],
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.query['hub.challenge'] }}",
+        "options": { "responseCode": 200 }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          { "node": "Is Text Message", "type": "main", "index": 0 },
+          { "node": "Is Verification", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Is Text Message": {
+      "main": [
+        [{ "node": "Parse WA Data", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Parse WA Data": {
+      "main": [
+        [{ "node": "Check Human Mode", "type": "main", "index": 0 }]
+      ]
+    },
+    "Check Human Mode": {
+      "main": [
+        [{ "node": "Is Human Mode", "type": "main", "index": 0 }]
+      ]
+    },
+    "Is Human Mode": {
+      "main": [
+        [{ "node": "Respond OK Human Mode", "type": "main", "index": 0 }],
+        [{ "node": "Get Lead State", "type": "main", "index": 0 }]
+      ]
+    },
+    "Get Lead State": {
+      "main": [
+        [{ "node": "Build Context", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build Context": {
+      "main": [
+        [{ "node": "Get Available Slots", "type": "main", "index": 0 }]
+      ]
+    },
+    "Get Available Slots": {
+      "main": [
+        [{ "node": "Check Availability", "type": "main", "index": 0 }]
+      ]
+    },
+    "Check Availability": {
+      "main": [
+        [{ "node": "Claude API", "type": "main", "index": 0 }]
+      ]
+    },
+    "Claude API": {
+      "main": [
+        [{ "node": "Parse Response", "type": "main", "index": 0 }]
+      ]
+    },
+    "Parse Response": {
+      "main": [
+        [{ "node": "Upsert Lead State", "type": "main", "index": 0 }]
+      ]
+    },
+    "Upsert Lead State": {
+      "main": [
+        [{ "node": "Send WA Reply", "type": "main", "index": 0 }]
+      ]
+    },
+    "Send WA Reply": {
+      "main": [
+        [{ "node": "Router", "type": "main", "index": 0 }]
+      ]
+    },
+    "Router": {
+      "main": [
+        [{ "node": "Notificar Arturo", "type": "main", "index": 0 }],
+        [{ "node": "Cerrar Lead", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Is Verification": {
+      "main": [
+        [{ "node": "Respond Challenge", "type": "main", "index": 0 }],
+        []
+      ]
+    }
+  }
+}

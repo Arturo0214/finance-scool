@@ -119,6 +119,63 @@ router.post('/webhook', async (req, res) => {
   }
 });
 
+// ─── GET /available-slots — public (called by n8n) ───
+// Queries Calendly API for Ingrid's real availability.
+// Query params: duration=15|30 (default 30), days=7
+const CALENDLY_PAT = process.env.CALENDLY_PAT;
+const CALENDLY_EVENT_TYPE = process.env.CALENDLY_EVENT_TYPE || 'https://api.calendly.com/event_types/224dea11-5a2e-4768-957e-cd8dd2b04cea';
+
+router.get('/available-slots', async (req, res) => {
+  try {
+    const duration = parseInt(req.query.duration) || 30;
+    const daysAhead = parseInt(req.query.days) || 7;
+
+    // Date range: tomorrow to N days ahead
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() + 1);
+    startDate.setHours(0, 0, 0, 0);
+    const endDate = new Date(startDate);
+    endDate.setDate(endDate.getDate() + daysAhead + 2); // extra buffer for weekends
+
+    // Query Calendly availability API
+    const url = `https://api.calendly.com/event_type_available_times?event_type=${encodeURIComponent(CALENDLY_EVENT_TYPE)}&start_time=${startDate.toISOString()}&end_time=${endDate.toISOString()}`;
+    const resp = await fetch(url, {
+      headers: { Authorization: `Bearer ${CALENDLY_PAT}` },
+    });
+
+    if (!resp.ok) {
+      console.error('Calendly API error:', resp.status, await resp.text());
+      return res.status(502).json({ error: 'Error al consultar Calendly' });
+    }
+
+    const data = await resp.json();
+    const availableTimes = (data.collection || [])
+      .filter(t => t.status === 'available')
+      .map(t => new Date(t.start_time));
+
+    // Group by day
+    const dayMap = new Map();
+    let daysFound = 0;
+    for (const dt of availableTimes) {
+      if (daysFound >= daysAhead) break;
+      const dateStr = dt.toISOString().slice(0, 10);
+      if (!dayMap.has(dateStr)) {
+        if (dayMap.size >= daysAhead) continue;
+        const label = dt.toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' });
+        dayMap.set(dateStr, { date: dateStr, label, available: [] });
+      }
+      const timeStr = dt.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: false });
+      dayMap.get(dateStr).available.push(timeStr);
+    }
+
+    const slots = [...dayMap.values()];
+    res.json({ duration, slots, source: 'calendly' });
+  } catch (err) {
+    console.error('Available slots error:', err);
+    res.status(500).json({ error: 'Error al obtener disponibilidad' });
+  }
+});
+
 // ═══════════════════════════════════════
 // PROTECTED ROUTES (admin only)
 // ═══════════════════════════════════════
