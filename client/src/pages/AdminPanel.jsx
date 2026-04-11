@@ -270,7 +270,7 @@ export default function AdminPanel() {
             </button>
           )}
           <main className={activeView === 'whatsapp' ? 'content-wa' : 'content'}>
-            {loading && <div className="loading-wrap"><div className="spinner" /><p>Cargando...</p></div>}
+            {loading && activeView !== 'whatsapp' && <div className="loading-wrap"><div className="spinner" /><p>Cargando...</p></div>}
 
             <Suspense fallback={<ViewSpinner />}>
               {/* ── Vistas exclusivas de agencia ── */}
