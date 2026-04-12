@@ -12,10 +12,10 @@ export const getAdminCSS = () => `
 
   /* ══ Global reset para móvil ══ */
   *, *::before, *::after { box-sizing:border-box; }
-  html, body { overflow-x:hidden; width:100%; }
+  html, body { overflow-x:hidden; max-width:100%; }
 
   /* ══ Layout raíz ══ */
-  .admin-wrap { display:flex; height:100vh; font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif; background:${C.bg}; color:${C.text}; overflow-x:hidden; width:100%; max-width:100vw; }
+  .admin-wrap { display:flex; height:100vh; font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif; background:${C.bg}; color:${C.text}; overflow:hidden; width:100%; max-width:100%; }
 
   /* ══ Sidebar ══ */
   .sb { width:260px; background:linear-gradient(180deg,${C.primary} 0%,${C.primaryDark} 100%); color:#fff; display:flex; flex-direction:column; padding:20px 0; transition:width .25s ease; flex-shrink:0; }
@@ -217,7 +217,7 @@ export const getAdminCSS = () => `
     .sb-toggle { display:none; }
 
     /* ── Main area ── */
-    .main { width:100%; max-width:100vw; }
+    .main { width:100%; max-width:100%; overflow-x:hidden; }
 
     /* ── Topbar: elevated glass bar ── */
     .topbar { padding:12px 16px; gap:8px; background:rgba(255,255,255,.92); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); border-bottom:1px solid rgba(226,232,240,.6); position:sticky; top:0; z-index:100; }

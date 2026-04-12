@@ -162,9 +162,16 @@ export default function WhatsAppView() {
   const [togglingHuman, setTogglingHuman] = useState(false);
   const [togglingBlock, setTogglingBlock] = useState(false);
 
+  /* ── Infinite scroll state ── */
+  const [currentPage, setCurrentPage]     = useState(1);
+  const [totalLeads, setTotalLeads]       = useState(0);
+  const [loadingMore, setLoadingMore]     = useState(false);
+  const listRef      = useRef(null);
+
   const chatEndRef = useRef(null);
   const pollRef    = useRef(null);
   const prevMapRef = useRef(new Map());
+  const PAGE_SIZE  = 50;
 
   /* ── Sonido ── */
   const playNotif = useCallback(() => {
@@ -193,25 +200,70 @@ export default function WhatsAppView() {
   const [loadError, setLoadError] = useState(null);
   const loadLeads = useCallback(async (silent = false) => {
     try {
-      const p = {}; if (filterEstado !== 'todos') p.estado = filterEstado; if (filterAgent !== 'todos') p.assigned_to = filterAgent; if (searchTerm) p.search = searchTerm;
-      const data = await api.getWhatsAppLeads(p); const list = data.leads || [];
-      if (silent) checkNewMessages(list); setLeads(list); setLoadError(null);
+      const p = { page: 1, limit: PAGE_SIZE };
+      if (filterEstado !== 'todos') p.estado = filterEstado;
+      if (filterAgent !== 'todos') p.assigned_to = filterAgent;
+      if (searchTerm) p.search = searchTerm;
+      const data = await api.getWhatsAppLeads(p);
+      const list = data.leads || [];
+      if (silent) checkNewMessages(list);
+      setLeads(list); setTotalLeads(data.total || list.length); setCurrentPage(1); setLoadError(null);
     } catch (e) { if (!silent) setLoadError(e.message || 'Error al cargar'); }
   }, [filterEstado, filterAgent, searchTerm, checkNewMessages]);
+
+  /* ── Cargar más leads (infinite scroll) ── */
+  const loadMoreLeads = useCallback(async () => {
+    if (loadingMore) return;
+    const nextPage = currentPage + 1;
+    setLoadingMore(true);
+    try {
+      const p = { page: nextPage, limit: PAGE_SIZE };
+      if (filterEstado !== 'todos') p.estado = filterEstado;
+      if (filterAgent !== 'todos') p.assigned_to = filterAgent;
+      if (searchTerm) p.search = searchTerm;
+      const data = await api.getWhatsAppLeads(p);
+      const newLeads = data.leads || [];
+      if (newLeads.length > 0) {
+        setLeads(prev => {
+          const existingIds = new Set(prev.map(l => l.wa_id));
+          const unique = newLeads.filter(l => !existingIds.has(l.wa_id));
+          return [...prev, ...unique];
+        });
+        setCurrentPage(nextPage);
+      }
+      setTotalLeads(data.total || 0);
+    } catch (e) { console.error('Error loading more:', e); }
+    setLoadingMore(false);
+  }, [currentPage, loadingMore, filterEstado, filterAgent, searchTerm]);
+
+  const hasMore = leads.length < totalLeads;
 
   const loadStats = async () => { try { setWaStats(await api.getWhatsAppStats()); } catch {} };
 
   // Initial load
   useEffect(() => { (async () => { setLoading(true); await Promise.all([loadLeads(false), loadStats()]); setLoading(false); })(); }, []); // eslint-disable-line
 
-  // Poll every 12s — restart interval when filters change so it always uses current filters
+  // Poll every 12s — only refresh page 1 to detect new messages
   useEffect(() => {
     pollRef.current = setInterval(() => loadLeads(true), 12000);
     return () => clearInterval(pollRef.current);
   }, [loadLeads]);
 
   // Reload when filters change
-  useEffect(() => { loadLeads(false); }, [filterEstado, filterAgent, searchTerm]); // eslint-disable-line
+  useEffect(() => { setCurrentPage(1); loadLeads(false); }, [filterEstado, filterAgent, searchTerm]); // eslint-disable-line
+
+  /* ── Infinite scroll listener ── */
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      if (el.scrollTop + el.clientHeight >= el.scrollHeight - 120 && hasMore && !loadingMore) {
+        loadMoreLeads();
+      }
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, [hasMore, loadingMore, loadMoreLeads]);
 
   const selectLead = async (lead) => {
     setSelectedLead(lead); setChatData(null);
@@ -303,6 +355,11 @@ export default function WhatsAppView() {
           background-image:url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23d5cec4' fill-opacity='0.3'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
         }
 
+        /* Back button — hidden on desktop, shown on mobile */
+        .wa-back-btn { display:none; background:none; border:none; cursor:pointer; color:#075e54; padding:6px; border-radius:50%; transition:background .15s; flex-shrink:0; }
+        .wa-back-btn:hover { background:rgba(0,0,0,.05); }
+        .wa-back-btn:active { background:rgba(0,0,0,.1); }
+
         /* Chat header */
         .wa-ch-head { background:#fff; padding:8px 14px; border-bottom:1px solid #e2e8f0; display:flex; align-items:center; gap:10px; flex-shrink:0; }
         .wa-ch-info { flex:1; min-width:0; }
@@ -322,12 +379,12 @@ export default function WhatsAppView() {
         .wa-warn { background:#fef3c7; color:#92400e; padding:6px 14px; font-size:11.5px; font-weight:500; display:flex; align-items:center; gap:6px; flex-shrink:0; border-bottom:1px solid #fde68a; }
 
         /* Messages */
-        .wa-msgs { flex:1; overflow-y:auto; padding:8px 12px; display:flex; flex-direction:column; gap:4px; }
+        .wa-msgs { flex:1; overflow-y:auto; padding:16px 40px; display:flex; flex-direction:column; gap:6px; }
         .wa-m {
-          max-width:80%; padding:8px 12px; border-radius:8px; font-size:0.88rem;
-          line-height:1.35; word-wrap:break-word; overflow-wrap:break-word;
-          box-shadow:0 1px 1px rgba(0,0,0,.1); min-width:80px; position:relative;
-          white-space:pre-wrap; word-break:break-word; color:#111;
+          max-width:65%; padding:10px 14px; border-radius:8px; font-size:0.9rem;
+          line-height:1.45; word-wrap:break-word; overflow-wrap:break-word;
+          box-shadow:0 1px 2px rgba(0,0,0,.08); min-width:80px; position:relative;
+          white-space:pre-wrap; word-break:break-word; color:#111; margin-bottom:2px;
         }
         .wa-m.u {
           align-self:flex-start; background:#fff;
@@ -352,8 +409,8 @@ export default function WhatsAppView() {
         .wa-ddiv span { background:#e2ddd5; padding:4px 12px; border-radius:8px; font-size:10.5px; color:#54656f; font-weight:500; display:inline-block; }
 
         /* Input */
-        .wa-input { background:#f0f2f5; padding:7px 12px; display:flex; gap:8px; align-items:center; flex-shrink:0; }
-        .wa-input input { flex:1; border:none; border-radius:8px; padding:9px 13px; font-size:13px; font-family:inherit; outline:none; background:#fff; color:#0f172a; }
+        .wa-input { background:#f0f2f5; padding:8px 16px; display:flex; gap:10px; align-items:center; flex-shrink:0; }
+        .wa-input input { flex:1; border:none; border-radius:21px; padding:10px 16px; font-size:14px; font-family:inherit; outline:none; background:#fff; color:#0f172a; }
         .wa-sbtn { background:#25D366; color:#fff; border:none; border-radius:50%; width:40px; height:40px; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:background .15s; flex-shrink:0; }
         .wa-sbtn:hover { background:#128C7E; }
         .wa-sbtn:disabled { background:#cbd5e1; cursor:not-allowed; }
@@ -367,31 +424,84 @@ export default function WhatsAppView() {
         @keyframes wa-sp { to { transform:rotate(360deg); } }
         .wa-nodata { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:32px; text-align:center; color:#64748b; gap:8px; }
 
-        /* Responsive */
+        /* ══ Responsive ══ */
+
+        /* Tablet / móvil landscape */
         @media(max-width:768px) {
           .wa { flex-direction:column; height:100%; }
           .wa-left { display:${selectedLead ? 'none' : 'flex'}; width:100% !important; min-width:auto !important; border-right:none; height:100%; }
           .wa-right { display:${selectedLead ? 'flex' : 'none'}; width:100% !important; height:100%; }
-          .wa-filters { grid-template-columns:1fr; }
-          .wa-ch-head { padding:6px 10px; gap:8px; }
-          .wa-ch-acts { flex-wrap:wrap; gap:3px; }
-          .wa-ch-btn { font-size:10px; padding:3px 7px; }
-          .wa-ch-sel { font-size:10px; padding:3px 6px; }
-          .wa-m { max-width:88%; font-size:0.84rem; }
-          .wa-input { padding:6px 10px; }
-          .wa-input input { padding:8px 10px; font-size:14px; }
-          .wa-sbtn { width:36px; height:36px; }
+          .wa-filters { grid-template-columns:1fr 1fr; gap:6px; padding:8px 12px; }
           .wa-back-btn { display:flex !important; }
-          .wa-item { padding:8px 10px; }
-          .wa-av { width:38px; height:38px; font-size:13px; }
-          .wa-name { font-size:13px; }
-          .wa-warn { padding:5px 10px; font-size:11px; }
-          .wa-search input { font-size:14px; }
+
+          /* Chat header */
+          .wa-ch-head { padding:10px 14px; gap:8px; }
+          .wa-ch-name { font-size:15px; }
+          .wa-ch-sub { font-size:11px; }
+          .wa-ch-acts { flex-wrap:wrap; gap:4px; }
+          .wa-ch-btn { font-size:11px; padding:5px 10px; }
+          .wa-ch-sel { font-size:11px; padding:5px 8px; }
+
+          /* Mensajes — padding generoso como WA real */
+          .wa-msgs { padding:12px 16px; gap:6px; }
+          .wa-m { max-width:85%; padding:8px 12px; font-size:0.88rem; line-height:1.4; margin-bottom:1px; }
+          .wa-m-sender { font-size:0.72rem; }
+          .wa-m-foot span { font-size:0.62rem; }
+
+          /* Input */
+          .wa-input { padding:8px 12px; gap:8px; }
+          .wa-input input { padding:10px 14px; font-size:15px; border-radius:20px; }
+          .wa-sbtn { width:40px; height:40px; }
+          .wa-tpl-btn { width:36px; height:36px; }
+
+          /* Sidebar items */
+          .wa-item { padding:10px 12px; gap:10px; }
+          .wa-av { width:44px; height:44px; font-size:15px; }
+          .wa-name { font-size:14px; }
+          .wa-prev { font-size:12.5px; min-height:18px; }
+          .wa-search { padding:8px 12px; }
+          .wa-search input { font-size:15px; padding:8px 12px; border-radius:8px; }
+          .wa-warn { padding:8px 14px; font-size:12px; }
+          .wa-section-hdr { padding:8px 12px; font-size:11px; }
+
+          /* Date divider */
+          .wa-ddiv span { font-size:11px; padding:4px 10px; }
         }
+
+        /* Móvil portrait */
         @media(max-width:480px) {
-          .wa-ch-acts { gap:2px; }
-          .wa-ch-btn { font-size:9px; padding:2px 6px; }
-          .wa-m { max-width:92%; }
+          .wa-filters { grid-template-columns:1fr; gap:4px; padding:6px 10px; }
+
+          /* Chat header compacto */
+          .wa-ch-head { padding:8px 10px; gap:6px; }
+          .wa-ch-acts { gap:3px; }
+          .wa-ch-btn { font-size:10px; padding:4px 8px; }
+          .wa-ch-sel { font-size:10px; padding:4px 6px; }
+
+          /* Mensajes — más ancho en pantalla chica */
+          .wa-msgs { padding:10px 12px; gap:5px; }
+          .wa-m { max-width:90%; padding:7px 10px; font-size:0.85rem; }
+
+          /* Input */
+          .wa-input { padding:6px 8px; }
+          .wa-input input { padding:9px 12px; font-size:15px; }
+          .wa-sbtn { width:38px; height:38px; }
+
+          /* Sidebar items */
+          .wa-item { padding:8px 10px; gap:8px; }
+          .wa-av { width:40px; height:40px; font-size:14px; }
+          .wa-name { font-size:13px; }
+          .wa-prev { font-size:12px; }
+          .wa-section-hdr { padding:6px 10px; font-size:10.5px; }
+        }
+
+        /* Pantalla muy pequeña (iPhone SE, etc) */
+        @media(max-width:375px) {
+          .wa-msgs { padding:8px 8px; gap:4px; }
+          .wa-m { max-width:92%; padding:6px 9px; font-size:0.83rem; }
+          .wa-ch-acts { display:none; }
+          .wa-ch-head { padding:8px; }
+          .wa-input input { font-size:14px; padding:8px 10px; }
         }
       `}</style>
 
@@ -407,7 +517,7 @@ export default function WhatsAppView() {
             <span className="wa-hdr-icon"><MessageCircle size={20} /></span>
             <span className="wa-hdr-title">WhatsApp</span>
             {(st.total || leads.length) > 0 && (
-              <span className="wa-hdr-count">{st.total || leads.length}</span>
+              <span className="wa-hdr-count">{totalLeads || st.total || leads.length}</span>
             )}
             <button className="wa-hdr-btn" onClick={() => { loadLeads(false); loadStats(); }} title="Actualizar">
               <RefreshCw size={16} />
@@ -423,7 +533,7 @@ export default function WhatsAppView() {
           {/* Filtros */}
           <div className="wa-filters">
             <select className="wa-fsel" value={filterEstado} onChange={e => setFilterEstado(e.target.value)}>
-              <option value="todos">Estado: Todos ({leads.length})</option>
+              <option value="todos">Estado: Todos ({totalLeads || leads.length})</option>
               {Object.entries(EC).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
             </select>
             {agents.length > 0 ? (
@@ -437,7 +547,7 @@ export default function WhatsAppView() {
           </div>
 
           {/* Lista de leads — agrupada por secciones como Tesipedia */}
-          <div className="wa-list">
+          <div className="wa-list" ref={listRef}>
             {loading && <div style={{ display:'flex', justifyContent:'center', padding:20 }}><div className="wa-spin" /></div>}
             {!loading && leads.length === 0 && (
               <div className="wa-nodata">
@@ -512,6 +622,24 @@ export default function WhatsAppView() {
                 </div>
               ));
             })()}
+            {/* Infinite scroll: loading more / end indicator */}
+            {loadingMore && (
+              <div style={{ display:'flex', justifyContent:'center', padding:'14px 0' }}>
+                <div className="wa-spin" />
+              </div>
+            )}
+            {!loadingMore && hasMore && (
+              <div style={{ textAlign:'center', padding:'10px 0' }}>
+                <button onClick={loadMoreLeads} style={{ background:'none', border:'1px solid #d1d5db', borderRadius:8, padding:'6px 16px', fontSize:12, color:'#64748b', cursor:'pointer', fontFamily:'inherit' }}>
+                  Cargar más ({leads.length} de {totalLeads})
+                </button>
+              </div>
+            )}
+            {!hasMore && leads.length > 0 && (
+              <div style={{ textAlign:'center', padding:'12px 0', fontSize:11, color:'#94a3b8' }}>
+                {leads.length} conversaciones
+              </div>
+            )}
           </div>
         </div>
 
@@ -531,7 +659,7 @@ export default function WhatsAppView() {
             <>
               {/* Chat header */}
               <div className="wa-ch-head">
-                <button className="wa-back-btn" onClick={() => setSelectedLead(null)} style={{ background:'none', border:'none', cursor:'pointer', color:'#075e54', padding:4, display:'none' }}>
+                <button className="wa-back-btn" onClick={() => setSelectedLead(null)}>
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
                 </button>
                 <div className="wa-av" style={{ background: avColor(chatData?.contact_name || selectedLead.contact_name), width:38, height:38, flexShrink:0 }}>
