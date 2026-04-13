@@ -8,7 +8,7 @@
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  MessageCircle, Users, RefreshCw, Search,
+  MessageCircle, Users, RefreshCw, Search, Menu,
   Send, AlertCircle, Check, CheckCheck, Clock, X, Ban, Zap, FileText,
 } from 'lucide-react';
 import { api } from '../../../utils/api';
@@ -146,7 +146,7 @@ function TemplatesModal({ onClose, onSend }) {
 /* ════════════════════════════════
    MAIN COMPONENT
    ════════════════════════════════ */
-export default function WhatsAppView() {
+export default function WhatsAppView({ onOpenMenu }) {
   const [leads, setLeads]               = useState([]);
   const [selectedLead, setSelectedLead] = useState(null);
   const [chatData, setChatData]         = useState(null);
@@ -303,49 +303,49 @@ export default function WhatsAppView() {
            ══════════════════════════════ */
         .wa-left { width:340px; min-width:280px; display:flex; flex-direction:column; border-right:1px solid #e0e0e0; background:#fff; flex-shrink:0; }
 
-        /* Header verde WhatsApp */
-        .wa-hdr { display:flex; align-items:center; gap:8px; height:50px; padding:0 12px; background:#075e54; color:#fff; flex-shrink:0; }
+        /* Header verde WhatsApp — Tesipedia: 54px */
+        .wa-hdr { display:flex; align-items:center; gap:8px; height:48px; padding:0 12px; background:#075e54; color:#fff; flex-shrink:0; }
         .wa-hdr-icon { display:flex; align-items:center; }
-        .wa-hdr-title { font-size:15px; font-weight:600; flex:1; }
-        .wa-hdr-count { font-size:11px; background:rgba(255,255,255,.2); padding:2px 8px; border-radius:10px; }
-        .wa-hdr-btn { background:none; border:none; color:rgba(255,255,255,.8); cursor:pointer; padding:5px; display:flex; border-radius:4px; transition:background .15s; }
+        .wa-hdr-title { font-size:0.9rem; font-weight:600; flex:1; }
+        .wa-hdr-count { font-size:0.68rem; background:rgba(255,255,255,.2); padding:2px 8px; border-radius:10px; }
+        .wa-hdr-btn { background:none; border:none; color:rgba(255,255,255,.8); cursor:pointer; padding:4px; display:flex; border-radius:4px; transition:background .15s; }
         .wa-hdr-btn:hover { background:rgba(255,255,255,.15); }
 
-        /* Búsqueda */
+        /* Búsqueda — .wa prefix for specificity over .admin-wrap input */
         .wa-search { display:flex; align-items:center; height:38px; padding:0 10px; background:#f6f6f6; border-bottom:1px solid #e0e0e0; flex-shrink:0; gap:8px; }
-        .wa-search input { flex:1; border:none; background:#fff; padding:6px 10px; border-radius:6px; font-size:13px; outline:none; font-family:inherit; }
+        .wa .wa-search input { flex:1; border:none; background:#fff; padding:6px 10px; border-radius:6px; font-size:0.85rem; outline:none; font-family:inherit; box-shadow:none; }
 
-        /* Filtros compactos */
+        /* Filtros compactos — .wa prefix for specificity */
         .wa-filters { display:grid; grid-template-columns:1fr 1fr; gap:4px; padding:5px 10px; border-bottom:1px solid #e5e7eb; flex-shrink:0; }
-        .wa-fsel { width:100%; padding:4px 6px; border:1px solid #d1d5db; border-radius:6px; background:#f9fafb; color:#374151; font-size:11.5px; cursor:pointer; appearance:auto; font-family:inherit; }
-        .wa-fsel:focus { outline:none; border-color:#25d366; box-shadow:0 0 0 2px rgba(37,211,102,.15); }
+        .wa .wa-fsel { width:100%; padding:4px 8px; border:1px solid #d1d5db; border-radius:6px; background:#f9fafb; color:#374151; font-size:0.72rem; cursor:pointer; appearance:auto; font-family:inherit; height:auto; line-height:1.4; }
+        .wa .wa-fsel:focus { outline:none; border-color:#25d366; box-shadow:0 0 0 2px rgba(37,211,102,.15); }
 
         /* Lista de leads */
         .wa-list { flex:1; overflow-y:auto; }
 
         /* Section headers (grouped by status) */
-        .wa-section-hdr { padding:8px 14px; font-size:11.5px; font-weight:700; letter-spacing:0.3px; text-transform:uppercase; display:flex; align-items:center; gap:6px; border-bottom:1px solid rgba(0,0,0,.06); position:sticky; top:0; z-index:2; }
+        .wa-section-hdr { padding:6px 12px; font-size:0.68rem; font-weight:700; letter-spacing:0.3px; text-transform:uppercase; display:flex; align-items:center; gap:5px; border-bottom:1px solid rgba(0,0,0,.06); position:sticky; top:0; z-index:2; }
 
-        /* Lead card */
-        .wa-item { display:flex; align-items:flex-start; gap:10px; padding:10px 14px; cursor:pointer; border-bottom:1px solid #f0f0f0; transition:background .12s; }
+        /* Lead card — Tesipedia: padding 12px 16px, avatar 42px */
+        .wa-item { display:flex; align-items:flex-start; gap:10px; padding:10px 12px; cursor:pointer; border-bottom:1px solid #f0f0f0; transition:background .12s; }
         .wa-item:hover { background:#f5f5f5; }
         .wa-item.sel { background:#e8f5e9; border-left:3px solid #25d366; }
         .wa-item.human { border-left:3px solid #ff9800; }
         .wa-item.sel.human { border-left:3px solid #ff9800; background:#fff3e0; }
 
-        .wa-av { position:relative; width:46px; height:46px; border-radius:50%; background:#dfe5e7; display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:700; flex-shrink:0; color:#fff; }
-        .wa-av-badge { position:absolute; bottom:-2px; right:-2px; background:#ff9800; color:#fff; border-radius:50%; width:16px; height:16px; display:flex; align-items:center; justify-content:center; font-size:8px; font-weight:700; border:2px solid #fff; }
+        .wa-av { position:relative; width:42px; height:42px; border-radius:50%; background:#dfe5e7; display:flex; align-items:center; justify-content:center; font-size:0.85rem; font-weight:700; flex-shrink:0; color:#fff; }
+        .wa-av-badge { position:absolute; bottom:-2px; right:-2px; background:#ff9800; color:#fff; border-radius:50%; width:14px; height:14px; display:flex; align-items:center; justify-content:center; font-size:7px; font-weight:700; border:2px solid #fff; }
 
         .wa-info { flex:1; min-width:0; overflow:hidden; }
         .wa-row1 { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:1px; }
-        .wa-name { font-weight:600; font-size:14.5px; color:#111; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .wa-time { font-size:11px; color:#999; white-space:nowrap; margin-left:6px; flex-shrink:0; }
-        .wa-prev { font-size:12.5px; color:#667; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-bottom:4px; display:flex; align-items:center; justify-content:space-between; gap:6px; min-height:18px; }
+        .wa-name { font-weight:600; font-size:0.9rem; color:#111; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .wa-time { font-size:0.68rem; color:#999; white-space:nowrap; margin-left:6px; flex-shrink:0; }
+        .wa-prev { font-size:0.78rem; color:#667; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-bottom:3px; display:flex; align-items:center; justify-content:space-between; gap:5px; min-height:16px; }
         .wa-prev-text { overflow:hidden; text-overflow:ellipsis; flex:1; }
-        .wa-unread { background:#25D366; color:#fff; font-size:10px; font-weight:700; min-width:20px; height:20px; border-radius:10px; display:flex; align-items:center; justify-content:center; padding:0 5px; flex-shrink:0; }
-        .wa-meta { display:flex; align-items:center; gap:5px; flex-wrap:wrap; }
-        .wa-badge { display:inline-flex; align-items:center; gap:3px; padding:2px 7px; border-radius:10px; font-size:10px; font-weight:700; white-space:nowrap; }
-        .wa-agent { font-size:10px; color:#666; display:flex; align-items:center; gap:3px; background:#f1f5f9; padding:1px 6px; border-radius:8px; }
+        .wa-unread { background:#25D366; color:#fff; font-size:0.6rem; font-weight:700; min-width:18px; height:18px; border-radius:9px; display:flex; align-items:center; justify-content:center; padding:0 4px; flex-shrink:0; }
+        .wa-meta { display:flex; align-items:center; gap:4px; flex-wrap:wrap; }
+        .wa-badge { display:inline-flex; align-items:center; gap:2px; padding:1px 6px; border-radius:8px; font-size:0.62rem; font-weight:700; white-space:nowrap; }
+        .wa-agent { font-size:0.6rem; color:#666; display:flex; align-items:center; gap:3px; background:#f1f5f9; padding:1px 5px; border-radius:6px; }
 
         /* ══════════════════════════════
            COLUMNA DERECHA — Chat
@@ -355,36 +355,40 @@ export default function WhatsAppView() {
           background-image:url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23d5cec4' fill-opacity='0.3'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
         }
 
+        /* Menu button inside WA header — hidden on desktop, shown mobile */
+        .wa-menu-btn { display:none; background:none; border:none; cursor:pointer; color:#fff; padding:4px; border-radius:6px; transition:background .15s; flex-shrink:0; }
+        .wa-menu-btn:active { background:rgba(255,255,255,.2); }
+
         /* Back button — hidden on desktop, shown on mobile */
         .wa-back-btn { display:none; background:none; border:none; cursor:pointer; color:#075e54; padding:6px; border-radius:50%; transition:background .15s; flex-shrink:0; }
         .wa-back-btn:hover { background:rgba(0,0,0,.05); }
         .wa-back-btn:active { background:rgba(0,0,0,.1); }
 
-        /* Chat header */
-        .wa-ch-head { background:#fff; padding:8px 14px; border-bottom:1px solid #e2e8f0; display:flex; align-items:center; gap:10px; flex-shrink:0; }
+        /* Chat header — Tesipedia: name 0.95rem, phone 0.72rem */
+        .wa-ch-head { background:#fff; padding:8px 12px; border-bottom:1px solid #e2e8f0; display:flex; align-items:center; gap:8px; flex-shrink:0; flex-wrap:wrap; }
         .wa-ch-info { flex:1; min-width:0; }
-        .wa-ch-name { font-size:14px; font-weight:700; color:#0f172a; }
-        .wa-ch-sub { font-size:11px; color:#64748b; }
-        .wa-ch-acts { display:flex; gap:5px; align-items:center; flex-wrap:wrap; }
-        .wa-ch-btn { padding:4px 9px; border:1px solid #e2e8f0; border-radius:6px; font-size:11.5px; font-weight:500; background:#fff; cursor:pointer; font-family:inherit; display:flex; align-items:center; gap:4px; color:#334155; transition:all .15s; white-space:nowrap; }
+        .wa-ch-name { font-size:0.9rem; font-weight:700; color:#0f172a; }
+        .wa-ch-sub { font-size:0.7rem; color:#64748b; }
+        .wa-ch-acts { display:flex; gap:4px; align-items:center; flex-wrap:wrap; }
+        .wa-ch-btn { padding:4px 8px; border:1px solid #e2e8f0; border-radius:6px; font-size:0.72rem; font-weight:500; background:#fff; cursor:pointer; font-family:inherit; display:flex; align-items:center; gap:3px; color:#334155; transition:all .15s; white-space:nowrap; }
         .wa-ch-btn:hover { border-color:#25D366; color:#25D366; background:#f0fdf4; }
         .wa-ch-btn:disabled { opacity:.5; cursor:not-allowed; }
         .wa-ch-btn.on { background:#25D366; color:#fff; border-color:#25D366; }
         .wa-ch-btn.on:hover { background:#128C7E; }
         .wa-ch-btn.blk:hover { border-color:#ef4444; color:#ef4444; background:#fef2f2; }
         .wa-ch-btn.unblk { background:#fef2f2; color:#dc2626; border-color:#fca5a5; }
-        .wa-ch-sel { padding:4px 7px; border:1px solid #e2e8f0; border-radius:6px; font-size:11.5px; font-family:inherit; background:#fff; color:#334155; cursor:pointer; }
+        .wa .wa-ch-sel { padding:4px 6px; border:1px solid #e2e8f0; border-radius:6px; font-size:0.72rem; font-family:inherit; background:#fff; color:#334155; cursor:pointer; }
 
         /* 24h warning */
-        .wa-warn { background:#fef3c7; color:#92400e; padding:6px 14px; font-size:11.5px; font-weight:500; display:flex; align-items:center; gap:6px; flex-shrink:0; border-bottom:1px solid #fde68a; }
+        .wa-warn { background:#fef3c7; color:#92400e; padding:5px 12px; font-size:0.72rem; font-weight:500; display:flex; align-items:center; gap:5px; flex-shrink:0; border-bottom:1px solid #fde68a; }
 
-        /* Messages */
-        .wa-msgs { flex:1; overflow-y:auto; padding:16px 40px; display:flex; flex-direction:column; gap:6px; }
+        /* Messages — Tesipedia: 0.88rem */
+        .wa-msgs { flex:1; overflow-y:auto; padding:12px 24px; display:flex; flex-direction:column; gap:4px; }
         .wa-m {
-          max-width:65%; padding:10px 14px; border-radius:8px; font-size:0.9rem;
-          line-height:1.45; word-wrap:break-word; overflow-wrap:break-word;
-          box-shadow:0 1px 2px rgba(0,0,0,.08); min-width:80px; position:relative;
-          white-space:pre-wrap; word-break:break-word; color:#111; margin-bottom:2px;
+          max-width:65%; padding:8px 12px; border-radius:8px; font-size:0.88rem;
+          line-height:1.4; word-wrap:break-word; overflow-wrap:break-word;
+          box-shadow:0 1px 2px rgba(0,0,0,.08); min-width:70px; position:relative;
+          white-space:pre-wrap; word-break:break-word; color:#111; margin-bottom:1px;
         }
         .wa-m.u {
           align-self:flex-start; background:#fff;
@@ -400,108 +404,146 @@ export default function WhatsAppView() {
           border:1px dashed #66bb6a;
           border-top-right-radius:2px; font-style:italic;
         }
-        .wa-m-sender { font-size:0.7rem; font-weight:600; color:#075e54; margin-bottom:2px; }
+        .wa-m-sender { font-size:0.68rem; font-weight:600; color:#075e54; margin-bottom:2px; }
         .wa-m.u .wa-m-sender { color:#6b7c85; }
         .wa-m.t .wa-m-sender { color:#2e7d32; font-style:italic; }
-        .wa-m-foot { display:flex; align-items:center; justify-content:flex-end; gap:3px; margin-top:4px; }
-        .wa-m-foot span { font-size:0.65rem; color:#888; }
-        .wa-ddiv { text-align:center; padding:8px 0; }
-        .wa-ddiv span { background:#e2ddd5; padding:4px 12px; border-radius:8px; font-size:10.5px; color:#54656f; font-weight:500; display:inline-block; }
+        .wa-m-foot { display:flex; align-items:center; justify-content:flex-end; gap:3px; margin-top:3px; }
+        .wa-m-foot span { font-size:0.6rem; color:#888; }
+        .wa-ddiv { text-align:center; padding:6px 0; }
+        .wa-ddiv span { background:#e2ddd5; padding:3px 10px; border-radius:8px; font-size:0.65rem; color:#54656f; font-weight:500; display:inline-block; }
 
-        /* Input */
-        .wa-input { background:#f0f2f5; padding:8px 16px; display:flex; gap:10px; align-items:center; flex-shrink:0; }
-        .wa-input input { flex:1; border:none; border-radius:21px; padding:10px 16px; font-size:14px; font-family:inherit; outline:none; background:#fff; color:#0f172a; }
-        .wa-sbtn { background:#25D366; color:#fff; border:none; border-radius:50%; width:40px; height:40px; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:background .15s; flex-shrink:0; }
+        /* Input — Tesipedia: 0.84rem */
+        .wa-input { background:#f0f2f5; padding:6px 12px; display:flex; gap:8px; align-items:center; flex-shrink:0; }
+        .wa .wa-input input { flex:1; border:none; border-radius:20px; padding:8px 14px; font-size:0.88rem; font-family:inherit; outline:none; background:#fff; color:#0f172a; }
+        .wa-sbtn { background:#25D366; color:#fff; border:none; border-radius:50%; width:36px; height:36px; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:background .15s; flex-shrink:0; }
         .wa-sbtn:hover { background:#128C7E; }
         .wa-sbtn:disabled { background:#cbd5e1; cursor:not-allowed; }
-        .wa-tpl-btn { background:#fff; color:#64748b; border:1px solid #e2e8f0; border-radius:8px; padding:9px 11px; cursor:pointer; display:flex; align-items:center; transition:all .15s; flex-shrink:0; }
+        .wa-tpl-btn { background:#fff; color:#64748b; border:1px solid #e2e8f0; border-radius:8px; padding:7px 9px; cursor:pointer; display:flex; align-items:center; transition:all .15s; flex-shrink:0; }
         .wa-tpl-btn:hover { border-color:#25D366; color:#25D366; }
 
         /* Empty / loading */
-        .wa-empty { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; color:#94a3b8; text-align:center; padding:20px; }
-        .wa-empty-ic { width:80px; height:80px; border-radius:50%; background:rgba(255,255,255,.6); display:flex; align-items:center; justify-content:center; }
-        .wa-spin { width:26px; height:26px; border:3px solid #e2e8f0; border-top-color:#25D366; border-radius:50%; animation:wa-sp .7s linear infinite; }
+        .wa-empty { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; color:#94a3b8; text-align:center; padding:16px; font-size:0.82rem; }
+        .wa-empty-ic { width:60px; height:60px; border-radius:50%; background:rgba(255,255,255,.6); display:flex; align-items:center; justify-content:center; }
+        .wa-spin { width:22px; height:22px; border:2px solid #e2e8f0; border-top-color:#25D366; border-radius:50%; animation:wa-sp .7s linear infinite; }
         @keyframes wa-sp { to { transform:rotate(360deg); } }
-        .wa-nodata { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:32px; text-align:center; color:#64748b; gap:8px; }
+        .wa-nodata { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:24px; text-align:center; color:#64748b; gap:6px; font-size:0.82rem; }
 
         /* ══ Responsive ══ */
 
         /* Tablet / móvil landscape */
+        /* ══ Mobile — Tesipedia-aligned sizing ══ */
         @media(max-width:768px) {
           .wa { flex-direction:column; height:100%; }
           .wa-left { display:${selectedLead ? 'none' : 'flex'}; width:100% !important; min-width:auto !important; border-right:none; height:100%; }
           .wa-right { display:${selectedLead ? 'flex' : 'none'}; width:100% !important; height:100%; }
-          .wa-filters { grid-template-columns:1fr 1fr; gap:6px; padding:8px 12px; }
           .wa-back-btn { display:flex !important; }
+          .wa-menu-btn { display:flex !important; }
 
-          /* Chat header */
-          .wa-ch-head { padding:10px 14px; gap:8px; }
-          .wa-ch-name { font-size:15px; }
-          .wa-ch-sub { font-size:11px; }
-          .wa-ch-acts { flex-wrap:wrap; gap:4px; }
-          .wa-ch-btn { font-size:11px; padding:5px 10px; }
-          .wa-ch-sel { font-size:11px; padding:5px 8px; }
+          /* Header verde — matches Tesipedia 54px → scaled to FSC compact */
+          .wa-hdr { height:44px; padding:0 10px; }
+          .wa-hdr-icon svg { width:16px; height:16px; }
+          .wa-hdr-title { font-size:0.85rem; }
+          .wa-hdr-count { font-size:0.65rem; padding:1px 6px; }
+          .wa-hdr-btn { padding:4px; }
+          .wa-hdr-btn svg { width:14px; height:14px; }
+          .wa-menu-btn { padding:3px; }
+          .wa-menu-btn svg { width:16px; height:16px; }
 
-          /* Mensajes — padding generoso como WA real */
-          .wa-msgs { padding:12px 16px; gap:6px; }
-          .wa-m { max-width:85%; padding:8px 12px; font-size:0.88rem; line-height:1.4; margin-bottom:1px; }
-          .wa-m-sender { font-size:0.72rem; }
-          .wa-m-foot span { font-size:0.62rem; }
+          /* Búsqueda — Tesipedia: 40px, 0.85rem */
+          .wa-search { height:36px; padding:0 8px; gap:6px; }
+          .wa-search input { padding:5px 10px !important; font-size:0.82rem !important; border-radius:6px !important; border:none !important; }
+          .wa-search svg { width:13px; height:13px; }
 
-          /* Input */
-          .wa-input { padding:8px 12px; gap:8px; }
-          .wa-input input { padding:10px 14px; font-size:15px; border-radius:20px; }
-          .wa-sbtn { width:40px; height:40px; }
-          .wa-tpl-btn { width:36px; height:36px; }
+          /* Filtros — Tesipedia: 0.68rem, 4px 6px */
+          .wa-filters { grid-template-columns:1fr 1fr; gap:4px; padding:4px 8px; }
+          .wa-fsel { font-size:0.68rem !important; padding:4px 6px !important; border-radius:5px !important; }
 
-          /* Sidebar items */
-          .wa-item { padding:10px 12px; gap:10px; }
-          .wa-av { width:44px; height:44px; font-size:15px; }
-          .wa-name { font-size:14px; }
-          .wa-prev { font-size:12.5px; min-height:18px; }
-          .wa-search { padding:8px 12px; }
-          .wa-search input { font-size:15px; padding:8px 12px; border-radius:8px; }
-          .wa-warn { padding:8px 14px; font-size:12px; }
-          .wa-section-hdr { padding:8px 12px; font-size:11px; }
+          /* Chat header: two rows — Tesipedia: name 0.85rem, phone 0.65rem */
+          .wa-ch-head { padding:8px 10px; gap:6px; flex-wrap:wrap; }
+          .wa-ch-name { font-size:0.85rem; }
+          .wa-ch-sub { font-size:0.65rem; }
+          .wa-ch-info { min-width:0; flex:1; width:100%; }
+          .wa-ch-head .wa-av { width:32px !important; height:32px !important; font-size:12px !important; }
+          /* Actions row — Tesipedia: 0.7rem, 5px 10px */
+          .wa-ch-acts { width:100%; flex-wrap:nowrap; gap:5px; padding-top:4px; border-top:1px solid #f1f5f9; margin-top:2px; overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+          .wa-ch-acts::-webkit-scrollbar { display:none; }
+          .wa-ch-btn { font-size:0.7rem; padding:4px 8px; flex-shrink:0; }
+          .wa-ch-sel { font-size:0.7rem; padding:4px 6px !important; flex-shrink:0; }
+
+          /* Mensajes — Tesipedia: 0.84rem, padding 6px 10px */
+          .wa-msgs { padding:10px 12px; gap:4px; }
+          .wa-m { max-width:85%; padding:6px 10px; font-size:0.84rem; line-height:1.4; margin-bottom:1px; }
+          .wa-m-sender { font-size:0.65rem; }
+          .wa-m-foot span { font-size:0.6rem; }
+
+          /* Input — Tesipedia: 0.84rem, 8px 12px */
+          .wa-input { padding:6px 10px; gap:8px; }
+          .wa-input input { padding:8px 12px !important; font-size:0.84rem !important; border-radius:18px !important; border:none !important; }
+          .wa-sbtn { width:34px; height:34px; }
+          .wa-sbtn svg { width:16px; height:16px; }
+          .wa-tpl-btn { width:30px; height:30px; padding:5px !important; }
+
+          /* Lead cards — Tesipedia: avatar 38px, name 0.85rem */
+          .wa-item { padding:8px 10px; gap:8px; }
+          .wa-av { width:38px; height:38px; font-size:0.8rem; }
+          .wa-av-badge { width:14px; height:14px; font-size:7px; }
+          .wa-name { font-size:0.85rem; }
+          .wa-time { font-size:0.65rem; }
+          .wa-prev { font-size:0.75rem; min-height:16px; }
+          .wa-prev-text { font-size:0.75rem; }
+          .wa-unread { font-size:0.6rem; min-width:17px; height:17px; padding:0 4px; }
+          .wa-badge { font-size:0.6rem !important; padding:1px 5px !important; }
+          .wa-agent { font-size:0.6rem; padding:1px 4px; }
+          .wa-meta { gap:3px; }
+
+          /* Section headers */
+          .wa-section-hdr { padding:5px 10px; font-size:0.65rem; }
+
+          /* Warning */
+          .wa-warn { padding:5px 10px; font-size:0.72rem; }
 
           /* Date divider */
-          .wa-ddiv span { font-size:11px; padding:4px 10px; }
+          .wa-ddiv span { font-size:0.65rem; padding:3px 8px; }
+
+          /* Empty state */
+          .wa-empty-ic { width:60px; height:60px; }
+          .wa-empty { font-size:0.8rem; }
         }
 
-        /* Móvil portrait */
+        /* Small phones (≤480px) */
         @media(max-width:480px) {
-          .wa-filters { grid-template-columns:1fr; gap:4px; padding:6px 10px; }
+          .wa-hdr { height:40px; }
+          .wa-hdr-title { font-size:0.8rem; }
 
-          /* Chat header compacto */
-          .wa-ch-head { padding:8px 10px; gap:6px; }
-          .wa-ch-acts { gap:3px; }
-          .wa-ch-btn { font-size:10px; padding:4px 8px; }
-          .wa-ch-sel { font-size:10px; padding:4px 6px; }
+          .wa-search { height:32px; }
+          .wa-search input { font-size:0.78rem !important; padding:4px 8px !important; }
 
-          /* Mensajes — más ancho en pantalla chica */
-          .wa-msgs { padding:10px 12px; gap:5px; }
-          .wa-m { max-width:90%; padding:7px 10px; font-size:0.85rem; }
+          .wa-filters { grid-template-columns:1fr 1fr; gap:3px; padding:3px 6px; }
+          .wa-fsel { font-size:0.65rem !important; padding:3px 5px !important; }
 
-          /* Input */
-          .wa-input { padding:6px 8px; }
-          .wa-input input { padding:9px 12px; font-size:15px; }
-          .wa-sbtn { width:38px; height:38px; }
+          .wa-ch-head { padding:6px 8px; gap:4px; }
+          .wa-ch-btn { font-size:0.65rem; padding:3px 6px; }
+          .wa-ch-sel { font-size:0.65rem; padding:3px 5px !important; }
 
-          /* Sidebar items */
-          .wa-item { padding:8px 10px; gap:8px; }
-          .wa-av { width:40px; height:40px; font-size:14px; }
-          .wa-name { font-size:13px; }
-          .wa-prev { font-size:12px; }
-          .wa-section-hdr { padding:6px 10px; font-size:10.5px; }
+          .wa-msgs { padding:8px 8px; gap:3px; }
+          .wa-m { max-width:88%; padding:5px 8px; font-size:0.82rem; }
+
+          .wa-input { padding:4px 6px; gap:6px; }
+          .wa-input input { padding:7px 10px !important; font-size:0.82rem !important; }
+          .wa-sbtn { width:32px; height:32px; }
+
+          .wa-item { padding:7px 8px; gap:7px; }
+          .wa-av { width:34px; height:34px; font-size:0.75rem; }
+          .wa-name { font-size:0.82rem; }
+          .wa-prev { font-size:0.7rem; }
+          .wa-section-hdr { padding:4px 8px; font-size:0.6rem; }
         }
 
-        /* Pantalla muy pequeña (iPhone SE, etc) */
+        /* Very small phones (iPhone SE, etc) */
         @media(max-width:375px) {
-          .wa-msgs { padding:8px 8px; gap:4px; }
-          .wa-m { max-width:92%; padding:6px 9px; font-size:0.83rem; }
-          .wa-ch-acts { display:none; }
-          .wa-ch-head { padding:8px; }
-          .wa-input input { font-size:14px; padding:8px 10px; }
+          .wa-m { max-width:92%; }
+          .wa-ch-acts { gap:3px; }
+          .wa-ch-btn { font-size:0.6rem; padding:2px 5px; }
         }
       `}</style>
 
@@ -514,6 +556,7 @@ export default function WhatsAppView() {
 
           {/* Header verde */}
           <div className="wa-hdr">
+            {onOpenMenu && <button className="wa-menu-btn" onClick={onOpenMenu}><Menu size={20} /></button>}
             <span className="wa-hdr-icon"><MessageCircle size={20} /></span>
             <span className="wa-hdr-title">WhatsApp</span>
             {(st.total || leads.length) > 0 && (

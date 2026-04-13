@@ -6,7 +6,7 @@
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  MessageCircle, Search, RefreshCw, Phone, User, Filter,
+  MessageCircle, Search, RefreshCw, Phone, User, Filter, Menu,
   BarChart3, Clock, ChevronRight, Briefcase, Target, CalendarDays,
   CheckCircle2, XCircle, AlertTriangle, ArrowLeft,
 } from 'lucide-react';
@@ -137,7 +137,7 @@ function FiltroProgress({ step, compact = false }) {
 /* ════════════════════════════════
    MAIN COMPONENT
    ════════════════════════════════ */
-export default function FSCConversationsView() {
+export default function FSCConversationsView({ onOpenMenu }) {
   const [activeTab, setActiveTab] = useState('conversations');
   const [leads, setLeads] = useState([]);
   const [stats, setStats] = useState(null);
@@ -274,22 +274,27 @@ export default function FSCConversationsView() {
       @media(max-width:768px) {
         .fsc-wrap { height: 100% !important; overflow: hidden; }
         .fsc-two-col { flex-direction: column !important; height: 100% !important; }
-        .fsc-left { width: 100% !important; min-width: auto !important; max-height: 40vh !important; border-right: none !important; border-bottom: 1px solid #E2E8F0; overflow-y: auto !important; }
+        .fsc-left { width: 100% !important; min-width: auto !important; max-height: 38vh !important; border-right: none !important; border-bottom: 1px solid #E2E8F0; overflow-y: auto !important; }
         .fsc-right { flex: 1 !important; min-height: 0; width: 100% !important; overflow-y: auto; }
-        .fsc-pipeline { grid-template-columns: 1fr !important; overflow-x: auto; gap: 12px !important; padding: 10px !important; }
+        .fsc-pipeline { grid-template-columns: 1fr !important; overflow-x: auto; gap: 10px !important; padding: 8px !important; }
+        .fsc-tab-bar { padding: 0 10px !important; }
+        .fsc-tab-bar button { padding: 8px 12px !important; font-size: 0.78rem !important; }
+        .fsc-tab-bar button svg { width: 14px !important; height: 14px !important; }
       }
       @media(max-width:480px) {
         .fsc-left { max-height: 35vh !important; }
+        .fsc-tab-bar button { padding: 7px 10px !important; font-size: 0.72rem !important; gap: 4px !important; }
       }
     `}</style>
     <div className="fsc-wrap" style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#F8FAFC', overflow: 'hidden' }}>
 
       {/* ── Tab bar ── */}
-      <div style={{
+      <div className="fsc-tab-bar" style={{
         display: 'flex', alignItems: 'center', gap: 0,
         background: '#fff', borderBottom: '1px solid #E2E8F0',
         padding: '0 16px', flexShrink: 0,
       }}>
+        {onOpenMenu && <button className="mobile-menu-btn" onClick={onOpenMenu} style={{ marginRight: 6 }}><Menu size={20} /></button>}
         {[
           { key: 'conversations', label: 'Conversaciones Sofía', icon: <MessageCircle size={16} /> },
           { key: 'pipeline', label: 'Pipeline HubSpot', icon: <Briefcase size={16} /> },

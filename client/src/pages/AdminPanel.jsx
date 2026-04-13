@@ -242,7 +242,7 @@ export default function AdminPanel() {
 
         {/* ══ Contenido principal ══ */}
         <div className="main">
-          {activeView !== 'whatsapp' && (
+          {activeView !== 'whatsapp' && activeView !== 'sofia-bot' && (
           <header className="topbar">
             <div className="topbar-left">
               <button className="mobile-menu-btn" onClick={() => setMobileMenuOpen(o => !o)}>
@@ -264,12 +264,8 @@ export default function AdminPanel() {
           </header>
           )}
 
-          {activeView === 'whatsapp' && (
-            <button className="mobile-menu-btn" onClick={() => setMobileMenuOpen(o => !o)} style={{ position: 'absolute', top: 10, left: 10, zIndex: 10, background: '#fff', borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,.15)' }}>
-              <Menu size={22} />
-            </button>
-          )}
-          <main className={activeView === 'whatsapp' ? 'content-wa' : 'content'}>
+          {/* WhatsApp mobile menu is inside the WA header — no floating button needed */}
+          <main className={activeView === 'whatsapp' || activeView === 'sofia-bot' ? 'content-wa' : 'content'}>
             {loading && activeView !== 'whatsapp' && <div className="loading-wrap"><div className="spinner" /><p>Cargando...</p></div>}
 
             <Suspense fallback={<ViewSpinner />}>
@@ -306,7 +302,7 @@ export default function AdminPanel() {
               {!loading && activeView === 'visitas' &&
                 <VisitasView />}
               {activeView === 'whatsapp' &&
-                <WhatsAppView />}
+                <WhatsAppView onOpenMenu={() => setMobileMenuOpen(o => !o)} />}
               {!loading && activeView === 'team' && canManageTeam &&
                 <TeamView userRole={user?.role} />}
               {!loading && activeView === 'hubspot' && userIsAgency &&
@@ -314,7 +310,7 @@ export default function AdminPanel() {
               {!loading && activeView === 'workflow' && userIsAgency &&
                 <WorkflowAIView metaToken={metaToken} setMetaToken={setMetaToken} />}
               {!loading && activeView === 'sofia-bot' &&
-                <FSCConversationsView />}
+                <FSCConversationsView onOpenMenu={() => setMobileMenuOpen(o => !o)} />}
             </Suspense>
           </main>
         </div>

@@ -157,6 +157,27 @@ select:focus {
   box-shadow: 0 0 0 3px rgba(0, 61, 165, 0.1);
 }
 
+/* ── Neutralize landing-page styles inside admin panel ── */
+.admin-wrap {
+  font-size: 14px;
+}
+.admin-wrap input,
+.admin-wrap textarea,
+.admin-wrap select {
+  border-width: 1px;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+.admin-wrap h1, .admin-wrap h2, .admin-wrap h3,
+.admin-wrap h4, .admin-wrap h5, .admin-wrap h6 {
+  font-size: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+  margin: 0;
+}
+
 /* ==================== Animations ==================== */
 @keyframes fadeIn {
   from {
