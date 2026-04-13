@@ -177,9 +177,9 @@ router.get('/events', verifyToken, async (req, res) => {
 
 router.post('/events', verifyToken, async (req, res) => {
   try {
-    const { title, description, start_date, end_date, all_day, color, lead_id } = req.body;
-    const r = await runQuery('INSERT INTO events (title,description,start_date,end_date,all_day,color,user_id,lead_id) VALUES (?,?,?,?,?,?,?,?)',
-      [title, description||'', start_date, end_date||null, all_day?1:0, color||'#C9A84C', req.user.id, lead_id||null]);
+    const { title, description, start_date, end_date, all_day, color, lead_id, meeting_link } = req.body;
+    const r = await runQuery('INSERT INTO events (title,description,start_date,end_date,all_day,color,user_id,lead_id,meeting_link) VALUES (?,?,?,?,?,?,?,?,?)',
+      [title, description||'', start_date, end_date||null, all_day?1:0, color||'#C9A84C', req.user.id, lead_id||null, meeting_link||null]);
     const event = await queryOne('SELECT * FROM events WHERE id=?', [r.lastInsertRowid]);
     res.json({ success: true, event });
   } catch (err) {
@@ -190,9 +190,9 @@ router.post('/events', verifyToken, async (req, res) => {
 
 router.put('/events/:id', verifyToken, async (req, res) => {
   try {
-    const { title, description, start_date, end_date, color } = req.body;
-    await runQuery('UPDATE events SET title=?,description=?,start_date=?,end_date=?,color=? WHERE id=?',
-      [title, description, start_date, end_date, color, +req.params.id]);
+    const { title, description, start_date, end_date, color, meeting_link } = req.body;
+    await runQuery('UPDATE events SET title=?,description=?,start_date=?,end_date=?,color=?,meeting_link=? WHERE id=?',
+      [title, description, start_date, end_date, color, meeting_link||null, +req.params.id]);
     const event = await queryOne('SELECT * FROM events WHERE id=?', [+req.params.id]);
     res.json({ success: true, event });
   } catch (err) {

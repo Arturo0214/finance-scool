@@ -67,6 +67,7 @@ export const api = {
     return request(`/google/events?${params}`);
   },
   createGoogleEvent: (data) => request('/google/events', { method: 'POST', body: JSON.stringify(data) }),
+  updateGoogleEvent: (id, data) => request(`/google/events/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteGoogleEvent: (id) => request(`/google/events/${id}`, { method: 'DELETE' }),
   disconnectGoogle: () => request('/google/disconnect', { method: 'POST' }),
 

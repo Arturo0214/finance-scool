@@ -90,6 +90,8 @@ async function setupDatabase() {
         CREATE INDEX IF NOT EXISTS events_user_id_idx ON events(user_id);
         CREATE INDEX IF NOT EXISTS events_lead_id_idx ON events(lead_id);
         CREATE INDEX IF NOT EXISTS events_start_date_idx ON events(start_date);
+
+        ALTER TABLE events ADD COLUMN IF NOT EXISTS meeting_link TEXT;
       `
     }).catch(() => ({ error: null }));
 

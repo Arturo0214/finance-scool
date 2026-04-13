@@ -182,6 +182,39 @@ router.post('/events', verifyToken, async (req, res) => {
   }
 });
 
+// ─── PUT /api/google/events/:eventId ───
+// Update an event in Google Calendar
+router.put('/events/:eventId', verifyToken, async (req, res) => {
+  try {
+    const tokens = await getStoredTokens();
+    if (!tokens) return res.status(400).json({ error: 'Google Calendar no está conectado' });
+
+    const calendar = getCalendarClient(tokens);
+    const { title, description, start_date, end_date, time } = req.body;
+
+    const startDateTime = time ? `${start_date}T${time}:00` : start_date;
+    const endDateTime = end_date || (time ? `${start_date}T${String(Number(time.split(':')[0]) + 1).padStart(2, '0')}:${time.split(':')[1]}:00` : start_date);
+
+    const event = {
+      summary: title,
+      description: description || '',
+      start: time ? { dateTime: startDateTime, timeZone: 'America/Mexico_City' } : { date: start_date },
+      end: time ? { dateTime: endDateTime, timeZone: 'America/Mexico_City' } : { date: end_date || start_date },
+    };
+
+    const response = await calendar.events.patch({
+      calendarId: 'primary',
+      eventId: req.params.eventId,
+      resource: event,
+    });
+
+    res.json({ success: true, event: response.data });
+  } catch (err) {
+    console.error('Update Google event error:', err);
+    res.status(500).json({ error: 'Error al actualizar evento en Google Calendar' });
+  }
+});
+
 // ─── DELETE /api/google/events/:eventId ───
 // Delete an event from Google Calendar
 router.delete('/events/:eventId', verifyToken, async (req, res) => {

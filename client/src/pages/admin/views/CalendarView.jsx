@@ -1,14 +1,16 @@
 import { useState, useEffect, useCallback } from 'react';
 import { C, SPANISH_LABELS } from '../constants';
-import { Plus, X, Clock, Link2, Unlink, RefreshCw } from 'lucide-react';
+import { Plus, X, Clock, Link2, Unlink, RefreshCw, MapPin, Calendar, ChevronRight, Trash2, Pencil, ExternalLink, Video } from 'lucide-react';
 import { api } from '../../../utils/api';
 
+/* ── Event Modal (Create) ─────────────────────────────────── */
 function EventModal({ onClose, onSubmit, googleConnected }) {
   const [formData, setFormData] = useState({
     title: '',
     date: new Date().toISOString().split('T')[0],
     time: '14:00',
     description: '',
+    meeting_link: '',
     syncToGoogle: googleConnected,
   });
   return (
@@ -23,6 +25,7 @@ function EventModal({ onClose, onSubmit, googleConnected }) {
           <div className="field"><label>{SPANISH_LABELS.eventDate}</label><input type="date" value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })} /></div>
           <div className="field"><label>{SPANISH_LABELS.eventTime}</label><input type="time" value={formData.time} onChange={e => setFormData({ ...formData, time: e.target.value })} /></div>
           <div className="field"><label>{SPANISH_LABELS.eventDescription}</label><textarea value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} rows={3} /></div>
+          <div className="field"><label>Link de reunión (Zoom, Meet, Teams...)</label><input type="url" placeholder="https://zoom.us/j/..." value={formData.meeting_link} onChange={e => setFormData({ ...formData, meeting_link: e.target.value })} /></div>
           {googleConnected && (
             <div className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <input type="checkbox" id="syncGoogle" checked={formData.syncToGoogle} onChange={e => setFormData({ ...formData, syncToGoogle: e.target.checked })} />
@@ -41,12 +44,220 @@ function EventModal({ onClose, onSubmit, googleConnected }) {
   );
 }
 
-export default function CalendarView({ events, showEventModal, setShowEventModal, onAddEvent }) {
+/* ── Edit Event Modal ─────────────────────────────────────── */
+function EditEventModal({ event, onClose, onSave, onDelete }) {
+  const isGoogle = event.source === 'google';
+  const evDate = event.start_date ? new Date(event.start_date) : new Date();
+  const dateStr = evDate.toISOString().split('T')[0];
+  const timeStr = event.time || (evDate.getHours() === 0 && evDate.getMinutes() === 0 ? '14:00'
+    : `${String(evDate.getHours()).padStart(2,'0')}:${String(evDate.getMinutes()).padStart(2,'0')}`);
+
+  const [formData, setFormData] = useState({
+    title: event.title || '',
+    date: dateStr,
+    time: timeStr,
+    description: event.description || '',
+    meeting_link: event.meeting_link || '',
+  });
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    setSaving(true);
+    await onSave(event, {
+      title: formData.title,
+      description: formData.description,
+      start_date: formData.date,
+      time: formData.time,
+      end_date: event.end_date || null,
+      color: event.color || '#C9A84C',
+      meeting_link: formData.meeting_link,
+    });
+    setSaving(false);
+    onClose();
+  };
+
+  const handleDelete = async () => {
+    await onDelete(event);
+    onClose();
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal edit-modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-head">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <h2>Editar Evento</h2>
+            <span className={`event-source-badge ${isGoogle ? 'badge-google' : 'badge-local'}`}>
+              {isGoogle ? 'Google' : 'Local'}
+            </span>
+          </div>
+          <button className="close-btn" onClick={onClose}><X size={22} /></button>
+        </div>
+        <div className="modal-body">
+          <div className="field">
+            <label>Título</label>
+            <input type="text" value={formData.title} onChange={e => setFormData({ ...formData, title: e.target.value })} />
+          </div>
+          <div className="edit-row">
+            <div className="field" style={{ flex: 1 }}>
+              <label>Fecha</label>
+              <input type="date" value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })} />
+            </div>
+            <div className="field" style={{ flex: 1 }}>
+              <label>Hora</label>
+              <input type="time" value={formData.time} onChange={e => setFormData({ ...formData, time: e.target.value })} />
+            </div>
+          </div>
+          <div className="field">
+            <label>Notas / Descripción</label>
+            <textarea value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} rows={4} placeholder="Agrega notas sobre este evento..." />
+          </div>
+          {!isGoogle && (
+            <div className="field">
+              <label>Link de reunión</label>
+              <input type="url" placeholder="https://zoom.us/j/... o meet.google.com/..." value={formData.meeting_link} onChange={e => setFormData({ ...formData, meeting_link: e.target.value })} />
+            </div>
+          )}
+          {isGoogle && event.htmlLink && (
+            <div className="field">
+              <a href={event.htmlLink} target="_blank" rel="noopener noreferrer" className="ddm-event-link" style={{ marginTop: 0 }}>
+                Ver en Google Calendar <ExternalLink size={12} />
+              </a>
+            </div>
+          )}
+        </div>
+        <div className="modal-foot edit-foot">
+          <div className="edit-foot-left">
+            {!confirmDelete ? (
+              <button className="btn-danger-outline" onClick={() => setConfirmDelete(true)}>
+                <Trash2 size={14} /> Eliminar
+              </button>
+            ) : (
+              <div className="confirm-delete">
+                <span>¿Estás seguro?</span>
+                <button className="btn-danger" onClick={handleDelete}>Sí, eliminar</button>
+                <button className="btn-secondary btn-sm" onClick={() => setConfirmDelete(false)}>Cancelar</button>
+              </div>
+            )}
+          </div>
+          <div className="edit-foot-right">
+            <button className="btn-secondary" onClick={onClose}>Cancelar</button>
+            <button className="btn-primary" onClick={handleSave} disabled={saving || !formData.title.trim()}>
+              {saving ? 'Guardando...' : 'Guardar cambios'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Day Detail Modal ─────────────────────────────────────── */
+function DayDetailModal({ date, localEvents, googleEvents, onClose, googleConnected, onEditEvent }) {
+  const dayLabel = date.toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const allDayEvents = [
+    ...localEvents.map(e => ({ ...e, source: 'local' })),
+    ...googleEvents.map(e => ({ ...e, source: 'google' })),
+  ].sort((a, b) => {
+    const tA = a.time || (a.start_date ? new Date(a.start_date).toTimeString().slice(0, 5) : '99:99');
+    const tB = b.time || (b.start_date ? new Date(b.start_date).toTimeString().slice(0, 5) : '99:99');
+    return tA.localeCompare(tB);
+  });
+
+  const formatTime = (event) => {
+    if (event.all_day) return 'Todo el día';
+    if (event.time) return event.time;
+    if (event.start_date) {
+      const d = new Date(event.start_date);
+      if (d.getHours() === 0 && d.getMinutes() === 0) return 'Todo el día';
+      return d.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+    }
+    return '';
+  };
+
+  const formatEndTime = (event) => {
+    if (event.end_date && !event.all_day) {
+      const d = new Date(event.end_date);
+      if (d.getHours() === 0 && d.getMinutes() === 0) return '';
+      return d.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+    }
+    return '';
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="day-detail-modal" onClick={e => e.stopPropagation()}>
+        <div className="ddm-header">
+          <div>
+            <h2 className="ddm-title">{date.getDate()}</h2>
+            <p className="ddm-subtitle">{dayLabel}</p>
+          </div>
+          <button className="close-btn" onClick={onClose}><X size={22} /></button>
+        </div>
+
+        <div className="ddm-body">
+          {allDayEvents.length === 0 ? (
+            <div className="ddm-empty">
+              <Calendar size={40} strokeWidth={1.2} color="#cbd5e1" />
+              <p>No hay eventos para este día</p>
+            </div>
+          ) : (
+            <div className="ddm-events">
+              {allDayEvents.map((event, i) => {
+                const time = formatTime(event);
+                const endTime = formatEndTime(event);
+                const isGoogle = event.source === 'google';
+                return (
+                  <div key={`${event.source}-${event.id}-${i}`} className={`ddm-event ${isGoogle ? 'ddm-event-google' : 'ddm-event-local'}`}>
+                    <div className="ddm-event-time-col">
+                      <span className="ddm-event-time">{time}</span>
+                      {endTime && <span className="ddm-event-end-time">{endTime}</span>}
+                    </div>
+                    <div className="ddm-event-content">
+                      <div className="ddm-event-title-row">
+                        <h4 className="ddm-event-title">{event.title}</h4>
+                        <span className={`event-source-badge ${isGoogle ? 'badge-google' : 'badge-local'}`}>
+                          {isGoogle ? 'Google' : 'Local'}
+                        </span>
+                        <button className="ddm-edit-btn" onClick={(e) => { e.stopPropagation(); onEditEvent(event); }} title="Editar evento">
+                          <Pencil size={13} />
+                        </button>
+                      </div>
+                      {event.description && (
+                        <p className="ddm-event-desc">{event.description}</p>
+                      )}
+                      {event.meeting_link && (
+                        <a href={event.meeting_link} target="_blank" rel="noopener noreferrer" className="ddm-meeting-link">
+                          <Video size={12} /> Unirse a reunión <ExternalLink size={10} />
+                        </a>
+                      )}
+                      {event.htmlLink && (
+                        <a href={event.htmlLink} target="_blank" rel="noopener noreferrer" className="ddm-event-link">
+                          Ver en Google Calendar <ChevronRight size={12} />
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Main Calendar View ───────────────────────────────────── */
+export default function CalendarView({ events, showEventModal, setShowEventModal, onAddEvent, onUpdateEvent, onDeleteEvent }) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [googleConnected, setGoogleConnected] = useState(false);
   const [googleEmail, setGoogleEmail] = useState('');
   const [googleEvents, setGoogleEvents] = useState([]);
   const [syncing, setSyncing] = useState(false);
+  const [selectedDay, setSelectedDay] = useState(null);
+  const [editingEvent, setEditingEvent] = useState(null);
 
   const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
   const firstDay   = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getDay();
@@ -120,14 +331,13 @@ export default function CalendarView({ events, showEventModal, setShowEventModal
 
   // Enhanced add event handler — also creates in Google if opted
   const handleAddEventWithGoogle = async (formData) => {
-    // Create local event
     await onAddEvent({
       title: formData.title,
       start_date: `${formData.date}T${formData.time}:00`,
       description: formData.description,
       time: formData.time,
+      meeting_link: formData.meeting_link || null,
     });
-    // Also create in Google Calendar if checkbox was checked
     if (formData.syncToGoogle && googleConnected) {
       try {
         await api.createGoogleEvent({
@@ -143,6 +353,47 @@ export default function CalendarView({ events, showEventModal, setShowEventModal
     }
   };
 
+  // Edit & Delete handlers for local AND Google events
+  const handleEditEvent = (event) => {
+    setSelectedDay(null); // close day modal
+    setEditingEvent(event);
+  };
+
+  const handleSaveEdit = async (event, data) => {
+    if (event.source === 'google') {
+      try {
+        await api.updateGoogleEvent(event.id, {
+          title: data.title,
+          description: data.description,
+          start_date: data.start_date,
+          time: data.time,
+        });
+        fetchGoogleEvents();
+      } catch (err) {
+        console.error('Update Google event error:', err);
+      }
+    } else {
+      await onUpdateEvent(event.id, {
+        ...data,
+        start_date: `${data.start_date}T${data.time}:00`,
+      });
+    }
+  };
+
+  const handleDeleteEvent = async (event) => {
+    if (event.source === 'google') {
+      try {
+        await api.deleteGoogleEvent(event.id);
+        fetchGoogleEvents();
+      } catch (err) {
+        console.error('Delete Google event error:', err);
+      }
+    } else {
+      await onDeleteEvent(event.id);
+    }
+    setEditingEvent(null);
+  };
+
   // Merge local + Google events for a given day
   const getEventsForDay = day => {
     if (!day) return { local: [], google: [] };
@@ -153,13 +404,37 @@ export default function CalendarView({ events, showEventModal, setShowEventModal
     return { local, google };
   };
 
+  // Helper: format time for calendar cell preview
+  const cellTime = (event) => {
+    if (event.all_day) return '';
+    if (event.time) {
+      const [h, m] = event.time.split(':');
+      return `${h}:${m}`;
+    }
+    if (event.start_date) {
+      const d = new Date(event.start_date);
+      if (d.getHours() === 0 && d.getMinutes() === 0) return '';
+      return d.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+    }
+    return '';
+  };
+
   // All events merged for "Próximos Eventos"
   const allEvents = [
     ...events.map(e => ({ ...e, source: 'local' })),
     ...googleEvents,
   ].sort((a, b) => new Date(a.start_date || a.date) - new Date(b.start_date || b.date));
 
+  // Filter only upcoming events
+  const now = new Date();
+  const upcomingEvents = allEvents.filter(e => new Date(e.start_date || e.date) >= new Date(now.getFullYear(), now.getMonth(), now.getDate()));
+
   const today = new Date();
+
+  const handleDayClick = (day) => {
+    if (!day) return;
+    setSelectedDay(day);
+  };
 
   return (
     <>
@@ -171,12 +446,25 @@ export default function CalendarView({ events, showEventModal, setShowEventModal
         .cal-nav h2 { font-size:18px; font-weight:600; color:#0f172a; text-transform:capitalize; margin:0; }
         .cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:1px; background:#e2e8f0; border-radius:8px; overflow:hidden; }
         .cal-dh { background:#003DA5; color:#fff; padding:10px; text-align:center; font-size:12px; font-weight:600; }
-        .cal-day { background:#fff; padding:10px; min-height:72px; }
-        .cal-day.empty { background:#f8fafc; }
+        .cal-day { background:#fff; min-height:100px; cursor:pointer; transition: background .15s; display:flex; flex-direction:column; overflow:hidden; }
+        .cal-day:hover { background:#f1f5f9; }
+        .cal-day.empty { background:#f8fafc; cursor:default; }
+        .cal-day.empty:hover { background:#f8fafc; }
         .cal-day.today { background:#eff6ff; border:2px solid #003DA5; }
-        .cal-day-num { font-size:13px; font-weight:600; color:#0f172a; margin-bottom:4px; }
-        .cal-dot { width:6px; height:6px; background:#0088E0; border-radius:50%; display:inline-block; margin-right:3px; }
-        .cal-dot.google { background:#34a853; }
+        .cal-day.today:hover { background:#dbeafe; }
+        .cal-day-top { display:flex; align-items:center; justify-content:space-between; padding:6px 8px 2px; }
+        .cal-day-num { font-size:13px; font-weight:600; color:#0f172a; }
+        .cal-day.today .cal-day-num { background:#003DA5; color:#fff; width:24px; height:24px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:12px; }
+        .cal-event-count { font-size:10px; color:#94a3b8; font-weight:500; }
+        .cal-events-list { padding:2px 6px 6px; display:flex; flex-direction:column; gap:2px; flex:1; overflow:hidden; }
+        .cal-event-chip { font-size:11px; padding:2px 5px; border-radius:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.4; cursor:pointer; }
+        .cal-event-chip.local { background:#dbeafe; color:#1e40af; border-left:2px solid #3b82f6; }
+        .cal-event-chip.google { background:#dcfce7; color:#166534; border-left:2px solid #22c55e; }
+        .cal-event-chip-time { font-weight:600; margin-right:3px; }
+        .cal-more { font-size:10px; color:#64748b; padding:0 5px 4px; cursor:pointer; font-weight:500; }
+        .cal-more:hover { color:#003DA5; }
+
+        /* Google bar */
         .google-bar { display:flex; align-items:center; gap:12px; padding:12px 16px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; margin-bottom:16px; flex-wrap:wrap; }
         .google-bar.disconnected { background:#fef2f2; border-color:#fecaca; }
         .google-bar .status { font-size:13px; color:#166534; flex:1; }
@@ -193,14 +481,78 @@ export default function CalendarView({ events, showEventModal, setShowEventModal
         .event-source-badge { font-size:10px; padding:2px 6px; border-radius:4px; font-weight:600; }
         .badge-local { background:#dbeafe; color:#1e40af; }
         .badge-google { background:#dcfce7; color:#166534; }
+
+        /* Day Detail Modal */
+        .day-detail-modal { background:#fff; border-radius:12px; width:520px; max-width:90vw; max-height:80vh; display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,.2); }
+        .ddm-header { display:flex; justify-content:space-between; align-items:flex-start; padding:20px 24px 16px; border-bottom:1px solid #e2e8f0; }
+        .ddm-title { font-size:32px; font-weight:700; color:#003DA5; margin:0; line-height:1; }
+        .ddm-subtitle { font-size:13px; color:#64748b; margin:4px 0 0; text-transform:capitalize; }
+        .ddm-body { flex:1; overflow-y:auto; padding:16px 24px 24px; }
+        .ddm-empty { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:40px 0; gap:12px; }
+        .ddm-empty p { color:#94a3b8; font-size:14px; margin:0; }
+        .ddm-events { display:flex; flex-direction:column; gap:12px; }
+        .ddm-event { display:flex; gap:14px; padding:12px; border-radius:8px; border:1px solid #e2e8f0; transition:all .15s; }
+        .ddm-event:hover { box-shadow:0 2px 8px rgba(0,0,0,.06); }
+        .ddm-event-local { border-left:3px solid #3b82f6; }
+        .ddm-event-google { border-left:3px solid #22c55e; }
+        .ddm-event-time-col { min-width:52px; display:flex; flex-direction:column; align-items:flex-end; padding-top:2px; }
+        .ddm-event-time { font-size:13px; font-weight:600; color:#0f172a; }
+        .ddm-event-end-time { font-size:11px; color:#94a3b8; }
+        .ddm-event-content { flex:1; min-width:0; }
+        .ddm-event-title-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+        .ddm-event-title { font-size:14px; font-weight:600; color:#0f172a; margin:0; }
+        .ddm-event-desc { font-size:13px; color:#64748b; margin:6px 0 0; line-height:1.4; }
+        .ddm-event-link { font-size:12px; color:#003DA5; text-decoration:none; display:inline-flex; align-items:center; gap:2px; margin-top:6px; }
+        .ddm-event-link:hover { text-decoration:underline; }
+        .ddm-edit-btn { background:none; border:1px solid #e2e8f0; border-radius:4px; padding:3px 6px; cursor:pointer; color:#64748b; transition:all .15s; display:inline-flex; align-items:center; }
+        .ddm-edit-btn:hover { border-color:#003DA5; color:#003DA5; background:#eff6ff; }
+        .ddm-meeting-link { font-size:12px; color:#7c3aed; text-decoration:none; display:inline-flex; align-items:center; gap:4px; margin-top:6px; padding:4px 8px; background:#f5f3ff; border-radius:4px; font-weight:500; transition:all .15s; }
+        .ddm-meeting-link:hover { background:#ede9fe; text-decoration:none; }
+
+        /* Edit Modal */
+        .edit-modal { width:520px; max-width:90vw; }
+        .edit-row { display:flex; gap:12px; }
+        .edit-foot { justify-content:space-between !important; flex-wrap:wrap; gap:8px; }
+        .edit-foot-left { display:flex; align-items:center; }
+        .edit-foot-right { display:flex; align-items:center; gap:8px; }
+        .btn-danger-outline { background:none; border:1px solid #fecaca; color:#dc2626; border-radius:6px; padding:6px 12px; cursor:pointer; font-size:13px; display:flex; align-items:center; gap:4px; transition:all .15s; }
+        .btn-danger-outline:hover { background:#fef2f2; border-color:#f87171; }
+        .btn-danger { background:#dc2626; border:none; color:#fff; border-radius:6px; padding:6px 12px; cursor:pointer; font-size:13px; transition:all .15s; }
+        .btn-danger:hover { background:#b91c1c; }
+        .btn-sm { padding:4px 10px !important; font-size:12px !important; }
+        .confirm-delete { display:flex; align-items:center; gap:8px; }
+        .confirm-delete span { font-size:13px; color:#dc2626; font-weight:500; }
+
+        /* Upcoming events section */
+        .upcoming-section { margin-top:24px; }
+        .upcoming-event { display:flex; align-items:center; gap:14px; padding:12px 16px; border:1px solid #e2e8f0; border-radius:8px; margin-bottom:8px; transition:all .15s; cursor:pointer; }
+        .upcoming-event:hover { box-shadow:0 2px 8px rgba(0,0,0,.05); border-color:#cbd5e1; }
+        .upcoming-date-box { min-width:48px; text-align:center; }
+        .upcoming-date-day { font-size:20px; font-weight:700; color:#003DA5; line-height:1; }
+        .upcoming-date-month { font-size:10px; color:#64748b; text-transform:uppercase; font-weight:600; }
+        .upcoming-info { flex:1; min-width:0; }
+        .upcoming-title { font-size:14px; font-weight:600; color:#0f172a; margin:0; display:flex; align-items:center; gap:6px; }
+        .upcoming-meta { font-size:12px; color:#64748b; margin-top:2px; display:flex; align-items:center; gap:4px; flex-wrap:wrap; }
+        .upcoming-meeting-badge { display:inline-flex; align-items:center; gap:3px; font-size:11px; color:#7c3aed; background:#f5f3ff; padding:1px 6px; border-radius:3px; font-weight:500; }
+
         @media(max-width:768px){
           .cal-head { flex-direction:column; align-items:flex-start; gap:12px; }
           .cal-grid { gap:0; }
-          .cal-day { min-height:54px; padding:6px; }
+          .cal-day { min-height:64px; }
           .cal-dh { padding:6px; font-size:11px; }
           .cal-day-num { font-size:12px; }
+          .cal-day.today .cal-day-num { width:20px; height:20px; font-size:11px; }
           .cal-nav h2 { font-size:16px; }
           .google-bar { flex-direction:column; align-items:flex-start; }
+          .cal-event-chip { font-size:10px; padding:1px 4px; }
+          .cal-events-list { padding:1px 4px 4px; }
+          .day-detail-modal { width:95vw; max-height:85vh; }
+          .ddm-header { padding:16px; }
+          .ddm-body { padding:12px 16px 16px; }
+          .edit-modal { width:95vw; }
+          .edit-row { flex-direction:column; gap:0; }
+          .edit-foot { flex-direction:column; }
+          .edit-foot-left, .edit-foot-right { width:100%; justify-content:center; }
         }
       `}</style>
     <div className="view">
@@ -251,14 +603,46 @@ export default function CalendarView({ events, showEventModal, setShowEventModal
           ))}
           {days.map((day, idx) => {
             const { local, google } = getEventsForDay(day);
+            const totalEvents = local.length + google.length;
             const isToday = day && today.getDate() === day && today.getMonth() === currentDate.getMonth() && today.getFullYear() === currentDate.getFullYear();
+            const MAX_VISIBLE = 3;
+            const allCellEvents = [
+              ...local.map(e => ({ ...e, _src: 'local' })),
+              ...google.map(e => ({ ...e, _src: 'google' })),
+            ].sort((a, b) => {
+              const tA = cellTime(a) || '99:99';
+              const tB = cellTime(b) || '99:99';
+              return tA.localeCompare(tB);
+            });
+            const visible = allCellEvents.slice(0, MAX_VISIBLE);
+            const remaining = allCellEvents.length - MAX_VISIBLE;
+
             return (
-              <div key={idx} className={`cal-day${day === null ? ' empty' : ''}${isToday ? ' today' : ''}`}>
+              <div
+                key={idx}
+                className={`cal-day${day === null ? ' empty' : ''}${isToday ? ' today' : ''}`}
+                onClick={() => handleDayClick(day)}
+              >
                 {day && (
                   <>
-                    <div className="cal-day-num">{day}</div>
-                    {local.map(event => <div key={event.id} className="cal-dot" title={event.title} />)}
-                    {google.map(event => <div key={event.id} className="cal-dot google" title={`Google: ${event.title}`} />)}
+                    <div className="cal-day-top">
+                      <div className="cal-day-num">{day}</div>
+                      {totalEvents > 0 && <span className="cal-event-count">{totalEvents}</span>}
+                    </div>
+                    <div className="cal-events-list">
+                      {visible.map((event, i) => {
+                        const t = cellTime(event);
+                        return (
+                          <div key={`${event._src}-${event.id}-${i}`} className={`cal-event-chip ${event._src}`}>
+                            {t && <span className="cal-event-chip-time">{t}</span>}
+                            {event.title}
+                          </div>
+                        );
+                      })}
+                      {remaining > 0 && (
+                        <div className="cal-more">+{remaining} más</div>
+                      )}
+                    </div>
                   </>
                 )}
               </div>
@@ -268,26 +652,74 @@ export default function CalendarView({ events, showEventModal, setShowEventModal
       </div>
 
       {/* Upcoming events list */}
-      <div className="section">
+      <div className="section upcoming-section">
         <h2 className="section-title">Próximos Eventos</h2>
         <div className="events-list">
-          {allEvents.length === 0 ? <p className="empty">{SPANISH_LABELS.noEvents}</p> : (
-            allEvents.slice(0, 12).map(event => (
-              <div key={`${event.source}-${event.id}`} className="event-card">
-                <div style={{ flex: 1 }}>
-                  <h3>
-                    {event.title}
-                    <span className={`event-source-badge ${event.source === 'google' ? 'badge-google' : 'badge-local'}`} style={{ marginLeft: 8 }}>
-                      {event.source === 'google' ? 'Google' : 'Local'}
-                    </span>
-                  </h3>
-                  <span className="ev-time"><Clock size={13} /> {new Date(event.start_date || event.date).toLocaleDateString('es-MX')} — {event.time || new Date(event.start_date).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }) || 'Sin hora'}</span>
+          {upcomingEvents.length === 0 ? <p className="empty">{SPANISH_LABELS.noEvents}</p> : (
+            upcomingEvents.slice(0, 10).map((event, i) => {
+              const evDate = new Date(event.start_date || event.date);
+              const dayNum = evDate.getDate();
+              const monthShort = evDate.toLocaleDateString('es-MX', { month: 'short' }).toUpperCase();
+              const time = event.time || (evDate.getHours() === 0 && evDate.getMinutes() === 0 ? 'Todo el día' : evDate.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }));
+              const isGoogle = event.source === 'google';
+              return (
+                <div
+                  key={`${event.source}-${event.id}-${i}`}
+                  className="upcoming-event"
+                  onClick={() => handleEditEvent(event)}
+                >
+                  <div className="upcoming-date-box">
+                    <div className="upcoming-date-day">{dayNum}</div>
+                    <div className="upcoming-date-month">{monthShort}</div>
+                  </div>
+                  <div className="upcoming-info">
+                    <h4 className="upcoming-title">
+                      {event.title}
+                      <span className={`event-source-badge ${isGoogle ? 'badge-google' : 'badge-local'}`}>
+                        {isGoogle ? 'Google' : 'Local'}
+                      </span>
+                    </h4>
+                    <div className="upcoming-meta">
+                      <Clock size={11} /> {time}
+                      {event.meeting_link && (
+                        <span className="upcoming-meeting-badge" onClick={e => { e.stopPropagation(); window.open(event.meeting_link, '_blank'); }}>
+                          <Video size={10} /> Reunión
+                        </span>
+                      )}
+                      {event.description && <> · {event.description.slice(0, 50)}{event.description.length > 50 ? '…' : ''}</>}
+                    </div>
+                  </div>
+                  <button className="ddm-edit-btn" onClick={(e) => { e.stopPropagation(); handleEditEvent(event); }} title="Editar">
+                    <Pencil size={14} />
+                  </button>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       </div>
+
+      {/* Day Detail Modal */}
+      {selectedDay && (
+        <DayDetailModal
+          date={new Date(currentDate.getFullYear(), currentDate.getMonth(), selectedDay)}
+          localEvents={getEventsForDay(selectedDay).local}
+          googleEvents={getEventsForDay(selectedDay).google}
+          onClose={() => setSelectedDay(null)}
+          googleConnected={googleConnected}
+          onEditEvent={handleEditEvent}
+        />
+      )}
+
+      {/* Edit Event Modal */}
+      {editingEvent && (
+        <EditEventModal
+          event={editingEvent}
+          onClose={() => setEditingEvent(null)}
+          onSave={handleSaveEdit}
+          onDelete={handleDeleteEvent}
+        />
+      )}
 
       {showEventModal && <EventModal onClose={() => setShowEventModal(false)} onSubmit={handleAddEventWithGoogle} googleConnected={googleConnected} />}
     </div>

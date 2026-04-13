@@ -159,6 +159,16 @@ export default function AdminPanel() {
     catch (err) { console.error('createEvent:', err); }
   };
 
+  const handleUpdateEvent = async (id, eventData) => {
+    try { await api.updateEvent(id, eventData); loadData(); }
+    catch (err) { console.error('updateEvent:', err); }
+  };
+
+  const handleDeleteEvent = async (id) => {
+    try { await api.deleteEvent(id); loadData(); }
+    catch (err) { console.error('deleteEvent:', err); }
+  };
+
   const handleSendMessage = async (content) => {
     if (!content.trim()) return;
     try { await api.sendMessage(content, 'general'); if (messageInputRef.current) messageInputRef.current.value = ''; loadData(); }
@@ -296,6 +306,8 @@ export default function AdminPanel() {
                   events={events}
                   showEventModal={showEventModal} setShowEventModal={setShowEventModal}
                   onAddEvent={handleAddEvent}
+                  onUpdateEvent={handleUpdateEvent}
+                  onDeleteEvent={handleDeleteEvent}
                 />}
               {!loading && activeView === 'chat' &&
                 <ChatView messages={messages} onSendMessage={handleSendMessage} messageInputRef={messageInputRef} />}
