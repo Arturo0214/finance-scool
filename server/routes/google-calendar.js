@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { verifyToken } = require('../middleware/auth');
 const { oauth2Client, getAuthUrl, getCalendarClient } = require('../config/google-calendar');
-const { supabase } = require('../models/database');
+const { getDB } = require('../models/database');
 
 // ─── GET /api/google/auth-url ───
 // Returns the Google OAuth URL to start the connection flow
@@ -31,7 +31,7 @@ router.get('/callback', async (req, res) => {
     const { data: profile } = await oauth2.userinfo.get();
 
     // Store tokens in Supabase (upsert by google email)
-    const { error } = await supabase
+    const { error } = await getDB()
       .from('google_calendar_tokens')
       .upsert({
         google_email: profile.email,
@@ -62,7 +62,7 @@ router.get('/callback', async (req, res) => {
 router.get('/connection-status', verifyToken, async (req, res) => {
   try {
     // Try Supabase first
-    const { data, error } = await supabase
+    const { data, error } = await getDB()
       .from('google_calendar_tokens')
       .select('google_email, updated_at')
       .order('updated_at', { ascending: false })
@@ -91,7 +91,7 @@ router.get('/connection-status', verifyToken, async (req, res) => {
 // ─── Helper: get stored tokens ───
 async function getStoredTokens() {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await getDB()
       .from('google_calendar_tokens')
       .select('*')
       .order('updated_at', { ascending: false })
@@ -203,7 +203,7 @@ router.delete('/events/:eventId', verifyToken, async (req, res) => {
 // Disconnect Google Calendar
 router.post('/disconnect', verifyToken, async (req, res) => {
   try {
-    await supabase.from('google_calendar_tokens').delete().neq('id', 0);
+    await getDB().from('google_calendar_tokens').delete().neq('id', 0);
     global._googleCalTokens = null;
     res.json({ success: true });
   } catch (err) {
