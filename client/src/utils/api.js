@@ -58,7 +58,7 @@ export const api = {
   deleteEvent: (id) => request(`/events/${id}`, { method: 'DELETE' }),
 
   // Google Calendar
-  getGoogleAuthUrl: () => request('/google/auth-url'),
+  getGoogleAuthUrl: () => request(`/google/auth-url?origin=${encodeURIComponent(window.location.origin)}`),
   getGoogleConnectionStatus: () => request('/google/connection-status'),
   getGoogleEvents: (timeMin, timeMax) => {
     const params = new URLSearchParams();
