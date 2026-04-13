@@ -57,6 +57,19 @@ export const api = {
   updateEvent: (id, data) => request(`/events/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteEvent: (id) => request(`/events/${id}`, { method: 'DELETE' }),
 
+  // Google Calendar
+  getGoogleAuthUrl: () => request('/google/auth-url'),
+  getGoogleConnectionStatus: () => request('/google/connection-status'),
+  getGoogleEvents: (timeMin, timeMax) => {
+    const params = new URLSearchParams();
+    if (timeMin) params.set('timeMin', timeMin);
+    if (timeMax) params.set('timeMax', timeMax);
+    return request(`/google/events?${params}`);
+  },
+  createGoogleEvent: (data) => request('/google/events', { method: 'POST', body: JSON.stringify(data) }),
+  deleteGoogleEvent: (id) => request(`/google/events/${id}`, { method: 'DELETE' }),
+  disconnectGoogle: () => request('/google/disconnect', { method: 'POST' }),
+
   // Messages
   getMessages: (channel = 'general') => request(`/messages?channel=${channel}`),
   sendMessage: (content, channel = 'general') => request('/messages', { method: 'POST', body: JSON.stringify({ content, channel }) }),

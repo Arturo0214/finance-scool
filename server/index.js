@@ -13,6 +13,7 @@ const leadRoutes = require('./routes/leads');
 const apiRoutes = require('./routes/api');
 const whatsappRoutes = require('./routes/whatsapp');
 const fscRoutes = require('./routes/fsc');
+const googleCalendarRoutes = require('./routes/google-calendar');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -56,6 +57,7 @@ app.use('/api/leads', leadRoutes);
 app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api/fsc', fscRoutes);
 app.use('/api/notifications', require('./routes/notifications'));
+app.use('/api/google', googleCalendarRoutes);
 app.use('/api', apiRoutes);
 
 // Serve React build in production
