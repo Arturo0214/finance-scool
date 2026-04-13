@@ -8,7 +8,8 @@ const { getDB } = require('../models/database');
 // Returns the Google OAuth URL to start the connection flow
 router.get('/auth-url', verifyToken, (req, res) => {
   try {
-    const url = getAuthUrl();
+    const frontendOrigin = req.query.origin || req.headers.origin || req.headers.referer;
+    const url = getAuthUrl(frontendOrigin);
     res.json({ url });
   } catch (err) {
     console.error('Google auth-url error:', err);
@@ -20,8 +21,11 @@ router.get('/auth-url', verifyToken, (req, res) => {
 // Handles the OAuth callback from Google, stores tokens in Supabase
 router.get('/callback', async (req, res) => {
   try {
-    const { code } = req.query;
+    const { code, state } = req.query;
     if (!code) return res.status(400).json({ error: 'No se recibió código de autorización' });
+
+    // Use the state parameter as the frontend origin (passed during auth-url generation)
+    const frontendUrl = state || process.env.FRONTEND_URL || 'http://localhost:5173';
 
     const { tokens } = await oauth2Client.getToken(code);
     oauth2Client.setCredentials(tokens);
@@ -47,12 +51,11 @@ router.get('/callback', async (req, res) => {
       global._googleCalTokens = { ...tokens, email: profile.email };
     }
 
-    // Redirect to frontend calendar page with success indicator
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    // Redirect to the SAME frontend origin the user came from (preserves their session)
     res.redirect(`${frontendUrl}/admin/calendar?google=connected&email=${encodeURIComponent(profile.email)}`);
   } catch (err) {
     console.error('Google callback error:', err);
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const frontendUrl = req.query.state || process.env.FRONTEND_URL || 'http://localhost:5173';
     res.redirect(`${frontendUrl}/admin/calendar?google=error`);
   }
 });

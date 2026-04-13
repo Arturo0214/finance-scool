@@ -1,35 +1,35 @@
 const { google } = require('googleapis');
 
 const oauth2Client = new google.auth.OAuth2(
+  process.env.GOOGLE_CLIENT_ID,
+  process.env.GOOGLE_CLIENT_SECRET,
+  process.env.GOOGLE_REDIRECT_URI
+);
+
+const SCOPES = [
+  'https://www.googleapis.com/auth/calendar',
+  'https://www.googleapis.com/auth/calendar.events',
+  'https://www.googleapis.com/auth/userinfo.email',
+  'https://www.googleapis.com/auth/userinfo.profile',
+];
+
+function getAuthUrl(frontendOrigin) {
+  return oauth2Client.generateAuthUrl({
+    access_type: 'offline',
+    scope: SCOPES,
+    prompt: 'consent',
+    state: frontendOrigin || process.env.FRONTEND_URL || 'http://localhost:5173',
+  });
+}
+
+function getCalendarClient(tokens) {
+  const client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
     process.env.GOOGLE_REDIRECT_URI
   );
-
-const SCOPES = [
-    'https://www.googleapis.com/auth/calendar',
-    'https://www.googleapis.com/auth/calendar.events',
-    'https://www.googleapis.com/auth/userinfo.email',
-    'https://www.googleapis.com/auth/userinfo.profile',
-  ];
-
-function getAuthUrl(frontendOrigin) {
-    return oauth2Client.generateAuthUrl({
-          access_type: 'offline',
-          scope: SCOPES,
-          prompt: 'consent',
-          state: frontendOrigin || process.env.FRONTEND_URL || 'http://localhost:5173',
-    });
-}
-
-function getCalendarClient(tokens) {
-    const client = new google.auth.OAuth2(
-          process.env.GOOGLE_CLIENT_ID,
-          process.env.GOOGLE_CLIENT_SECRET,
-          process.env.GOOGLE_REDIRECT_URI
-        );
-    client.setCredentials(tokens);
-    return google.calendar({ version: 'v3', auth: client });
+  client.setCredentials(tokens);
+  return google.calendar({ version: 'v3', auth: client });
 }
 
 module.exports = { oauth2Client, getAuthUrl, getCalendarClient, SCOPES };
