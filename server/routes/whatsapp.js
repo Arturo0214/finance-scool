@@ -271,8 +271,26 @@ router.get('/available-slots', async (req, res) => {
     const endDate = new Date(startDate);
     endDate.setDate(endDate.getDate() + daysAhead + 4);
 
-    // Generar slots disponibles basados en horario de trabajo
-    // Se permiten múltiples citas en el mismo horario
+    // Generar slots disponibles: horario de Ingrid menos eventos ocupados
+    // El bot solo ofrece slots libres; las citas manuales pueden sobreponerse
+    const skipBusy = req.query.force === 'true'; // ?force=true para ignorar busy
+    let busySlots = [];
+
+    if (!skipBusy) {
+      const freeBusyResp = await calendar.freebusy.query({
+        requestBody: {
+          timeMin: startDate.toISOString(),
+          timeMax: endDate.toISOString(),
+          timeZone: TZ,
+          items: [{ id: 'primary' }],
+        },
+      });
+      busySlots = (freeBusyResp.data.calendars?.primary?.busy || []).map(b => ({
+        start: new Date(b.start).getTime(),
+        end: new Date(b.end).getTime(),
+      }));
+    }
+
     const dayMap = new Map();
     const slotMs = duration * 60 * 1000;
 
@@ -281,7 +299,7 @@ router.get('/available-slots', async (req, res) => {
       day.setDate(day.getDate() + d);
       const dayOfWeek = day.getUTCDay();
       const schedule = SCHEDULE[dayOfWeek];
-      if (!schedule) continue; // día cerrado
+      if (!schedule) continue;
 
       const dateStr = day.toISOString().slice(0, 10);
       const utcStart = mxToUTC(dateStr, schedule.start).getTime();
@@ -291,11 +309,15 @@ router.get('/available-slots', async (req, res) => {
       let cursor = utcStart;
 
       while (cursor + slotMs <= utcEnd) {
-        // Todos los slots dentro del horario están disponibles
-        const mxTime = new Date(cursor - 6 * 60 * 60 * 1000);
-        const hh = String(mxTime.getUTCHours()).padStart(2, '0');
-        const mm = String(mxTime.getUTCMinutes()).padStart(2, '0');
-        available.push(`${hh}:${mm}`);
+        const slotEnd = cursor + slotMs;
+        const isBusy = busySlots.some(b => cursor < b.end && slotEnd > b.start);
+
+        if (!isBusy) {
+          const mxTime = new Date(cursor - 6 * 60 * 60 * 1000);
+          const hh = String(mxTime.getUTCHours()).padStart(2, '0');
+          const mm = String(mxTime.getUTCMinutes()).padStart(2, '0');
+          available.push(`${hh}:${mm}`);
+        }
         }
 
         cursor += slotMs;
