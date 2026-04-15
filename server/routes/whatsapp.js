@@ -263,7 +263,7 @@ router.get('/available-slots', async (req, res) => {
 
     const calendar = getCalendarClient(tokens);
 
-    // Rango: mañana hasta N días (+ buffer para días sin horario)
+    // Rango: mañana hasta N días (+ buffer para fines de semana)
     const now = new Date();
     const startDate = new Date(now);
     startDate.setDate(startDate.getDate() + 1);
@@ -271,25 +271,19 @@ router.get('/available-slots', async (req, res) => {
     const endDate = new Date(startDate);
     endDate.setDate(endDate.getDate() + daysAhead + 4);
 
-    // Generar slots disponibles: horario de Ingrid menos eventos ocupados
-    // El bot solo ofrece slots libres; las citas manuales pueden sobreponerse
-    const skipBusy = req.query.force === 'true'; // ?force=true para ignorar busy
-    let busySlots = [];
-
-    if (!skipBusy) {
-      const freeBusyResp = await calendar.freebusy.query({
-        requestBody: {
-          timeMin: startDate.toISOString(),
-          timeMax: endDate.toISOString(),
-          timeZone: TZ,
-          items: [{ id: 'primary' }],
-        },
-      });
-      busySlots = (freeBusyResp.data.calendars?.primary?.busy || []).map(b => ({
-        start: new Date(b.start).getTime(),
-        end: new Date(b.end).getTime(),
-      }));
-    }
+    // Consultar eventos ocupados en Google Calendar (FreeBusy)
+    const freeBusyResp = await calendar.freebusy.query({
+      requestBody: {
+        timeMin: startDate.toISOString(),
+        timeMax: endDate.toISOString(),
+        timeZone: TZ,
+        items: [{ id: 'primary' }],
+      },
+    });
+    const busySlots = (freeBusyResp.data.calendars?.primary?.busy || []).map(b => ({
+      start: new Date(b.start).getTime(),
+      end: new Date(b.end).getTime(),
+    }));
 
     const dayMap = new Map();
     const slotMs = duration * 60 * 1000;
@@ -310,6 +304,8 @@ router.get('/available-slots', async (req, res) => {
 
       while (cursor + slotMs <= utcEnd) {
         const slotEnd = cursor + slotMs;
+
+        // Verificar que NO se empalme con ningún evento existente
         const isBusy = busySlots.some(b => cursor < b.end && slotEnd > b.start);
 
         if (!isBusy) {
@@ -317,7 +313,6 @@ router.get('/available-slots', async (req, res) => {
           const hh = String(mxTime.getUTCHours()).padStart(2, '0');
           const mm = String(mxTime.getUTCMinutes()).padStart(2, '0');
           available.push(`${hh}:${mm}`);
-        }
         }
 
         cursor += slotMs;
