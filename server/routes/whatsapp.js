@@ -271,22 +271,8 @@ router.get('/available-slots', async (req, res) => {
     const endDate = new Date(startDate);
     endDate.setDate(endDate.getDate() + daysAhead + 4);
 
-    // Consultar Google Calendar FreeBusy
-    const freeBusyResp = await calendar.freebusy.query({
-      requestBody: {
-        timeMin: startDate.toISOString(),
-        timeMax: endDate.toISOString(),
-        timeZone: TZ,
-        items: [{ id: 'primary' }],
-      },
-    });
-
-    const busySlots = (freeBusyResp.data.calendars?.primary?.busy || []).map(b => ({
-      start: new Date(b.start).getTime(),
-      end: new Date(b.end).getTime(),
-    }));
-
-    // Generar slots disponibles: horario de Ingrid menos eventos ocupados
+    // Generar slots disponibles basados en horario de trabajo
+    // Se permiten múltiples citas en el mismo horario
     const dayMap = new Map();
     const slotMs = duration * 60 * 1000;
 
@@ -305,17 +291,11 @@ router.get('/available-slots', async (req, res) => {
       let cursor = utcStart;
 
       while (cursor + slotMs <= utcEnd) {
-        const slotEnd = cursor + slotMs;
-
-        // Verificar si el slot se sobrelapa con algún evento ocupado
-        const isBusy = busySlots.some(b => cursor < b.end && slotEnd > b.start);
-
-        if (!isBusy) {
-          // Convertir a hora Mexico City para mostrar
-          const mxTime = new Date(cursor - 6 * 60 * 60 * 1000);
-          const hh = String(mxTime.getUTCHours()).padStart(2, '0');
-          const mm = String(mxTime.getUTCMinutes()).padStart(2, '0');
-          available.push(`${hh}:${mm}`);
+        // Todos los slots dentro del horario están disponibles
+        const mxTime = new Date(cursor - 6 * 60 * 60 * 1000);
+        const hh = String(mxTime.getUTCHours()).padStart(2, '0');
+        const mm = String(mxTime.getUTCMinutes()).padStart(2, '0');
+        available.push(`${hh}:${mm}`);
         }
 
         cursor += slotMs;
