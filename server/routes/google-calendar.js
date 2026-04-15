@@ -158,10 +158,21 @@ router.post('/events', verifyToken, async (req, res) => {
     if (!tokens) return res.status(400).json({ error: 'Google Calendar no está conectado' });
 
     const calendar = getCalendarClient(tokens);
-    const { title, description, start_date, end_date, time } = req.body;
+    const { title, description, start_date, end_date, time, duration, addMeet, attendeeEmail } = req.body;
 
+    // Duración por defecto: 30 minutos
+    const durationMin = duration || 30;
     const startDateTime = time ? `${start_date}T${time}:00` : start_date;
-    const endDateTime = end_date || (time ? `${start_date}T${String(Number(time.split(':')[0]) + 1).padStart(2, '0')}:${time.split(':')[1]}:00` : start_date);
+    let endDateTime;
+    if (time) {
+      const startDate = new Date(`${start_date}T${time}:00`);
+      const endDate = new Date(startDate.getTime() + durationMin * 60 * 1000);
+      const hh = String(endDate.getHours()).padStart(2, '0');
+      const mm = String(endDate.getMinutes()).padStart(2, '0');
+      endDateTime = `${start_date}T${hh}:${mm}:00`;
+    } else {
+      endDateTime = end_date || start_date;
+    }
 
     const event = {
       summary: title,
@@ -170,12 +181,31 @@ router.post('/events', verifyToken, async (req, res) => {
       end: time ? { dateTime: endDateTime, timeZone: 'America/Mexico_City' } : { date: end_date || start_date },
     };
 
+    // Google Meet automático
+    if (addMeet !== false) {
+      event.conferenceData = {
+        createRequest: {
+          requestId: `meet-${Date.now()}`,
+          conferenceSolutionKey: { type: 'hangoutsMeet' },
+        },
+      };
+    }
+
+    // Agregar asistente (recibirá invitación por email con link de Meet)
+    if (attendeeEmail) {
+      event.attendees = [{ email: attendeeEmail }];
+    }
+
     const response = await calendar.events.insert({
       calendarId: 'primary',
       resource: event,
+      conferenceDataVersion: 1, // Requerido para crear Meet
+      sendUpdates: attendeeEmail ? 'all' : 'none', // Enviar invitación si hay asistente
     });
 
-    res.json({ success: true, event: response.data });
+    const meetLink = response.data.conferenceData?.entryPoints?.find(e => e.entryPointType === 'video')?.uri || null;
+
+    res.json({ success: true, event: response.data, meetLink });
   } catch (err) {
     console.error('Create Google event error:', err);
     res.status(500).json({ error: 'Error al crear evento en Google Calendar' });
@@ -245,6 +275,73 @@ router.post('/disconnect', verifyToken, async (req, res) => {
   } catch (err) {
     global._googleCalTokens = null;
     res.json({ success: true });
+  }
+});
+
+// ─── POST /api/google/schedule-meeting ───
+// Crear cita de 30 min con Google Meet (llamado por n8n o WhatsApp bot)
+// No requiere verifyToken — público para que n8n pueda llamarlo
+router.post('/schedule-meeting', async (req, res) => {
+  try {
+    const tokens = await getStoredTokens();
+    if (!tokens) return res.status(400).json({ error: 'Google Calendar no está conectado' });
+
+    const calendar = getCalendarClient(tokens);
+    const { clientName, clientEmail, clientPhone, date, time, duration, notes } = req.body;
+
+    if (!date || !time) return res.status(400).json({ error: 'Fecha y hora son requeridas' });
+
+    const durationMin = duration || 30;
+    const startDateTime = `${date}T${time}:00`;
+    const startDate = new Date(`${date}T${time}:00`);
+    const endDate = new Date(startDate.getTime() + durationMin * 60 * 1000);
+    const hh = String(endDate.getHours()).padStart(2, '0');
+    const mm = String(endDate.getMinutes()).padStart(2, '0');
+    const endDateTime = `${date}T${hh}:${mm}:00`;
+
+    const event = {
+      summary: `📞 Check-up Financiero: ${clientName || 'Lead'}`,
+      description: [
+        clientName ? `Cliente: ${clientName}` : '',
+        clientPhone ? `WhatsApp: https://wa.me/${clientPhone.replace(/\D/g, '')}` : '',
+        clientPhone ? `Teléfono: ${clientPhone}` : '',
+        notes ? `Notas: ${notes}` : '',
+      ].filter(Boolean).join('\n'),
+      start: { dateTime: startDateTime, timeZone: 'America/Mexico_City' },
+      end: { dateTime: endDateTime, timeZone: 'America/Mexico_City' },
+      conferenceData: {
+        createRequest: {
+          requestId: `fsc-meet-${Date.now()}`,
+          conferenceSolutionKey: { type: 'hangoutsMeet' },
+        },
+      },
+      reminders: { useDefault: false, overrides: [{ method: 'popup', minutes: 15 }] },
+    };
+
+    if (clientEmail) {
+      event.attendees = [{ email: clientEmail }];
+    }
+
+    const response = await calendar.events.insert({
+      calendarId: 'primary',
+      resource: event,
+      conferenceDataVersion: 1,
+      sendUpdates: clientEmail ? 'all' : 'none',
+    });
+
+    const meetLink = response.data.conferenceData?.entryPoints?.find(e => e.entryPointType === 'video')?.uri || null;
+
+    res.json({
+      success: true,
+      meetLink,
+      eventId: response.data.id,
+      htmlLink: response.data.htmlLink,
+      start: response.data.start,
+      end: response.data.end,
+    });
+  } catch (err) {
+    console.error('Schedule meeting error:', err);
+    res.status(500).json({ error: 'Error al crear la cita con Google Meet' });
   }
 });
 
