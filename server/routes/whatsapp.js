@@ -95,10 +95,92 @@ router.post('/webhook', async (req, res) => {
     const changes = entry?.changes?.[0]?.value;
     if (!changes) return;
 
-    // NOTE: Incoming messages are handled by n8n workflow (whatsapp-fsc webhook)
-    // This Express webhook only handles status updates to avoid duplicate processing
+    // ── Handle incoming messages (extract media if present) ──
+    const messages = changes.messages;
+    if (messages && messages.length > 0) {
+      for (const msg of messages) {
+        const waId = msg.from;
+        const msgType = msg.type; // text, image, audio, video, document, sticker
+        const hasMedia = ['image', 'audio', 'video', 'document', 'sticker'].includes(msgType);
+        let mediaUrl = null;
+        let mimeType = null;
+        let filename = null;
 
-    // Handle status updates (sent, delivered, read, failed)
+        // Download & upload media to Cloudinary if present
+        if (hasMedia && msg[msgType]) {
+          const mediaObj = msg[msgType];
+          const mediaId = mediaObj.id;
+          mimeType = mediaObj.mime_type || null;
+          filename = mediaObj.filename || null;
+          if (mediaId) {
+            mediaUrl = await downloadAndUploadMedia(mediaId, mimeType);
+          }
+        }
+
+        // Build message entry
+        const body = msg.text?.body
+          || msg.image?.caption
+          || msg.video?.caption
+          || msg.document?.caption
+          || (msgType === 'audio' ? '[Audio]' : '')
+          || (msgType === 'sticker' ? '[Sticker]' : '')
+          || `[${msgType}]`;
+
+        const newMsg = {
+          role: 'user',
+          body,
+          type: msgType,
+          timestamp: msg.timestamp ? new Date(parseInt(msg.timestamp) * 1000).toISOString() : new Date().toISOString(),
+          wa_msg_id: msg.id,
+        };
+        if (mediaUrl) newMsg.mediaUrl = mediaUrl;
+        if (mimeType) newMsg.mimetype = mimeType;
+        if (filename) newMsg.filename = filename;
+
+        // Save to whatsapp_leads if exists
+        const { data: lead } = await db.from('whatsapp_leads').select('historial_chat, contact_name').eq('wa_id', waId).maybeSingle();
+        if (lead) {
+          const historial = JSON.parse(lead.historial_chat || '[]');
+          // Avoid duplicate: check if wa_msg_id already exists
+          if (!historial.some(m => m.wa_msg_id === msg.id)) {
+            historial.push(newMsg);
+            const contactName = changes.contacts?.[0]?.profile?.name || lead.contact_name;
+            const preview = body.slice(0, 80);
+            await db.from('whatsapp_leads').update({
+              historial_chat: JSON.stringify(historial),
+              last_message_at: newMsg.timestamp,
+              last_message_preview: preview,
+              contact_name: contactName,
+              unread_count: (lead.unread_count || 0) + 1,
+            }).eq('wa_id', waId);
+          }
+        } else if (hasMedia && mediaUrl) {
+          // If lead is in fsc_conversations, update with media info
+          const { data: fsc } = await db.from('fsc_conversations').select('id, conversation_history').eq('whatsapp_number', waId).maybeSingle();
+          if (fsc) {
+            let history = [];
+            try { history = typeof fsc.conversation_history === 'string' ? JSON.parse(fsc.conversation_history) : (fsc.conversation_history || []); } catch {}
+            // Append media entry
+            history.push({
+              role: 'user',
+              content: body,
+              type: msgType,
+              mediaUrl,
+              mimetype: mimeType,
+              filename,
+              timestamp: newMsg.timestamp,
+              wa_msg_id: msg.id,
+            });
+            await db.from('fsc_conversations').update({
+              conversation_history: JSON.stringify(history),
+              updated_at: newMsg.timestamp,
+            }).eq('whatsapp_number', waId);
+          }
+        }
+      }
+    }
+
+    // ── Handle status updates (sent, delivered, read, failed) ──
     const statuses = changes.statuses;
     if (statuses && statuses.length > 0) {
       for (const s of statuses) {
@@ -120,56 +202,135 @@ router.post('/webhook', async (req, res) => {
 });
 
 // ─── GET /available-slots — public (called by n8n) ───
-// Queries Calendly API for Ingrid's real availability.
+// Queries Google Calendar FreeBusy API for Ingrid's real availability.
 // Query params: duration=15|30 (default 30), days=7
-const CALENDLY_PAT = process.env.CALENDLY_PAT;
-const CALENDLY_EVENT_TYPE = process.env.CALENDLY_EVENT_TYPE || 'https://api.calendly.com/event_types/224dea11-5a2e-4768-957e-cd8dd2b04cea';
+const { getCalendarClient } = require('../config/google-calendar');
+
+async function getGoogleTokens() {
+  try {
+    const { getDB } = require('../models/database');
+    const { data, error } = await getDB()
+      .from('google_calendar_tokens')
+      .select('*')
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .single();
+    if (data && !error) {
+      return {
+        access_token: data.access_token,
+        refresh_token: data.refresh_token,
+        expiry_date: data.expiry_date ? new Date(data.expiry_date).getTime() : null,
+      };
+    }
+  } catch (e) { /* table might not exist */ }
+  return global._googleCalTokens || null;
+}
+
+// Horarios de Ingrid (America/Mexico_City)
+// Lunes a Viernes: 9:00–19:00, Sábado: 10:00–13:00, Domingo: cerrado
+const TZ = 'America/Mexico_City';
+const SCHEDULE = {
+  0: null,                        // Domingo — cerrado
+  1: { start: '09:00', end: '19:00' }, // Lunes
+  2: { start: '09:00', end: '19:00' }, // Martes
+  3: { start: '09:00', end: '19:00' }, // Miércoles
+  4: { start: '09:00', end: '19:00' }, // Jueves
+  5: { start: '09:00', end: '19:00' }, // Viernes
+  6: { start: '10:00', end: '13:00' }, // Sábado
+};
+
+// Convierte "HH:MM" + fecha YYYY-MM-DD a timestamp UTC asumiendo America/Mexico_City
+function mxToUTC(dateStr, timeStr) {
+  // Crear fecha interpretada como Mexico City y convertir a UTC
+  // Mexico City CST = UTC-6, CDT = UTC-5 (segundo domingo marzo - primer domingo nov)
+  const dt = new Date(`${dateStr}T${timeStr}:00.000Z`);
+  // Sumar 6h para CST base, luego verificar DST
+  const jan = new Date(`${dateStr.slice(0, 4)}-01-15T12:00:00.000Z`);
+  const jul = new Date(`${dateStr.slice(0, 4)}-07-15T12:00:00.000Z`);
+  // México abolió DST en 2022, zona horaria fija CST = UTC-6
+  return new Date(dt.getTime() + 6 * 60 * 60 * 1000);
+}
 
 router.get('/available-slots', async (req, res) => {
   try {
     const duration = parseInt(req.query.duration) || 30;
     const daysAhead = parseInt(req.query.days) || 7;
 
-    // Date range: tomorrow to N days ahead
-    const startDate = new Date();
+    const tokens = await getGoogleTokens();
+    if (!tokens) {
+      return res.status(502).json({ error: 'Google Calendar no está conectado' });
+    }
+
+    const calendar = getCalendarClient(tokens);
+
+    // Rango: mañana hasta N días (+ buffer para días sin horario)
+    const now = new Date();
+    const startDate = new Date(now);
     startDate.setDate(startDate.getDate() + 1);
     startDate.setHours(0, 0, 0, 0);
     const endDate = new Date(startDate);
-    endDate.setDate(endDate.getDate() + daysAhead + 2); // extra buffer for weekends
+    endDate.setDate(endDate.getDate() + daysAhead + 4);
 
-    // Query Calendly availability API
-    const url = `https://api.calendly.com/event_type_available_times?event_type=${encodeURIComponent(CALENDLY_EVENT_TYPE)}&start_time=${startDate.toISOString()}&end_time=${endDate.toISOString()}`;
-    const resp = await fetch(url, {
-      headers: { Authorization: `Bearer ${CALENDLY_PAT}` },
+    // Consultar Google Calendar FreeBusy
+    const freeBusyResp = await calendar.freebusy.query({
+      requestBody: {
+        timeMin: startDate.toISOString(),
+        timeMax: endDate.toISOString(),
+        timeZone: TZ,
+        items: [{ id: 'primary' }],
+      },
     });
 
-    if (!resp.ok) {
-      console.error('Calendly API error:', resp.status, await resp.text());
-      return res.status(502).json({ error: 'Error al consultar Calendly' });
-    }
+    const busySlots = (freeBusyResp.data.calendars?.primary?.busy || []).map(b => ({
+      start: new Date(b.start).getTime(),
+      end: new Date(b.end).getTime(),
+    }));
 
-    const data = await resp.json();
-    const availableTimes = (data.collection || [])
-      .filter(t => t.status === 'available')
-      .map(t => new Date(t.start_time));
-
-    // Group by day
+    // Generar slots disponibles: horario de Ingrid menos eventos ocupados
     const dayMap = new Map();
-    let daysFound = 0;
-    for (const dt of availableTimes) {
-      if (daysFound >= daysAhead) break;
-      const dateStr = dt.toISOString().slice(0, 10);
-      if (!dayMap.has(dateStr)) {
-        if (dayMap.size >= daysAhead) continue;
-        const label = dt.toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' });
-        dayMap.set(dateStr, { date: dateStr, label, available: [] });
+    const slotMs = duration * 60 * 1000;
+
+    for (let d = 0; d < daysAhead + 4 && dayMap.size < daysAhead; d++) {
+      const day = new Date(startDate);
+      day.setDate(day.getDate() + d);
+      const dayOfWeek = day.getUTCDay();
+      const schedule = SCHEDULE[dayOfWeek];
+      if (!schedule) continue; // día cerrado
+
+      const dateStr = day.toISOString().slice(0, 10);
+      const utcStart = mxToUTC(dateStr, schedule.start).getTime();
+      const utcEnd = mxToUTC(dateStr, schedule.end).getTime();
+
+      const available = [];
+      let cursor = utcStart;
+
+      while (cursor + slotMs <= utcEnd) {
+        const slotEnd = cursor + slotMs;
+
+        // Verificar si el slot se sobrelapa con algún evento ocupado
+        const isBusy = busySlots.some(b => cursor < b.end && slotEnd > b.start);
+
+        if (!isBusy) {
+          // Convertir a hora Mexico City para mostrar
+          const mxTime = new Date(cursor - 6 * 60 * 60 * 1000);
+          const hh = String(mxTime.getUTCHours()).padStart(2, '0');
+          const mm = String(mxTime.getUTCMinutes()).padStart(2, '0');
+          available.push(`${hh}:${mm}`);
+        }
+
+        cursor += slotMs;
       }
-      const timeStr = dt.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: false });
-      dayMap.get(dateStr).available.push(timeStr);
+
+      if (available.length > 0) {
+        const label = new Date(`${dateStr}T12:00:00Z`).toLocaleDateString('es-MX', {
+          weekday: 'long', day: 'numeric', month: 'long', timeZone: TZ,
+        });
+        dayMap.set(dateStr, { date: dateStr, label, available });
+      }
     }
 
     const slots = [...dayMap.values()];
-    res.json({ duration, slots, source: 'calendly' });
+    res.json({ duration, slots, source: 'google_calendar' });
   } catch (err) {
     console.error('Available slots error:', err);
     res.status(500).json({ error: 'Error al obtener disponibilidad' });
@@ -315,10 +476,14 @@ router.get('/leads/:waId', async (req, res) => {
       const converted = history.map((m, i) => ({
         role: m.role === 'assistant' ? 'admin' : 'user',
         body: m.content || m.body || '',
-        type: 'text',
-        timestamp: new Date(baseTime + i * 5000).toISOString(),
+        type: m.type || 'text',
+        timestamp: m.timestamp || new Date(baseTime + i * 5000).toISOString(),
         sender: m.role === 'assistant' ? 'Sofía' : undefined,
-        status: m.role === 'assistant' ? 'delivered' : undefined
+        status: m.role === 'assistant' ? 'delivered' : undefined,
+        mediaUrl: m.mediaUrl || undefined,
+        mimetype: m.mimetype || undefined,
+        filename: m.filename || undefined,
+        wa_msg_id: m.wa_msg_id || undefined,
       }));
       return res.json({
         id: 'fsc_' + fsc.id,
