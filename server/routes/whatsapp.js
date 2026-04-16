@@ -688,4 +688,191 @@ router.get('/stats', async (req, res) => {
   }
 });
 
+// ═══════════════════════════════════════
+// AUTOMATIZACIÓN: Seguimiento de leads en calificación
+// Envía mensajes escalonados para que los leads avancen hacia cita_agendada
+// ═══════════════════════════════════════
+
+const WA_PHONE_ID_FSC = '991785554028931';
+const WA_TOKEN_FSC = 'EAAXOU1ELZAK0BRPk2qu8TR5qx00Qe9Mi3wGJ7JT1AlZAOzXvl60LnIXFsjFBmuHSDZAIzxnTn7UyXn0ygFDvoNmdor4snZBsDmhhjrhDdYPInLyWMPQNT2dzylydcgZBLpcByNVldVsiZCifKfZCU2T0Uh2ncFrEV6ZB8dDngAmEJktKkTNjizi7AKByFMil2RqAeAZDZD';
+
+function buildFollowUpMessage(lead, hoursInactive) {
+  const nombre = (lead.nombre_lead || '').split(' ')[0] || '';
+  const saludo = nombre ? `Hola ${nombre}` : 'Hola';
+  const filtro = lead.filtro_actual || 1;
+
+  // PRIORIDAD MÁXIMA: Filtro 8 — estaban a punto de agendar
+  if (filtro >= 8) {
+    return `${saludo}, soy Sofía de Finance S Cool 😊\n\nVi que estábamos a punto de agendar tu cita con nuestra asesora. ¿Quieres que la programemos ahora? Solo necesito tu email y listo.\n\nLa asesoría es sin costo y sin compromiso.`;
+  }
+
+  // Filtro 5-7 — ya avanzados, empujar a cita
+  if (filtro >= 5) {
+    return `${saludo}, soy Sofía de Finance S Cool 👋\n\nYa tenemos casi toda tu información. Solo nos falta un par de datos para agendarte tu asesoría gratuita.\n\n¿Tienes 2 minutos para que terminemos? Te va a servir mucho.`;
+  }
+
+  // Filtro 3-4 — a medio camino
+  if (filtro >= 3) {
+    if (hoursInactive < 48) {
+      return `${saludo}, soy Sofía de Finance S Cool 😊\n\nNos quedamos a medias en la plática. Me faltan un par de preguntas rápidas para poder orientarte mejor sobre tus deducciones fiscales.\n\n¿Continuamos?`;
+    }
+    return `${saludo}, soy Sofía de Finance S Cool 👋\n\nPasaron unos días desde que platicamos. Todavía puedo ayudarte a entender cómo pagar menos impuestos legalmente.\n\n¿Quieres que retomemos donde nos quedamos?`;
+  }
+
+  // Filtro 1-2 — apenas empezaron
+  if (hoursInactive < 24) {
+    return `${saludo}, soy Sofía de Finance S Cool 😊\n\nHace rato me escribiste y me encantaría ayudarte. ¿Tienes un minuto para que te explique cómo podemos ayudarte a pagar menos impuestos?`;
+  }
+  if (hoursInactive < 72) {
+    return `${saludo}, soy Sofía de Finance S Cool 👋\n\nVi que nos contactaste hace poco. Muchas personas como tú están aprovechando deducciones fiscales que no conocían.\n\n¿Te gustaría saber si aplicas? Es rápido y sin compromiso.`;
+  }
+  return `${saludo}, soy Sofía de Finance S Cool 🙂\n\nTe escribo porque hace unos días mostraste interés en optimizar tus impuestos. Tenemos asesorías gratuitas de 15-30 minutos donde te explicamos exactamente cómo reducir lo que pagas al SAT.\n\n¿Te interesa agendar una? No tiene costo ni compromiso.\n\n_Si ya no deseas recibir mensajes, escribe STOP._`;
+}
+
+router.post('/follow-up', verifyToken, async (req, res) => {
+  try {
+    const db = getDB();
+    const maxPerRun = parseInt(req.body.max) || 30;
+    const dryRun = req.body.dryRun === true;
+    const minHoursInactive = parseInt(req.body.minHours) || 6;
+
+    // Obtener leads en calificación que no han respondido en X horas
+    const cutoff = new Date(Date.now() - minHoursInactive * 60 * 60 * 1000).toISOString();
+    const { data: leads, error } = await db
+      .from('fsc_conversations')
+      .select('id, whatsapp_number, nombre_lead, lead_status, filtro_actual, prioridad, updated_at, conversation_history, modo_humano')
+      .eq('lead_status', 'en_calificacion')
+      .lt('updated_at', cutoff)
+      .order('filtro_actual', { ascending: false }) // Priorizar los más avanzados
+      .limit(maxPerRun * 2); // Traer extras por si filtramos algunos
+
+    if (error) throw new Error(error.message);
+    if (!leads || leads.length === 0) {
+      return res.json({ success: true, sent: 0, message: 'No hay leads para seguimiento' });
+    }
+
+    const results = [];
+    let sent = 0;
+
+    for (const lead of leads) {
+      if (sent >= maxPerRun) break;
+      if (lead.modo_humano) continue; // No interrumpir modo humano
+
+      const phone = lead.whatsapp_number;
+      if (!phone) continue;
+
+      // Calcular horas de inactividad
+      const hoursInactive = (Date.now() - new Date(lead.updated_at).getTime()) / (1000 * 60 * 60);
+
+      // Verificar que no le hayamos mandado follow-up recientemente
+      let history = [];
+      try {
+        history = typeof lead.conversation_history === 'string'
+          ? JSON.parse(lead.conversation_history)
+          : (lead.conversation_history || []);
+      } catch { history = []; }
+
+      // Contar follow-ups consecutivos sin respuesta del usuario
+      let consecutiveFollowUps = 0;
+      for (let i = history.length - 1; i >= 0; i--) {
+        if (history[i].role === 'user') break;
+        if (history[i].isFollowUp) consecutiveFollowUps++;
+      }
+      if (consecutiveFollowUps >= 3) continue; // Máximo 3 follow-ups sin respuesta
+
+      const message = buildFollowUpMessage(lead, hoursInactive);
+
+      if (dryRun) {
+        results.push({ phone, nombre: lead.nombre_lead, filtro: lead.filtro_actual, hoursInactive: Math.round(hoursInactive), message: message.slice(0, 80) + '...', status: 'dry_run' });
+        sent++;
+        continue;
+      }
+
+      // Enviar mensaje por WhatsApp
+      try {
+        const waResp = await fetch(`https://graph.facebook.com/v22.0/${WA_PHONE_ID_FSC}/messages`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${WA_TOKEN_FSC}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messaging_product: 'whatsapp',
+            to: phone.replace(/\D/g, ''),
+            type: 'text',
+            text: { body: message },
+          }),
+        });
+
+        const waData = await waResp.json();
+        const success = waResp.ok && waData.messages?.[0]?.id;
+
+        if (success) {
+          // Guardar en historial
+          history.push({
+            role: 'assistant',
+            content: message,
+            timestamp: new Date().toISOString(),
+            isFollowUp: true,
+            followUpTier: lead.filtro_actual >= 8 ? 'hot' : lead.filtro_actual >= 5 ? 'warm' : 'cold',
+          });
+
+          await db.from('fsc_conversations').update({
+            conversation_history: JSON.stringify(history),
+            updated_at: new Date().toISOString(),
+          }).eq('id', lead.id);
+
+          results.push({ phone, nombre: lead.nombre_lead, filtro: lead.filtro_actual, status: 'sent' });
+          sent++;
+        } else {
+          results.push({ phone, nombre: lead.nombre_lead, filtro: lead.filtro_actual, status: 'failed', error: waData.error?.message || 'Unknown' });
+        }
+      } catch (sendErr) {
+        results.push({ phone, nombre: lead.nombre_lead, filtro: lead.filtro_actual, status: 'error', error: sendErr.message });
+      }
+    }
+
+    res.json({
+      success: true,
+      sent,
+      total: leads.length,
+      results,
+      breakdown: {
+        hot: results.filter(r => r.filtro >= 8).length,
+        warm: results.filter(r => r.filtro >= 5 && r.filtro < 8).length,
+        cold: results.filter(r => r.filtro < 5).length,
+      },
+    });
+  } catch (err) {
+    console.error('Follow-up error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /follow-up/preview — ver qué leads recibirían seguimiento (dry run)
+router.get('/follow-up/preview', verifyToken, async (req, res) => {
+  // Simula el follow-up sin enviar
+  req.body = { dryRun: true, max: 50, minHours: parseInt(req.query.minHours) || 6 };
+  // Reutilizar la lógica del POST
+  const db = getDB();
+  const cutoff = new Date(Date.now() - (req.body.minHours) * 60 * 60 * 1000).toISOString();
+  const { data: leads } = await db
+    .from('fsc_conversations')
+    .select('whatsapp_number, nombre_lead, filtro_actual, updated_at, modo_humano')
+    .eq('lead_status', 'en_calificacion')
+    .lt('updated_at', cutoff)
+    .order('filtro_actual', { ascending: false })
+    .limit(50);
+
+  const preview = (leads || []).filter(l => !l.modo_humano && l.whatsapp_number).map(l => {
+    const hours = Math.round((Date.now() - new Date(l.updated_at).getTime()) / (1000 * 60 * 60));
+    return { nombre: l.nombre_lead, filtro: l.filtro_actual, hoursInactive: hours, phone: l.whatsapp_number };
+  });
+
+  res.json({
+    total: preview.length,
+    hot: preview.filter(p => p.filtro >= 8).length,
+    warm: preview.filter(p => p.filtro >= 5 && p.filtro < 8).length,
+    cold: preview.filter(p => p.filtro < 5).length,
+    leads: preview,
+  });
+});
+
 module.exports = router;
