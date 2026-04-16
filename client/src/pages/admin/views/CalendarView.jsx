@@ -86,7 +86,7 @@ function EventModal({ onClose, onSubmit, googleConnected }) {
 }
 
 /* ── Edit Event Modal ─────────────────────────────────────── */
-function EditEventModal({ event, onClose, onSave, onDelete }) {
+function EditEventModal({ event, onClose, onSave, onDelete, googleConnected }) {
   const isGoogle = event.source === 'google';
   const evDate = event.start_date ? new Date(event.start_date) : new Date();
   const dateStr = evDate.toISOString().split('T')[0];
@@ -103,11 +103,33 @@ function EditEventModal({ event, onClose, onSave, onDelete }) {
   });
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [saving, setSaving] = useState(false);
-
-  const hasMeet = event.conferenceData?.entryPoints?.find(e => e.entryPointType === 'video')?.uri;
+  const [meetLink, setMeetLink] = useState(
+    event.conferenceData?.entryPoints?.find(e => e.entryPointType === 'video')?.uri || event.meeting_link || ''
+  );
 
   const handleSave = async () => {
     setSaving(true);
+
+    // Si es evento local y quieren Meet, crear en Google Calendar primero
+    if (!isGoogle && formData.addMeet && googleConnected) {
+      try {
+        const result = await api.createGoogleEvent({
+          title: formData.title,
+          description: formData.description,
+          start_date: formData.date,
+          time: formData.time,
+          duration: 30,
+          addMeet: true,
+        });
+        if (result?.meetLink) {
+          setMeetLink(result.meetLink);
+          formData.meeting_link = result.meetLink;
+        }
+      } catch (err) {
+        console.error('Error creating Meet:', err);
+      }
+    }
+
     await onSave(event, {
       title: formData.title,
       description: formData.description,
@@ -158,31 +180,31 @@ function EditEventModal({ event, onClose, onSave, onDelete }) {
             <label>Notas / Descripción</label>
             <textarea value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} rows={4} placeholder="Agrega notas sobre este evento..." />
           </div>
-          {isGoogle && (
+          {googleConnected && (
             <div className="field">
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                 <input
                   type="checkbox"
                   checked={formData.addMeet}
                   onChange={e => setFormData({ ...formData, addMeet: e.target.checked })}
-                  style={{ width: 18, height: 18, accentColor: '#1a73e8' }}
+                  style={{ width: 18, height: 18, accentColor: '#00897B' }}
                 />
                 <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z" fill="#00897B"/></svg>
+                  <Video size={16} style={{ color: '#00897B' }} />
                   Agregar Google Meet
+                  {!isGoogle && <span style={{ fontSize: 11, color: '#94a3b8' }}>(se crea en Google Calendar)</span>}
                 </span>
               </label>
-              {hasMeet && (
-                <a href={hasMeet} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.85rem', color: '#00897B', display: 'flex', alignItems: 'center', gap: 4, marginTop: 6 }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z" fill="#00897B"/></svg>
-                  {hasMeet} <ExternalLink size={11} />
+              {meetLink && (
+                <a href={meetLink} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.85rem', color: '#00897B', display: 'flex', alignItems: 'center', gap: 4, marginTop: 6 }}>
+                  <Video size={13} /> {meetLink} <ExternalLink size={11} />
                 </a>
               )}
             </div>
           )}
-          {!isGoogle && (
+          {!formData.addMeet && (
             <div className="field">
-              <label>Link de reunión</label>
+              <label>Link de reunión (manual)</label>
               <input type="url" placeholder="https://zoom.us/j/... o meet.google.com/..." value={formData.meeting_link} onChange={e => setFormData({ ...formData, meeting_link: e.target.value })} />
             </div>
           )}
@@ -792,6 +814,7 @@ export default function CalendarView({ events, showEventModal, setShowEventModal
           onClose={() => setEditingEvent(null)}
           onSave={handleSaveEdit}
           onDelete={handleDeleteEvent}
+          googleConnected={googleConnected}
         />
       )}
 
