@@ -283,7 +283,7 @@ export default function AdminPanel() {
               {!loading && activeView === 'agency-dashboard' && userIsAgency &&
                 <AgencyDashboardView stats={agencyStats || stats} leads={leads} />}
               {!loading && activeView === 'funnel' && userIsAgency &&
-                <FunnelView stats={agencyStats || stats} />}
+                <FunnelView />}
               {!loading && activeView === 'sources' && userIsAgency &&
                 <SourcesView stats={agencyStats || stats} leads={leads} />}
               {!loading && activeView === 'campaigns' && userIsAgency &&

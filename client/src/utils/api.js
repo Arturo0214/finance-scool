@@ -50,6 +50,7 @@ export const api = {
   // Stats
   getStats: () => request('/stats'),
   getAgencyStats: () => request('/agency-stats'),
+  getFSCStats: () => request('/fsc/stats'),
 
   // Events
   getEvents: () => request('/events'),
