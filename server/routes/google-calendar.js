@@ -294,6 +294,61 @@ router.post('/disconnect', verifyToken, async (req, res) => {
 // ─── POST /api/google/schedule-meeting ───
 // Crear cita de 30 min con Google Meet (llamado por n8n o WhatsApp bot)
 // No requiere verifyToken — público para que n8n pueda llamarlo
+// Parsear fecha amigable ("Viernes", "mañana", "2026-04-18") a YYYY-MM-DD
+function parseFlexibleDate(input) {
+  if (!input) return null;
+  // Ya es ISO
+  if (/^\d{4}-\d{2}-\d{2}$/.test(input)) return input;
+
+  const lower = input.toLowerCase().trim();
+  const now = new Date();
+  const DAYS = { domingo: 0, lunes: 1, martes: 2, miercoles: 3, miércoles: 3, jueves: 4, viernes: 5, sabado: 6, sábado: 6 };
+
+  if (lower === 'hoy') return now.toISOString().split('T')[0];
+  if (lower === 'mañana' || lower === 'manana') {
+    now.setDate(now.getDate() + 1);
+    return now.toISOString().split('T')[0];
+  }
+
+  // Día de la semana
+  for (const [name, dayNum] of Object.entries(DAYS)) {
+    if (lower.includes(name)) {
+      const current = now.getDay();
+      let diff = dayNum - current;
+      if (diff <= 0) diff += 7; // próxima semana si ya pasó
+      now.setDate(now.getDate() + diff);
+      return now.toISOString().split('T')[0];
+    }
+  }
+
+  // Intentar parsear como fecha
+  try {
+    const d = new Date(input);
+    if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+  } catch {}
+
+  return null;
+}
+
+// Parsear hora amigable ("10:00 AM", "14:00", "2 PM") a HH:MM
+function parseFlexibleTime(input) {
+  if (!input) return null;
+  // Ya es HH:MM
+  if (/^\d{1,2}:\d{2}$/.test(input)) return input.padStart(5, '0');
+
+  const match = input.match(/(\d{1,2}):?(\d{2})?\s*(am|pm|AM|PM)?/);
+  if (!match) return null;
+
+  let hours = parseInt(match[1]);
+  const mins = match[2] ? match[2] : '00';
+  const ampm = (match[3] || '').toLowerCase();
+
+  if (ampm === 'pm' && hours < 12) hours += 12;
+  if (ampm === 'am' && hours === 12) hours = 0;
+
+  return `${String(hours).padStart(2, '0')}:${mins}`;
+}
+
 router.post('/schedule-meeting', async (req, res) => {
   try {
     const tokens = await getStoredTokens();
@@ -302,15 +357,18 @@ router.post('/schedule-meeting', async (req, res) => {
     const calendar = getCalendarClient(tokens);
     const { clientName, clientEmail, clientPhone, date, time, duration, notes } = req.body;
 
-    if (!date || !time) return res.status(400).json({ error: 'Fecha y hora son requeridas' });
+    const parsedDate = parseFlexibleDate(date);
+    const parsedTime = parseFlexibleTime(time);
+
+    if (!parsedDate || !parsedTime) return res.status(400).json({ error: `No se pudo interpretar fecha/hora: date="${date}" time="${time}"` });
 
     const durationMin = duration || 30;
-    const startDateTime = `${date}T${time}:00`;
-    const startDate = new Date(`${date}T${time}:00`);
+    const startDateTime = `${parsedDate}T${parsedTime}:00`;
+    const startDate = new Date(`${parsedDate}T${parsedTime}:00`);
     const endDate = new Date(startDate.getTime() + durationMin * 60 * 1000);
     const hh = String(endDate.getHours()).padStart(2, '0');
     const mm = String(endDate.getMinutes()).padStart(2, '0');
-    const endDateTime = `${date}T${hh}:${mm}:00`;
+    const endDateTime = `${parsedDate}T${hh}:${mm}:00`;
 
     const event = {
       summary: `📞 Check-up Financiero: ${clientName || 'Lead'}`,
@@ -344,6 +402,47 @@ router.post('/schedule-meeting', async (req, res) => {
 
     const meetLink = response.data.conferenceData?.entryPoints?.find(e => e.entryPointType === 'video')?.uri || null;
 
+    // Formatear fecha para mensaje
+    const fechaLegible = new Date(`${parsedDate}T12:00:00`).toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+    // Enviar link de Meet al lead por WhatsApp (fire-and-forget)
+    const WA_PHONE_ID = '991785554028931';
+    const WA_TOKEN = process.env.WA_TOKEN || 'EAAXOU1ELZAK0BRPk2qu8TR5qx00Qe9Mi3wGJ7JT1AlZAOzXvl60LnIXFsjFBmuHSDZAIzxnTn7UyXn0ygFDvoNmdor4snZBsDmhhjrhDdYPInLyWMPQNT2dzylydcgZBLpcByNVldVsiZCifKfZCU2T0Uh2ncFrEV6ZB8dDngAmEJktKkTNjizi7AKByFMil2RqAeAZDZD';
+    if (clientPhone && meetLink) {
+      const nombre = (clientName || '').split(' ')[0] || 'Hola';
+      const waMsg = `¡${nombre}, tu cita está confirmada! 🎉\n\n📅 *${fechaLegible}*\n🕐 *${parsedTime} hrs*\n⏱️ Duración: ${durationMin} minutos\n👩‍💼 Consultora: Ingrid Escobar\n📹 *Link de reunión:* ${meetLink}\n\nPor favor conéctate puntual. ¡Nos vemos ahí! 💪`;
+      try {
+        await fetch(`https://graph.facebook.com/v22.0/${WA_PHONE_ID}/messages`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${WA_TOKEN}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ messaging_product: 'whatsapp', to: clientPhone.replace(/\D/g, ''), type: 'text', text: { body: waMsg } }),
+        });
+        console.log(`✅ Meet link enviado a ${clientPhone}`);
+      } catch (waErr) {
+        console.warn(`⚠️ No se pudo enviar Meet link a ${clientPhone}:`, waErr.message);
+      }
+    }
+
+    // Guardar cita en Supabase para recordatorios
+    try {
+      const db = getDB();
+      await db.from('fsc_appointments').upsert({
+        client_phone: clientPhone || '',
+        client_name: clientName || '',
+        client_email: clientEmail || '',
+        event_id: response.data.id,
+        meet_link: meetLink || '',
+        date: parsedDate,
+        time: parsedTime,
+        duration: durationMin,
+        reminder_morning_sent: false,
+        reminder_1h_sent: false,
+        created_at: new Date().toISOString(),
+      }, { onConflict: 'event_id' });
+    } catch (dbErr) {
+      console.warn('⚠️ No se pudo guardar cita en Supabase:', dbErr.message);
+    }
+
     res.json({
       success: true,
       meetLink,
@@ -351,11 +450,75 @@ router.post('/schedule-meeting', async (req, res) => {
       htmlLink: response.data.htmlLink,
       start: response.data.start,
       end: response.data.end,
+      parsedDate,
+      parsedTime,
+      fechaLegible,
+      waMessageSent: !!(clientPhone && meetLink),
     });
   } catch (err) {
     console.error('Schedule meeting error:', err);
-    res.status(500).json({ error: 'Error al crear la cita con Google Meet' });
+    res.status(500).json({ error: 'Error al crear la cita con Google Meet: ' + err.message });
   }
 });
+
+// ─── Cron: Recordatorios de citas ───
+// Se ejecuta cada 30 min para enviar recordatorios
+const REMINDER_WA_PHONE_ID = '991785554028931';
+const REMINDER_WA_TOKEN = process.env.WA_TOKEN || 'EAAXOU1ELZAK0BRPk2qu8TR5qx00Qe9Mi3wGJ7JT1AlZAOzXvl60LnIXFsjFBmuHSDZAIzxnTn7UyXn0ygFDvoNmdor4snZBsDmhhjrhDdYPInLyWMPQNT2dzylydcgZBLpcByNVldVsiZCifKfZCU2T0Uh2ncFrEV6ZB8dDngAmEJktKkTNjizi7AKByFMil2RqAeAZDZD';
+
+async function sendAppointmentReminders() {
+  try {
+    const db = getDB();
+    const now = new Date();
+    const { data: appointments } = await db.from('fsc_appointments').select('*').gte('date', now.toISOString().split('T')[0]);
+
+    if (!appointments || appointments.length === 0) return;
+
+    for (const apt of appointments) {
+      const aptDateTime = new Date(`${apt.date}T${apt.time}:00`);
+      const hoursUntil = (aptDateTime.getTime() - now.getTime()) / (1000 * 60 * 60);
+      const nombre = (apt.client_name || '').split(' ')[0] || 'Hola';
+      const phone = apt.client_phone?.replace(/\D/g, '');
+      if (!phone) continue;
+
+      // Recordatorio de la mañana (entre 8-9 AM del día de la cita, si es hoy)
+      const isToday = apt.date === now.toISOString().split('T')[0];
+      const currentHour = now.getHours();
+      if (isToday && currentHour >= 8 && currentHour < 9 && !apt.reminder_morning_sent) {
+        const msg = `¡Buenos días ${nombre}! ☀️\n\nTe recuerdo que hoy tienes tu asesoría financiera a las *${apt.time} hrs* con Ingrid Escobar.\n\n📹 Link: ${apt.meet_link}\n\n¡Te esperamos! 💪`;
+        try {
+          await fetch(`https://graph.facebook.com/v22.0/${REMINDER_WA_PHONE_ID}/messages`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${REMINDER_WA_TOKEN}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ messaging_product: 'whatsapp', to: phone, type: 'text', text: { body: msg } }),
+          });
+          await db.from('fsc_appointments').update({ reminder_morning_sent: true }).eq('event_id', apt.event_id);
+          console.log(`✅ Recordatorio mañana enviado a ${phone}`);
+        } catch (e) { console.warn('Reminder morning error:', e.message); }
+      }
+
+      // Recordatorio 1 hora antes
+      if (hoursUntil > 0.5 && hoursUntil <= 1.5 && !apt.reminder_1h_sent) {
+        const msg = `¡${nombre}, tu asesoría empieza en 1 hora! ⏰\n\n🕐 *${apt.time} hrs*\n📹 Link: ${apt.meet_link}\n\nConéctate puntual. ¡Nos vemos! 🙌`;
+        try {
+          await fetch(`https://graph.facebook.com/v22.0/${REMINDER_WA_PHONE_ID}/messages`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${REMINDER_WA_TOKEN}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ messaging_product: 'whatsapp', to: phone, type: 'text', text: { body: msg } }),
+          });
+          await db.from('fsc_appointments').update({ reminder_1h_sent: true }).eq('event_id', apt.event_id);
+          console.log(`✅ Recordatorio 1h enviado a ${phone}`);
+        } catch (e) { console.warn('Reminder 1h error:', e.message); }
+      }
+    }
+  } catch (err) {
+    console.error('Reminder cron error:', err.message);
+  }
+}
+
+// Ejecutar cada 30 minutos
+setInterval(sendAppointmentReminders, 30 * 60 * 1000);
+// Ejecutar al arrancar después de 10s
+setTimeout(sendAppointmentReminders, 10000);
 
 module.exports = router;
