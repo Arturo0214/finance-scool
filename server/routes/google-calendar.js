@@ -220,7 +220,7 @@ router.put('/events/:eventId', verifyToken, async (req, res) => {
     if (!tokens) return res.status(400).json({ error: 'Google Calendar no está conectado' });
 
     const calendar = getCalendarClient(tokens);
-    const { title, description, start_date, end_date, time } = req.body;
+    const { title, description, start_date, end_date, time, addMeet } = req.body;
 
     const startDateTime = time ? `${start_date}T${time}:00` : start_date;
     const endDateTime = end_date || (time ? `${start_date}T${String(Number(time.split(':')[0]) + 1).padStart(2, '0')}:${time.split(':')[1]}:00` : start_date);
@@ -232,13 +232,26 @@ router.put('/events/:eventId', verifyToken, async (req, res) => {
       end: time ? { dateTime: endDateTime, timeZone: 'America/Mexico_City' } : { date: end_date || start_date },
     };
 
+    // Agregar Google Meet si se solicita
+    if (addMeet) {
+      event.conferenceData = {
+        createRequest: {
+          requestId: `meet-edit-${Date.now()}`,
+          conferenceSolutionKey: { type: 'hangoutsMeet' },
+        },
+      };
+    }
+
     const response = await calendar.events.patch({
       calendarId: 'primary',
       eventId: req.params.eventId,
       resource: event,
+      conferenceDataVersion: addMeet ? 1 : 0,
     });
 
-    res.json({ success: true, event: response.data });
+    const meetLink = response.data.conferenceData?.entryPoints?.find(e => e.entryPointType === 'video')?.uri || null;
+
+    res.json({ success: true, event: response.data, meetLink });
   } catch (err) {
     console.error('Update Google event error:', err);
     res.status(500).json({ error: 'Error al actualizar evento en Google Calendar' });

@@ -58,9 +58,12 @@ function EditEventModal({ event, onClose, onSave, onDelete }) {
     time: timeStr,
     description: event.description || '',
     meeting_link: event.meeting_link || '',
+    addMeet: !!event.conferenceData || false,
   });
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  const hasMeet = event.conferenceData?.entryPoints?.find(e => e.entryPointType === 'video')?.uri;
 
   const handleSave = async () => {
     setSaving(true);
@@ -72,6 +75,7 @@ function EditEventModal({ event, onClose, onSave, onDelete }) {
       end_date: event.end_date || null,
       color: event.color || '#C9A84C',
       meeting_link: formData.meeting_link,
+      addMeet: formData.addMeet,
     });
     setSaving(false);
     onClose();
@@ -113,6 +117,28 @@ function EditEventModal({ event, onClose, onSave, onDelete }) {
             <label>Notas / Descripción</label>
             <textarea value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} rows={4} placeholder="Agrega notas sobre este evento..." />
           </div>
+          {isGoogle && (
+            <div className="field">
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={formData.addMeet}
+                  onChange={e => setFormData({ ...formData, addMeet: e.target.checked })}
+                  style={{ width: 18, height: 18, accentColor: '#1a73e8' }}
+                />
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z" fill="#00897B"/></svg>
+                  Agregar Google Meet
+                </span>
+              </label>
+              {hasMeet && (
+                <a href={hasMeet} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.85rem', color: '#00897B', display: 'flex', alignItems: 'center', gap: 4, marginTop: 6 }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z" fill="#00897B"/></svg>
+                  {hasMeet} <ExternalLink size={11} />
+                </a>
+              )}
+            </div>
+          )}
           {!isGoogle && (
             <div className="field">
               <label>Link de reunión</label>
@@ -367,6 +393,7 @@ export default function CalendarView({ events, showEventModal, setShowEventModal
           description: data.description,
           start_date: data.start_date,
           time: data.time,
+          addMeet: data.addMeet,
         });
         fetchGoogleEvents();
       } catch (err) {
