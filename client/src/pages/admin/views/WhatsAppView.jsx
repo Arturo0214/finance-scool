@@ -773,7 +773,9 @@ export default function WhatsAppView({ onOpenMenu }) {
                         const isOut = msg.role === 'admin' || msg.direction === 'outbound' || msg.direction === 'sent' || msg.from_me;
                         const isTpl = msg.type === 'template';
                         const senderName = isOut ? (msg.sender || 'Sofía') : chatData.contact_name;
-                        const rawText = msg.body || msg.text || msg.content || msg.message || (msg.type && `[${msg.type}]`);
+                        let rawText = msg.body || msg.text || msg.content || msg.message || (msg.type && `[${msg.type}]`);
+                        // Limpiar artefactos internos que no deben verse en el chat
+                        rawText = (rawText || '').replace(/\[BUTTON_REPLY_OPTIONS:[\s\S]*?\]/g, '').replace(/\[LIST_REPLY_OPTIONS:[\s\S]*?\]/g, '').replace(/\[HORARIOS_DISPONIBLES\][\s\S]*?\[\/HORARIOS_DISPONIBLES\]/g, '').trim();
                         const { clean: cleanText, state: msgState } = isOut ? extractState(rawText) : { clean: rawText, state: null };
                         const displayText = formatMessageText(cleanText);
                         const stateEntries = msgState ? Object.entries(msgState).filter(([k, v]) => v && STATE_LABELS[k]) : [];

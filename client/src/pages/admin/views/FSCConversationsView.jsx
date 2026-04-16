@@ -662,7 +662,7 @@ export default function FSCConversationsView({ onOpenMenu }) {
                       {msgs.map((msg, i) => {
                         const isUser = msg.role === 'user' || msg.sender === 'user' || msg.direction === 'inbound' || msg.from === 'user';
                         const isBot = !isUser;
-                        const text = msg.content || msg.text || msg.body || msg.message || '';
+                        const text = (msg.content || msg.text || msg.body || msg.message || '').replace(/\[BUTTON_REPLY_OPTIONS:[\s\S]*?\]/g, '').replace(/\[LIST_REPLY_OPTIONS:[\s\S]*?\]/g, '').replace(/\[HORARIOS_DISPONIBLES\][\s\S]*?\[\/HORARIOS_DISPONIBLES\]/g, '').trim();
                         const time = fmt(msg.timestamp || msg.created_at || msg.date);
                         return (
                           <div
