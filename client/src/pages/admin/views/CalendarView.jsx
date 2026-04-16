@@ -9,10 +9,27 @@ function EventModal({ onClose, onSubmit, googleConnected }) {
     title: '',
     date: new Date().toISOString().split('T')[0],
     time: '14:00',
+    duration: 30,
     description: '',
+    clientName: '',
+    clientEmail: '',
+    clientPhone: '',
     meeting_link: '',
     syncToGoogle: googleConnected,
+    addMeet: true,
   });
+
+  // Auto-generar descripción con datos del cliente
+  const buildDescription = () => {
+    const parts = [];
+    if (formData.clientName) parts.push(`Cliente: ${formData.clientName}`);
+    if (formData.clientPhone) parts.push(`Teléfono: ${formData.clientPhone}`);
+    if (formData.clientPhone) parts.push(`WhatsApp: https://wa.me/${formData.clientPhone.replace(/\D/g, '')}`);
+    if (formData.clientEmail) parts.push(`Email: ${formData.clientEmail}`);
+    if (formData.description) parts.push(`\nNotas: ${formData.description}`);
+    return parts.join('\n');
+  };
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()}>
@@ -21,22 +38,46 @@ function EventModal({ onClose, onSubmit, googleConnected }) {
           <button className="close-btn" onClick={onClose}><X size={22} /></button>
         </div>
         <div className="modal-body">
-          <div className="field"><label>{SPANISH_LABELS.eventTitle}</label><input type="text" value={formData.title} onChange={e => setFormData({ ...formData, title: e.target.value })} /></div>
-          <div className="field"><label>{SPANISH_LABELS.eventDate}</label><input type="date" value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })} /></div>
-          <div className="field"><label>{SPANISH_LABELS.eventTime}</label><input type="time" value={formData.time} onChange={e => setFormData({ ...formData, time: e.target.value })} /></div>
-          <div className="field"><label>{SPANISH_LABELS.eventDescription}</label><textarea value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} rows={3} /></div>
-          <div className="field"><label>Link de reunión (Zoom, Meet, Teams...)</label><input type="url" placeholder="https://zoom.us/j/..." value={formData.meeting_link} onChange={e => setFormData({ ...formData, meeting_link: e.target.value })} /></div>
-          {googleConnected && (
-            <div className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <input type="checkbox" id="syncGoogle" checked={formData.syncToGoogle} onChange={e => setFormData({ ...formData, syncToGoogle: e.target.checked })} />
-              <label htmlFor="syncGoogle" style={{ margin: 0, fontSize: 13, color: '#64748b' }}>
-                Sincronizar con Google Calendar
-              </label>
+          <div className="field"><label>{SPANISH_LABELS.eventTitle}</label><input type="text" value={formData.title} onChange={e => setFormData({ ...formData, title: e.target.value })} placeholder="Ej: Cita con Juan Pérez" /></div>
+          <div className="edit-row">
+            <div className="field" style={{ flex: 1 }}><label>{SPANISH_LABELS.eventDate}</label><input type="date" value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })} /></div>
+            <div className="field" style={{ flex: 1 }}><label>{SPANISH_LABELS.eventTime}</label><input type="time" value={formData.time} onChange={e => setFormData({ ...formData, time: e.target.value })} /></div>
+            <div className="field" style={{ flex: '0 0 100px' }}><label>Duración</label>
+              <select value={formData.duration} onChange={e => setFormData({ ...formData, duration: Number(e.target.value) })} style={{ padding: '8px', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                <option value={15}>15 min</option>
+                <option value={30}>30 min</option>
+                <option value={60}>1 hora</option>
+              </select>
             </div>
+          </div>
+          <div style={{ borderTop: '1px solid #e2e8f0', margin: '8px 0', paddingTop: 8 }}>
+            <label style={{ fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 6, display: 'block' }}>Datos del cliente</label>
+            <div className="edit-row">
+              <div className="field" style={{ flex: 1 }}><label>Nombre</label><input type="text" value={formData.clientName} onChange={e => setFormData({ ...formData, clientName: e.target.value })} placeholder="Nombre del cliente" /></div>
+              <div className="field" style={{ flex: 1 }}><label>Teléfono</label><input type="tel" value={formData.clientPhone} onChange={e => setFormData({ ...formData, clientPhone: e.target.value })} placeholder="+52 55 1234 5678" /></div>
+            </div>
+            <div className="field"><label>Email</label><input type="email" value={formData.clientEmail} onChange={e => setFormData({ ...formData, clientEmail: e.target.value })} placeholder="cliente@email.com" /></div>
+          </div>
+          <div className="field"><label>Notas</label><textarea value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} rows={2} placeholder="Notas adicionales..." /></div>
+          {googleConnected && (
+            <>
+              <div className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <input type="checkbox" id="syncGoogle" checked={formData.syncToGoogle} onChange={e => setFormData({ ...formData, syncToGoogle: e.target.checked })} />
+                <label htmlFor="syncGoogle" style={{ margin: 0, fontSize: 13, color: '#64748b' }}>Sincronizar con Google Calendar</label>
+              </div>
+              {formData.syncToGoogle && (
+                <div className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <input type="checkbox" id="addMeet" checked={formData.addMeet} onChange={e => setFormData({ ...formData, addMeet: e.target.checked })} style={{ accentColor: '#00897B' }} />
+                  <label htmlFor="addMeet" style={{ margin: 0, fontSize: 13, color: '#00897B', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <Video size={14} /> Agregar Google Meet
+                  </label>
+                </div>
+              )}
+            </>
           )}
         </div>
         <div className="modal-foot">
-          <button className="btn-primary" onClick={() => onSubmit(formData)}>{SPANISH_LABELS.save}</button>
+          <button className="btn-primary" onClick={() => onSubmit({ ...formData, description: buildDescription() })}>{SPANISH_LABELS.save}</button>
           <button className="btn-secondary" onClick={onClose}>{SPANISH_LABELS.cancel}</button>
         </div>
       </div>
@@ -366,12 +407,18 @@ export default function CalendarView({ events, showEventModal, setShowEventModal
     });
     if (formData.syncToGoogle && googleConnected) {
       try {
-        await api.createGoogleEvent({
+        const result = await api.createGoogleEvent({
           title: formData.title,
           description: formData.description,
           start_date: formData.date,
           time: formData.time,
+          duration: formData.duration || 30,
+          addMeet: formData.addMeet,
+          attendeeEmail: formData.clientEmail || undefined,
         });
+        if (result?.meetLink) {
+          alert(`Google Meet creado:\n${result.meetLink}`);
+        }
         fetchGoogleEvents();
       } catch (err) {
         console.error('Sync to Google failed:', err);
