@@ -357,7 +357,7 @@ router.get('/leads', async (req, res) => {
       .select('id, wa_id, contact_name, estado, origin, assigned_to, last_message_at, unread_count, blocked, modo_humano, created_at, last_message_preview');
     if (estado && estado !== 'todos') query = query.eq('estado', estado);
     if (assigned_to) query = query.eq('assigned_to', assigned_to);
-    if (search) query = query.or(`contact_name.ilike.%${search}%,wa_id.ilike.%${search}%`);
+    if (search) query = query.or(`contact_name.ilike.%${search}%,wa_id.ilike.%${search}%,historial_chat.ilike.%${search}%`);
     query = query.order('last_message_at', { ascending: false });
     const { data: waLeads, error: waError } = await query;
     // Si last_message_preview no existe como columna, hacer fallback sin historial
@@ -374,7 +374,7 @@ router.get('/leads', async (req, res) => {
     // 2. Get fsc_conversations (Sofía bot) — sin conversation_history para rendimiento
     let fscQuery = db.from('fsc_conversations')
       .select('id, whatsapp_number, nombre_lead, lead_status, filtro_actual, prioridad, modo_humano, created_at, updated_at');
-    if (search) fscQuery = fscQuery.or(`nombre_lead.ilike.%${search}%,whatsapp_number.ilike.%${search}%`);
+    if (search) fscQuery = fscQuery.or(`nombre_lead.ilike.%${search}%,whatsapp_number.ilike.%${search}%,conversation_history.ilike.%${search}%`);
     fscQuery = fscQuery.order('updated_at', { ascending: false });
     const { data: fscLeads } = await fscQuery;
 
