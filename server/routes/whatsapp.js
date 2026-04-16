@@ -391,6 +391,8 @@ router.get('/leads', async (req, res) => {
       blocked: false,
       modo_humano: f.modo_humano || false,
       created_at: f.created_at,
+      filtro_actual: f.filtro_actual || 0,
+      prioridad: f.prioridad || null,
       _source: 'fsc'
     }));
 
@@ -437,7 +439,7 @@ router.get('/leads', async (req, res) => {
         const fscId = l.id.replace('fsc_', '');
         preview = fscPreviews[fscId] || '';
       }
-      return { ...rest, lastMessage: preview };
+      return { ...rest, lastMessage: preview, filtro_actual: l.filtro_actual || 0 };
     });
 
     res.json({ leads: leadsWithPreview, total: filtered.length, page: parseInt(page), limit: parseInt(limit) });
