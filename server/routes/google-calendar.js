@@ -389,7 +389,9 @@ router.post('/schedule-meeting', async (req, res) => {
       reminders: { useDefault: false, overrides: [{ method: 'popup', minutes: 15 }] },
     };
 
-    if (clientEmail) {
+    // Solo agregar attendee si es un email válido (contiene @ y .)
+    const isValidEmail = clientEmail && clientEmail.includes('@') && clientEmail.includes('.');
+    if (isValidEmail) {
       event.attendees = [{ email: clientEmail }];
     }
 
@@ -397,7 +399,7 @@ router.post('/schedule-meeting', async (req, res) => {
       calendarId: 'primary',
       resource: event,
       conferenceDataVersion: 1,
-      sendUpdates: clientEmail ? 'all' : 'none',
+      sendUpdates: isValidEmail ? 'all' : 'none',
     });
 
     const meetLink = response.data.conferenceData?.entryPoints?.find(e => e.entryPointType === 'video')?.uri || null;
