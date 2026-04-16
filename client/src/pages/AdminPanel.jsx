@@ -86,35 +86,24 @@ export default function AdminPanel() {
   const userIsAgency    = isAgencyRole(user?.role);
   const canManageTeam   = ['superadmin', 'agencia', 'admin'].includes(user?.role);
 
-  /* ── Navegación del sidebar ── */
-  const navItems = userIsAgency
-    ? [
-        { id: 'agency-dashboard', label: SPANISH_LABELS.agencyDashboard, icon: Activity   },
-        { id: 'funnel',           label: SPANISH_LABELS.funnel,           icon: Filter     },
-        { id: 'sources',          label: SPANISH_LABELS.sources,          icon: PieChart   },
-        { id: 'campaigns',        label: SPANISH_LABELS.campaigns,        icon: Megaphone  },
-        { id: 'team',             label: SPANISH_LABELS.team,             icon: Settings   },
-        { id: 'divider-1',        label: '── Operativo ──',               icon: null       },
-        { id: 'dashboard',        label: SPANISH_LABELS.dashboard,        icon: BarChart3  },
-        { id: 'leads',            label: SPANISH_LABELS.leads,            icon: Users      },
-        { id: 'calendar',         label: SPANISH_LABELS.calendar,         icon: Calendar   },
-        { id: 'visitas',          label: SPANISH_LABELS.visitas,          icon: Eye        },
-        { id: 'chat',             label: SPANISH_LABELS.chat,             icon: MessageSquare },
-        { id: 'whatsapp',         label: SPANISH_LABELS.whatsapp,         icon: MessageCircle },
-        { id: 'hubspot',          label: SPANISH_LABELS.hubspot,          icon: LinkIcon   },
-        { id: 'workflow',         label: SPANISH_LABELS.workflow,         icon: Zap        },
-        { id: 'sofia-bot',        label: 'Sofía Bot',                    icon: Bot        },
-      ]
-    : [
-        { id: 'dashboard', label: SPANISH_LABELS.dashboard, icon: BarChart3    },
-        { id: 'leads',     label: SPANISH_LABELS.leads,     icon: Users        },
-        { id: 'calendar',  label: SPANISH_LABELS.calendar,  icon: Calendar     },
-        { id: 'visitas',   label: SPANISH_LABELS.visitas,   icon: Eye          },
-        { id: 'chat',      label: SPANISH_LABELS.chat,      icon: MessageSquare },
-        { id: 'whatsapp',  label: SPANISH_LABELS.whatsapp,  icon: MessageCircle },
-        ...(canManageTeam ? [{ id: 'team', label: SPANISH_LABELS.team, icon: Settings }] : []),
-        { id: 'sofia-bot', label: 'Sofía Bot', icon: Bot },
-      ];
+  /* ── Navegación del sidebar — todos ven lo mismo ── */
+  const navItems = [
+    { id: 'agency-dashboard', label: SPANISH_LABELS.agencyDashboard, icon: Activity   },
+    { id: 'funnel',           label: SPANISH_LABELS.funnel,           icon: Filter     },
+    { id: 'sources',          label: SPANISH_LABELS.sources,          icon: PieChart   },
+    { id: 'campaigns',        label: SPANISH_LABELS.campaigns,        icon: Megaphone  },
+    { id: 'divider-1',        label: '── Operativo ──',               icon: null       },
+    { id: 'dashboard',        label: SPANISH_LABELS.dashboard,        icon: BarChart3  },
+    { id: 'leads',            label: SPANISH_LABELS.leads,            icon: Users      },
+    { id: 'calendar',         label: SPANISH_LABELS.calendar,         icon: Calendar   },
+    { id: 'visitas',          label: SPANISH_LABELS.visitas,          icon: Eye        },
+    { id: 'chat',             label: SPANISH_LABELS.chat,             icon: MessageSquare },
+    { id: 'whatsapp',         label: SPANISH_LABELS.whatsapp,         icon: MessageCircle },
+    { id: 'sofia-bot',        label: 'Sofía Bot',                    icon: Bot        },
+    { id: 'divider-2',        label: '── Config ──',                  icon: null       },
+    { id: 'team',             label: SPANISH_LABELS.team,             icon: Settings   },
+    { id: 'workflow',         label: SPANISH_LABELS.workflow,         icon: Zap        },
+  ];
 
   /* ── Carga inicial de datos ── */
   useEffect(() => {
@@ -134,13 +123,13 @@ export default function AdminPanel() {
         api.getEvents().catch(() => []),
         api.getMessages('general').catch(() => []),
       ];
-      if (userIsAgency) promises.push(api.getAgencyStats().catch(() => null));
+      promises.push(api.getAgencyStats().catch(() => null));
       const [s, l, e, m, as] = await Promise.all(promises);
       setStats(s);
       setLeads(l.leads || l || []);
       setEvents(e.events || e || []);
       setMessages(m.messages || m || []);
-      if (userIsAgency && as) setAgencyStats(as);
+      if (as) setAgencyStats(as);
     } catch (err) { console.error('loadData:', err); }
     finally { setLoading(false); }
   };
@@ -279,17 +268,15 @@ export default function AdminPanel() {
             {loading && activeView !== 'whatsapp' && <div className="loading-wrap"><div className="spinner" /><p>Cargando...</p></div>}
 
             <Suspense fallback={<ViewSpinner />}>
-              {/* ── Vistas exclusivas de agencia ── */}
-              {!loading && activeView === 'agency-dashboard' && userIsAgency &&
+              {/* ── Vistas — todos ven lo mismo ── */}
+              {!loading && activeView === 'agency-dashboard' &&
                 <AgencyDashboardView stats={agencyStats || stats} leads={leads} />}
-              {!loading && activeView === 'funnel' && userIsAgency &&
+              {!loading && activeView === 'funnel' &&
                 <FunnelView />}
-              {!loading && activeView === 'sources' && userIsAgency &&
+              {!loading && activeView === 'sources' &&
                 <SourcesView stats={agencyStats || stats} leads={leads} />}
-              {!loading && activeView === 'campaigns' && userIsAgency &&
+              {!loading && activeView === 'campaigns' &&
                 <CampaignsView />}
-
-              {/* ── Vistas compartidas ── */}
               {!loading && activeView === 'dashboard' &&
                 <DashboardView stats={stats} leads={leads} events={todayEvents} />}
               {!loading && activeView === 'leads' &&
@@ -317,9 +304,9 @@ export default function AdminPanel() {
                 <WhatsAppView onOpenMenu={() => setMobileMenuOpen(o => !o)} />}
               {!loading && activeView === 'team' && canManageTeam &&
                 <TeamView userRole={user?.role} />}
-              {!loading && activeView === 'hubspot' && userIsAgency &&
+              {!loading && activeView === 'hubspot' &&
                 <HubSpotView hubspotPortal={hubspotPortal} setHubspotPortal={setHubspotPortal} />}
-              {!loading && activeView === 'workflow' && userIsAgency &&
+              {!loading && activeView === 'workflow' &&
                 <WorkflowAIView metaToken={metaToken} setMetaToken={setMetaToken} />}
               {!loading && activeView === 'sofia-bot' &&
                 <FSCConversationsView onOpenMenu={() => setMobileMenuOpen(o => !o)} />}
