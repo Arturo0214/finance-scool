@@ -156,6 +156,8 @@ export default function WhatsAppView({ onOpenMenu }) {
   const [searchTerm, setSearchTerm]     = useState('');
   const [filterEstado, setFilterEstado] = useState('todos');
   const [filterAgent, setFilterAgent]   = useState('todos');
+  const [filterFiltro, setFilterFiltro] = useState('todos');
+  const [filterDate, setFilterDate]     = useState('');
   const [waStats, setWaStats]           = useState(null);
   const [windowStatus, setWindowStatus] = useState(null);
   const [showTemplates, setShowTemplates] = useState(false);
@@ -579,6 +581,21 @@ export default function WhatsAppView({ onOpenMenu }) {
               <option value="todos">Estado: Todos ({totalLeads || leads.length})</option>
               {Object.entries(EC).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
             </select>
+            <select className="wa-fsel" value={filterFiltro} onChange={e => setFilterFiltro(e.target.value)}>
+              <option value="todos">Embudo: Todos</option>
+              <option value="1">Paso 1 — Saludo</option>
+              <option value="2">Paso 2 — Impuestos</option>
+              <option value="3">Paso 3 — Régimen</option>
+              <option value="4">Paso 4 — Edad</option>
+              <option value="5">Paso 5 — Ingreso</option>
+              <option value="6">Paso 6 — Laboral</option>
+              <option value="7">Paso 7 — Objetivo</option>
+              <option value="8">Paso 8 — Agendar</option>
+            </select>
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <input type="date" className="wa-fsel" value={filterDate} onChange={e => setFilterDate(e.target.value)} style={{ fontSize: 11, padding: '4px 6px' }} />
+              {filterDate && <button onClick={() => setFilterDate('')} style={{ position: 'absolute', right: 4, background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, color: '#999' }}>×</button>}
+            </div>
             {agents.length > 0 ? (
               <select className="wa-fsel" value={filterAgent} onChange={e => setFilterAgent(e.target.value)}>
                 <option value="todos">Agente: Todos</option>
@@ -600,6 +617,19 @@ export default function WhatsAppView({ onOpenMenu }) {
               </div>
             )}
             {(() => {
+              // Filtros client-side adicionales (embudo Sofia + día)
+              let displayLeads = leads;
+              if (filterFiltro !== 'todos') {
+                const f = parseInt(filterFiltro);
+                displayLeads = displayLeads.filter(l => (l.filtro_actual || 0) === f);
+              }
+              if (filterDate) {
+                displayLeads = displayLeads.filter(l => {
+                  const d = l.last_message_at || l.updated_at || l.created_at;
+                  return d && d.slice(0, 10) === filterDate;
+                });
+              }
+
               // Agrupar leads por sección (como Tesipedia)
               const SECTIONS = [
                 { key: 'mensajes_nuevos', label: '✉️ Mensajes nuevos', bg: '#D1FAE5', color: '#065F46', match: l => l.unread_count > 0 || l.estado === 'nuevo' },
@@ -611,12 +641,12 @@ export default function WhatsAppView({ onOpenMenu }) {
               ];
               const assigned = new Set();
               const grouped = SECTIONS.map(sec => {
-                const items = leads.filter(l => !assigned.has(l.wa_id) && sec.match(l));
+                const items = displayLeads.filter(l => !assigned.has(l.wa_id) && sec.match(l));
                 items.forEach(l => assigned.add(l.wa_id));
                 return { ...sec, items };
               });
               // Leads sin sección
-              const rest = leads.filter(l => !assigned.has(l.wa_id));
+              const rest = displayLeads.filter(l => !assigned.has(l.wa_id));
               if (rest.length > 0) grouped.push({ key: 'otros', label: '📋 Otros', bg: '#F9FAFB', color: '#374151', items: rest });
 
               return grouped.filter(g => g.items.length > 0).map(group => (

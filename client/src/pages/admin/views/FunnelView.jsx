@@ -22,6 +22,8 @@ export default function FunnelView() {
   const [sending, setSending] = useState(false);
   const [followUpResult, setFollowUpResult] = useState(null);
   const [citaCount, setCitaCount] = useState(0);
+  const [allConversations, setAllConversations] = useState([]);
+  const [stageModal, setStageModal] = useState(null); // { filtro, name, leads }
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -53,6 +55,7 @@ export default function FunnelView() {
         const convData = await convResp.json();
         const conversations = convData.conversations || convData || [];
 
+        setAllConversations(conversations);
         for (const c of conversations) {
           if (c.lead_status === 'cita_agendada') { citas++; continue; }
           const f = c.filtro_actual || 1;
@@ -156,7 +159,12 @@ export default function FunnelView() {
                     <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 600, marginLeft: 4 }}>-{dropOff} ({dropPct}%)</span>
                   </div>
                 )}
-                <div className="funnel-stage" style={{ background: `linear-gradient(135deg,${stage.color},${stage.color}CC)`, width: `${widthPct}%` }}>
+                <div className="funnel-stage" style={{ background: `linear-gradient(135deg,${stage.color},${stage.color}CC)`, width: `${widthPct}%`, cursor: count > 0 ? 'pointer' : 'default' }}
+                  onClick={() => {
+                    if (count === 0) return;
+                    const stageLeads = allConversations.filter(c => (c.filtro_actual || 1) === stage.filtro && c.lead_status !== 'cita_agendada');
+                    setStageModal({ filtro: stage.filtro, name: stage.name, color: stage.color, leads: stageLeads });
+                  }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <Icon size={18} color="#fff" />
                     <div className="funnel-count">{count}</div>
@@ -274,6 +282,81 @@ export default function FunnelView() {
           </div>
         </div>
       </div>
+
+      {/* Modal: leads de una etapa */}
+      {stageModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+          onClick={() => setStageModal(null)}>
+          <div style={{ background: '#fff', borderRadius: 14, width: '100%', maxWidth: 600, maxHeight: '80vh', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}
+            onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div style={{ padding: '14px 20px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: `linear-gradient(135deg, ${stageModal.color}, ${stageModal.color}CC)` }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#fff' }}>Paso {stageModal.filtro}: {stageModal.name}</h3>
+                <p style={{ margin: 0, fontSize: 12, color: 'rgba(255,255,255,0.8)' }}>{stageModal.leads.length} leads en esta etapa</p>
+              </div>
+              <button onClick={() => setStageModal(null)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 8, padding: '4px 8px', cursor: 'pointer', color: '#fff', fontSize: 18 }}>✕</button>
+            </div>
+
+            {/* Sugerencia contextual */}
+            <div style={{ padding: '10px 20px', background: '#fffbeb', borderBottom: '1px solid #fef3c7', fontSize: 13, color: '#92400e', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+              <Zap size={16} style={{ flexShrink: 0, marginTop: 2 }} />
+              <span>{
+                stageModal.filtro === 1 ? 'Estos leads solo respondieron al saludo. Un follow-up rápido tipo "¿Tienes un minuto?" puede reactivarlos.' :
+                stageModal.filtro === 2 ? 'Ya declararon impuestos o no. Los que SÍ declaran son más valiosos — priorízalos.' :
+                stageModal.filtro === 3 ? 'Ya indicaron su régimen. Están comprometidos — un mensaje personalizado por régimen aumenta conversión.' :
+                stageModal.filtro <= 5 ? 'Estos leads ya dieron datos personales. Están interesados — un follow-up con beneficio concreto los mueve.' :
+                stageModal.filtro <= 7 ? 'Leads avanzados con objetivo claro. Están a pasos de agendar — ofréceles horario directo.' :
+                'A punto de agendar. Solo les falta email o confirmación. Un mensaje directo los convierte YA.'
+              }</span>
+            </div>
+
+            {/* Lista de leads */}
+            <div style={{ overflowY: 'auto', maxHeight: 'calc(80vh - 140px)' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ background: '#f8fafc', position: 'sticky', top: 0 }}>
+                    <th style={{ padding: '8px 16px', textAlign: 'left', fontWeight: 600, color: '#64748b' }}>Lead</th>
+                    <th style={{ padding: '8px 12px', textAlign: 'left' }}>Teléfono</th>
+                    <th style={{ padding: '8px 12px', textAlign: 'center' }}>Prioridad</th>
+                    <th style={{ padding: '8px 12px', textAlign: 'right' }}>Última actividad</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stageModal.leads.sort((a, b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0)).map((lead, i) => {
+                    const name = lead.nombre_lead || lead.contact_name || 'Sin nombre';
+                    const phone = lead.whatsapp_number || lead.wa_id || '';
+                    const prio = lead.prioridad || '';
+                    const updated = lead.updated_at ? new Date(lead.updated_at) : null;
+                    const hoursAgo = updated ? Math.round((Date.now() - updated.getTime()) / (1000 * 60 * 60)) : null;
+
+                    return (
+                      <tr key={i} style={{ borderTop: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '8px 16px' }}>
+                          <div style={{ fontWeight: 600, color: '#0f172a' }}>{name}</div>
+                          {lead.objetivo && <div style={{ fontSize: 11, color: '#64748b' }}>🎯 {lead.objetivo}</div>}
+                        </td>
+                        <td style={{ padding: '8px 12px' }}>
+                          {phone && <a href={`https://wa.me/${phone.replace(/\D/g, '')}`} target="_blank" rel="noopener noreferrer" style={{ color: '#25D366', fontSize: 12, textDecoration: 'none' }}>📱 {phone.slice(-10)}</a>}
+                        </td>
+                        <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+                          {prio && <span style={{ padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 600, background: prio.toLowerCase().includes('alta') ? '#fef2f2' : prio.toLowerCase().includes('media') ? '#fef9c3' : '#f1f5f9', color: prio.toLowerCase().includes('alta') ? '#dc2626' : prio.toLowerCase().includes('media') ? '#ca8a04' : '#64748b' }}>{prio}</span>}
+                        </td>
+                        <td style={{ padding: '8px 12px', textAlign: 'right', fontSize: 12, color: hoursAgo && hoursAgo > 48 ? '#ef4444' : '#94a3b8' }}>
+                          {hoursAgo !== null ? (hoursAgo < 1 ? 'Hace minutos' : hoursAgo < 24 ? `${hoursAgo}h` : `${Math.round(hoursAgo / 24)}d`) : '-'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {stageModal.leads.length === 0 && (
+                <div style={{ textAlign: 'center', padding: 30, color: '#94a3b8' }}>No hay leads en esta etapa</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
