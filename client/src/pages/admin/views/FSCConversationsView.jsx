@@ -8,7 +8,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   MessageCircle, Search, RefreshCw, Phone, User, Filter, Menu,
   BarChart3, Clock, ChevronRight, Briefcase, Target, CalendarDays,
-  CheckCircle2, XCircle, AlertTriangle, ArrowLeft,
+  CheckCircle2, XCircle, AlertTriangle, ArrowLeft, Video, Send, X, Calendar,
 } from 'lucide-react';
 import { api } from '../../../utils/api';
 
@@ -145,6 +145,9 @@ export default function FSCConversationsView({ onOpenMenu }) {
   const [chatData, setChatData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [chatLoading, setChatLoading] = useState(false);
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [scheduling, setScheduling] = useState(false);
+  const [scheduleForm, setScheduleForm] = useState({ date: '', time: '14:00', email: '', duration: 30 });
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('todos');
   const [pipeline, setPipeline] = useState([]);
@@ -600,12 +603,24 @@ export default function FSCConversationsView({ onOpenMenu }) {
                   </div>
                 </div>
 
-                {/* Filtro progress bar */}
+                {/* Agendar Cita button + Filtro progress */}
                 <div style={{
-                  background: '#fff', padding: '8px 16px',
+                  background: '#fff', padding: '6px 16px',
                   borderBottom: '1px solid #E2E8F0', flexShrink: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
                 }}>
                   <FiltroProgress step={chatData?.filtro_actual ?? leadFiltro(selectedLead)} />
+                  <button
+                    onClick={() => setShowScheduleModal(true)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px',
+                      background: 'linear-gradient(135deg, #10b981, #059669)', color: '#fff',
+                      border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                      whiteSpace: 'nowrap', flexShrink: 0,
+                    }}
+                  >
+                    <Calendar size={14} /> Agendar Cita
+                  </button>
                 </div>
 
                 {/* Chat messages */}
@@ -841,6 +856,147 @@ export default function FSCConversationsView({ onOpenMenu }) {
           </div>
         </div>
       )}
+
+      {/* ── Modal Agendar Cita ── */}
+      {showScheduleModal && selectedLead && (() => {
+        const cd = chatData || {};
+        const nombre = cd.nombre || leadName(selectedLead);
+        const phone = leadPhone(selectedLead);
+        const prioridadStr = cd.prioridad || '';
+        const isLowPriority = prioridadStr.toLowerCase().includes('baja') || prioridadStr.toLowerCase().includes('informativa') || prioridadStr.toLowerCase().includes('15');
+        const defaultDuration = isLowPriority ? 15 : 30;
+
+        const handleSchedule = async () => {
+          if (!scheduleForm.date || !scheduleForm.time) { alert('Fecha y hora requeridas'); return; }
+          setScheduling(true);
+          try {
+            // 1. Crear cita con Google Meet
+            const meetResp = await fetch('/api/google/schedule-meeting', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                clientName: nombre,
+                clientPhone: phone,
+                clientEmail: scheduleForm.email,
+                date: scheduleForm.date,
+                time: scheduleForm.time,
+                duration: scheduleForm.duration || defaultDuration,
+                notes: [
+                  cd.declara_impuestos != null ? `Declara impuestos: ${cd.declara_impuestos}` : '',
+                  cd.regimen ? `Régimen: ${cd.regimen}` : '',
+                  cd.edad ? `Edad: ${cd.edad}` : '',
+                  cd.ingreso ? `Ingreso: $${cd.ingreso}` : '',
+                  cd.situacion_laboral ? `Sit. laboral: ${cd.situacion_laboral}` : '',
+                  cd.objetivo ? `Objetivo: ${cd.objetivo}` : '',
+                  cd.prioridad ? `Prioridad: ${cd.prioridad}` : '',
+                ].filter(Boolean).join('\n'),
+              }),
+            });
+            const meetData = await meetResp.json();
+
+            if (meetData.meetLink) {
+              // 2. Enviar link de Meet al cliente por WhatsApp
+              const waMsg = `¡Listo ${nombre.split(' ')[0]}! 🎉\n\nTu cita está confirmada:\n📅 Fecha: ${scheduleForm.date}\n🕐 Hora: ${scheduleForm.time}\n⏱️ Duración: ${scheduleForm.duration || defaultDuration} minutos\n👩‍💼 Consultora: Ingrid Escobar\n📹 Link: ${meetData.meetLink}\n\nNos vemos ahí. ¡Cualquier duda aquí estamos!`;
+
+              await fetch('/api/whatsapp/send', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${localStorage.getItem('fsc_token')}`,
+                },
+                body: JSON.stringify({ wa_id: phone, message: waMsg }),
+              });
+
+              alert(`Cita creada y link enviado:\n${meetData.meetLink}`);
+            } else {
+              alert('Cita creada pero no se generó link de Meet');
+            }
+
+            setShowScheduleModal(false);
+            loadLeads();
+          } catch (err) {
+            alert('Error: ' + err.message);
+          }
+          setScheduling(false);
+        };
+
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+            onClick={() => setShowScheduleModal(false)}>
+            <div style={{ background: '#fff', borderRadius: 14, width: '100%', maxWidth: 440, maxHeight: '85vh', overflow: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}
+              onClick={e => e.stopPropagation()}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', borderBottom: '1px solid #e2e8f0' }}>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}><Calendar size={18} /> Agendar Cita</h3>
+                <button onClick={() => setShowScheduleModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={20} /></button>
+              </div>
+
+              <div style={{ padding: '14px 18px' }}>
+                {/* Datos del lead (auto-rellenados) */}
+                <div style={{ background: '#f8fafc', borderRadius: 10, padding: 12, marginBottom: 14, fontSize: 13 }}>
+                  <div style={{ fontWeight: 700, marginBottom: 6, color: '#0f172a' }}>{nombre}</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 12px', color: '#64748b' }}>
+                    <span>📱 {phone}</span>
+                    {cd.declara_impuestos != null && <span>🧾 Declara: {cd.declara_impuestos ? 'Sí' : 'No'}</span>}
+                    {cd.regimen && <span>📋 {cd.regimen}</span>}
+                    {cd.edad && <span>🎂 {cd.edad} años</span>}
+                    {cd.ingreso && <span>💰 ${cd.ingreso}</span>}
+                    {cd.situacion_laboral && <span>💼 {cd.situacion_laboral}</span>}
+                    {cd.objetivo && <span>🎯 {cd.objetivo}</span>}
+                    {cd.prioridad && <span>⚡ {cd.prioridad}</span>}
+                  </div>
+                </div>
+
+                {/* Formulario */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 3 }}>Fecha *</label>
+                    <input type="date" value={scheduleForm.date} onChange={e => setScheduleForm({ ...scheduleForm, date: e.target.value })}
+                      style={{ width: '100%', padding: 8, border: '1px solid #d1d5db', borderRadius: 8, fontSize: 14, boxSizing: 'border-box' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 3 }}>Hora *</label>
+                    <input type="time" value={scheduleForm.time} onChange={e => setScheduleForm({ ...scheduleForm, time: e.target.value })}
+                      style={{ width: '100%', padding: 8, border: '1px solid #d1d5db', borderRadius: 8, fontSize: 14, boxSizing: 'border-box' }} />
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 3 }}>Email del cliente</label>
+                    <input type="email" value={scheduleForm.email} onChange={e => setScheduleForm({ ...scheduleForm, email: e.target.value })}
+                      placeholder="cliente@email.com"
+                      style={{ width: '100%', padding: 8, border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, boxSizing: 'border-box' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 3 }}>Duración</label>
+                    <select value={scheduleForm.duration || defaultDuration} onChange={e => setScheduleForm({ ...scheduleForm, duration: Number(e.target.value) })}
+                      style={{ width: '100%', padding: 8, border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13 }}>
+                      <option value={15}>15 min (informativa)</option>
+                      <option value={30}>30 min (completa)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div style={{ background: '#f0fdf4', borderRadius: 8, padding: 10, marginBottom: 14, fontSize: 12, color: '#16a34a', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Video size={14} /> Se creará Google Meet automáticamente y se enviará el link por WhatsApp
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '12px 18px', borderTop: '1px solid #e2e8f0' }}>
+                <button onClick={() => setShowScheduleModal(false)}
+                  style={{ padding: '8px 16px', background: '#f1f5f9', border: 'none', borderRadius: 8, fontSize: 13, cursor: 'pointer' }}>Cancelar</button>
+                <button onClick={handleSchedule} disabled={scheduling}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6, padding: '8px 20px',
+                    background: scheduling ? '#94a3b8' : 'linear-gradient(135deg, #10b981, #059669)',
+                    color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                  }}>
+                  <Send size={14} /> {scheduling ? 'Agendando...' : 'Agendar y Enviar Link'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Keyframe animation ── */}
       <style>{`
