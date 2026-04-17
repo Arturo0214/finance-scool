@@ -355,7 +355,10 @@ router.post('/schedule-meeting', async (req, res) => {
     if (!tokens) return res.status(400).json({ error: 'Google Calendar no está conectado' });
 
     const calendar = getCalendarClient(tokens);
-    const { clientName, clientEmail, clientPhone, date, time, duration, notes } = req.body;
+    const {
+      clientName, clientEmail, clientPhone, date, time, duration, notes,
+      declara_impuestos, regimen, edad, ingreso, situacion_laboral, objetivo, prioridad,
+    } = req.body;
 
     const parsedDate = parseFlexibleDate(date);
     const parsedTime = parseFlexibleTime(time);
@@ -370,14 +373,32 @@ router.post('/schedule-meeting', async (req, res) => {
     const mm = String(endDate.getMinutes()).padStart(2, '0');
     const endDateTime = `${parsedDate}T${hh}:${mm}:00`;
 
+    // Build description with client info + collected data
+    const descLines = [
+      clientName ? `Cliente: ${clientName}` : '',
+      clientPhone ? `WhatsApp: https://wa.me/${clientPhone.replace(/\D/g, '')}` : '',
+      clientPhone ? `Teléfono: ${clientPhone}` : '',
+      notes ? `Notas: ${notes}` : '',
+    ];
+
+    // Add collected lead data if available
+    const dataLines = [
+      declara_impuestos != null ? `Declara impuestos: ${declara_impuestos}` : '',
+      regimen ? `Régimen fiscal: ${regimen}` : '',
+      edad ? `Edad: ${edad}` : '',
+      ingreso ? `Ingreso mensual: ${ingreso}` : '',
+      situacion_laboral ? `Sit. laboral: ${situacion_laboral}` : '',
+      objetivo ? `Objetivo: ${objetivo}` : '',
+      prioridad ? `Prioridad: ${prioridad}` : '',
+    ].filter(Boolean);
+
+    if (dataLines.length > 0) {
+      descLines.push('', '🏷️ Datos recopilados', ...dataLines);
+    }
+
     const event = {
       summary: `📞 Check-up Financiero: ${clientName || 'Lead'}`,
-      description: [
-        clientName ? `Cliente: ${clientName}` : '',
-        clientPhone ? `WhatsApp: https://wa.me/${clientPhone.replace(/\D/g, '')}` : '',
-        clientPhone ? `Teléfono: ${clientPhone}` : '',
-        notes ? `Notas: ${notes}` : '',
-      ].filter(Boolean).join('\n'),
+      description: descLines.filter(Boolean).join('\n'),
       start: { dateTime: startDateTime, timeZone: 'America/Mexico_City' },
       end: { dateTime: endDateTime, timeZone: 'America/Mexico_City' },
       conferenceData: {
