@@ -141,6 +141,8 @@ router.get('/events', verifyToken, async (req, res) => {
       color: e.colorId || null,
       source: 'google',
       htmlLink: e.htmlLink,
+      conferenceData: e.conferenceData || null,
+      meeting_link: e.conferenceData?.entryPoints?.find(ep => ep.entryPointType === 'video')?.uri || '',
     }));
 
     res.json(events);

@@ -93,22 +93,55 @@ function EditEventModal({ event, onClose, onSave, onDelete, googleConnected }) {
   const timeStr = event.time || (evDate.getHours() === 0 && evDate.getMinutes() === 0 ? '14:00'
     : `${String(evDate.getHours()).padStart(2,'0')}:${String(evDate.getMinutes()).padStart(2,'0')}`);
 
+  // Extract meet link from conferenceData, meeting_link field, or description text
+  const extractedMeetLink = (() => {
+    const fromConf = event.conferenceData?.entryPoints?.find(e => e.entryPointType === 'video')?.uri;
+    if (fromConf) return fromConf;
+    if (event.meeting_link) return event.meeting_link;
+    // Fallback: extract from description (schedule-meeting puts it there)
+    const descMatch = (event.description || '').match(/https:\/\/meet\.google\.com\/[a-z\-]+/i);
+    return descMatch ? descMatch[0] : '';
+  })();
+
   const [formData, setFormData] = useState({
     title: event.title || '',
     date: dateStr,
     time: timeStr,
     description: event.description || '',
-    meeting_link: event.meeting_link || '',
-    addMeet: !!event.conferenceData || false,
+    meeting_link: extractedMeetLink || '',
+    addMeet: !!event.conferenceData || !!extractedMeetLink,
   });
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [meetLink, setMeetLink] = useState(
-    event.conferenceData?.entryPoints?.find(e => e.entryPointType === 'video')?.uri || event.meeting_link || ''
-  );
+  const [meetLink, setMeetLink] = useState(extractedMeetLink);
+  const [showMeetResult, setShowMeetResult] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  // Extraer teléfono del cliente de la descripción
+  const clientPhone = (() => {
+    const m = (event.description || '').match(/(?:Teléfono|Tel|WhatsApp)[:\s]*(?:https?:\/\/wa\.me\/)?(\d{10,15})/i);
+    return m ? m[1] : null;
+  })();
+
+  const handleCopyLink = () => {
+    if (meetLink) {
+      navigator.clipboard.writeText(meetLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const handleSendWhatsApp = () => {
+    if (meetLink && clientPhone) {
+      const msg = encodeURIComponent(`¡Hola! 👋 Te comparto el link para nuestra reunión:\n\n📹 ${meetLink}\n\n📅 ${formData.date} a las ${formData.time}\n\n¡Te esperamos!`);
+      window.open(`https://wa.me/${clientPhone}?text=${msg}`, '_blank');
+    }
+  };
 
   const handleSave = async () => {
     setSaving(true);
+
+    let newMeetLink = null;
 
     // Si es evento local y quieren Meet, crear en Google Calendar primero
     if (!isGoogle && formData.addMeet && googleConnected) {
@@ -122,6 +155,7 @@ function EditEventModal({ event, onClose, onSave, onDelete, googleConnected }) {
           addMeet: true,
         });
         if (result?.meetLink) {
+          newMeetLink = result.meetLink;
           setMeetLink(result.meetLink);
           formData.meeting_link = result.meetLink;
         }
@@ -130,7 +164,7 @@ function EditEventModal({ event, onClose, onSave, onDelete, googleConnected }) {
       }
     }
 
-    await onSave(event, {
+    const result = await onSave(event, {
       title: formData.title,
       description: formData.description,
       start_date: formData.date,
@@ -140,8 +174,21 @@ function EditEventModal({ event, onClose, onSave, onDelete, googleConnected }) {
       meeting_link: formData.meeting_link,
       addMeet: formData.addMeet,
     });
+
+    // Capturar meetLink del update de Google
+    if (result?.meetLink) {
+      newMeetLink = result.meetLink;
+      setMeetLink(result.meetLink);
+    }
+
     setSaving(false);
-    onClose();
+
+    // Si se generó un Meet link, mostrar resultado antes de cerrar
+    if (newMeetLink && !meetLink) {
+      setShowMeetResult(true);
+    } else {
+      onClose();
+    }
   };
 
   const handleDelete = async () => {
@@ -196,9 +243,25 @@ function EditEventModal({ event, onClose, onSave, onDelete, googleConnected }) {
                 </span>
               </label>
               {meetLink && (
-                <a href={meetLink} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.85rem', color: '#00897B', display: 'flex', alignItems: 'center', gap: 4, marginTop: 6 }}>
-                  <Video size={13} /> {meetLink} <ExternalLink size={11} />
-                </a>
+                <div style={{ marginTop: 8, padding: '10px 12px', background: '#f0fdf4', borderRadius: 8, border: '1px solid #bbf7d0' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                    <Video size={14} style={{ color: '#00897B' }} />
+                    <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#166534' }}>Google Meet</span>
+                  </div>
+                  <a href={meetLink} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.82rem', color: '#00897B', wordBreak: 'break-all', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    {meetLink} <ExternalLink size={11} />
+                  </a>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                    <button type="button" onClick={handleCopyLink} style={{ fontSize: '0.78rem', padding: '4px 10px', borderRadius: 6, border: '1px solid #d1d5db', background: copied ? '#dcfce7' : '#fff', color: copied ? '#166534' : '#374151', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                      {copied ? '✓ Copiado' : '📋 Copiar link'}
+                    </button>
+                    {clientPhone && (
+                      <button type="button" onClick={handleSendWhatsApp} style={{ fontSize: '0.78rem', padding: '4px 10px', borderRadius: 6, border: '1px solid #22c55e', background: '#f0fdf4', color: '#166534', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                        📱 Enviar al cliente
+                      </button>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
           )}
@@ -231,10 +294,16 @@ function EditEventModal({ event, onClose, onSave, onDelete, googleConnected }) {
             )}
           </div>
           <div className="edit-foot-right">
-            <button className="btn-secondary" onClick={onClose}>Cancelar</button>
-            <button className="btn-primary" onClick={handleSave} disabled={saving || !formData.title.trim()}>
-              {saving ? 'Guardando...' : 'Guardar cambios'}
-            </button>
+            {showMeetResult ? (
+              <button className="btn-primary" onClick={onClose}>Cerrar</button>
+            ) : (
+              <>
+                <button className="btn-secondary" onClick={onClose}>Cancelar</button>
+                <button className="btn-primary" onClick={handleSave} disabled={saving || !formData.title.trim()}>
+                  {saving ? 'Guardando...' : 'Guardar cambios'}
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -347,6 +416,7 @@ export default function CalendarView({ events, showEventModal, setShowEventModal
   const [syncing, setSyncing] = useState(false);
   const [selectedDay, setSelectedDay] = useState(null);
   const [editingEvent, setEditingEvent] = useState(null);
+  const [newMeetLinkResult, setNewMeetLinkResult] = useState(null);
 
   const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
   const firstDay   = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getDay();
@@ -439,7 +509,12 @@ export default function CalendarView({ events, showEventModal, setShowEventModal
           attendeeEmail: formData.clientEmail || undefined,
         });
         if (result?.meetLink) {
-          alert(`Google Meet creado:\n${result.meetLink}`);
+          setNewMeetLinkResult({
+            link: result.meetLink,
+            phone: formData.clientPhone?.replace(/\D/g, '') || null,
+            date: formData.date,
+            time: formData.time,
+          });
         }
         fetchGoogleEvents();
       } catch (err) {
@@ -457,13 +532,16 @@ export default function CalendarView({ events, showEventModal, setShowEventModal
   const handleSaveEdit = async (event, data) => {
     if (event.source === 'google') {
       try {
-        await api.updateGoogleEvent(event.id, {
+        const result = await api.updateGoogleEvent(event.id, {
           title: data.title,
           description: data.description,
           start_date: data.start_date,
           time: data.time,
           addMeet: data.addMeet,
         });
+        if (result?.meetLink) {
+          return { meetLink: result.meetLink };
+        }
         fetchGoogleEvents();
       } catch (err) {
         console.error('Update Google event error:', err);
@@ -818,7 +896,45 @@ export default function CalendarView({ events, showEventModal, setShowEventModal
         />
       )}
 
-      {showEventModal && <EventModal onClose={() => setShowEventModal(false)} onSubmit={handleAddEventWithGoogle} googleConnected={googleConnected} />}
+      {showEventModal && <EventModal onClose={() => setShowEventModal(false)} onSubmit={(data) => { setShowEventModal(false); handleAddEventWithGoogle(data); }} googleConnected={googleConnected} />}
+
+      {/* Meet Link Result Modal */}
+      {newMeetLinkResult && (
+        <div className="modal-overlay" onClick={() => setNewMeetLinkResult(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 440 }}>
+            <div className="modal-head">
+              <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Video size={20} style={{ color: '#00897B' }} /> Google Meet creado
+              </h2>
+              <button className="close-btn" onClick={() => setNewMeetLinkResult(null)}><X size={22} /></button>
+            </div>
+            <div className="modal-body">
+              <div style={{ padding: '14px 16px', background: '#f0fdf4', borderRadius: 10, border: '1px solid #bbf7d0' }}>
+                <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#166534', marginBottom: 8 }}>Link de la reunión:</div>
+                <a href={newMeetLinkResult.link} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.9rem', color: '#00897B', wordBreak: 'break-all', fontWeight: 500 }}>
+                  {newMeetLinkResult.link}
+                </a>
+                <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                  <button className="btn-secondary" onClick={() => { navigator.clipboard.writeText(newMeetLinkResult.link); }} style={{ fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    📋 Copiar link
+                  </button>
+                  {newMeetLinkResult.phone && (
+                    <button className="btn-primary" onClick={() => {
+                      const msg = encodeURIComponent(`¡Hola! 👋 Te comparto el link para nuestra reunión:\n\n📹 ${newMeetLinkResult.link}\n\n📅 ${newMeetLinkResult.date} a las ${newMeetLinkResult.time}\n\n¡Te esperamos!`);
+                      window.open(`https://wa.me/${newMeetLinkResult.phone}?text=${msg}`, '_blank');
+                    }} style={{ fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: 4 }}>
+                      📱 Enviar al cliente por WhatsApp
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="modal-foot">
+              <button className="btn-primary" onClick={() => setNewMeetLinkResult(null)}>Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
     </>
   );
