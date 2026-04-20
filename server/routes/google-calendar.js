@@ -367,6 +367,33 @@ router.post('/schedule-meeting', async (req, res) => {
 
     if (!parsedDate || !parsedTime) return res.status(400).json({ error: `No se pudo interpretar fecha/hora: date="${date}" time="${time}"` });
 
+    // Dedup: check if an appointment already exists for this phone in the next 7 days
+    if (clientPhone) {
+      try {
+        const db = getDB();
+        const today = new Date().toISOString().split('T')[0];
+        const weekLater = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        const { data: existing } = await db.from('fsc_appointments')
+          .select('event_id,date,time')
+          .eq('client_phone', clientPhone)
+          .gte('date', today)
+          .lte('date', weekLater)
+          .limit(1);
+        if (existing && existing.length > 0) {
+          console.log(`⚠️ Cita duplicada evitada para ${clientPhone} — ya tiene cita el ${existing[0].date} ${existing[0].time}`);
+          return res.json({
+            success: true,
+            meetLink: null,
+            eventId: existing[0].event_id,
+            duplicate: true,
+            message: `Ya existe una cita para este lead el ${existing[0].date} a las ${existing[0].time}`,
+          });
+        }
+      } catch (dedupErr) {
+        console.warn('⚠️ Dedup check failed, proceeding:', dedupErr.message);
+      }
+    }
+
     const durationMin = duration || 30;
     const startDateTime = `${parsedDate}T${parsedTime}:00`;
     const startDate = new Date(`${parsedDate}T${parsedTime}:00`);
