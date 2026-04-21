@@ -280,6 +280,121 @@ router.delete('/events/:eventId', verifyToken, async (req, res) => {
   }
 });
 
+// ─── GET /api/google/meet-participants/:meetCode ───
+// Get participants who actually connected to a Google Meet call
+// meetCode = the part after meet.google.com/ (e.g. "abc-defg-hij")
+router.get('/meet-participants/:meetCode', verifyToken, async (req, res) => {
+  try {
+    const tokens = await getStoredTokens();
+    if (!tokens) return res.status(400).json({ error: 'Google Calendar no está conectado' });
+
+    const { google } = require('googleapis');
+    const auth = new google.auth.OAuth2(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      process.env.GOOGLE_REDIRECT_URI
+    );
+    auth.setCredentials(tokens);
+
+    const meet = google.meet({ version: 'v2', auth });
+    const meetCode = req.params.meetCode;
+
+    // List conference records filtering by space
+    const confResp = await meet.conferenceRecords.list({
+      filter: `space.meeting_code="${meetCode}"`,
+    });
+
+    const records = confResp.data.conferenceRecords || [];
+    if (records.length === 0) {
+      return res.json({ participants: [], message: 'No se encontraron registros para esta reunión. Puede que aún no haya ocurrido.' });
+    }
+
+    // Get participants for each conference record
+    const allParticipants = [];
+    for (const record of records) {
+      const recordName = record.name; // e.g. "conferenceRecords/xxx"
+      const partResp = await meet.conferenceRecords.participants.list({
+        parent: recordName,
+      });
+      const participants = partResp.data.participants || [];
+      for (const p of participants) {
+        allParticipants.push({
+          email: p.signedinUser?.user || p.signedinUser?.displayName || p.anonymousUser?.displayName || 'Anónimo',
+          displayName: p.signedinUser?.displayName || p.anonymousUser?.displayName || 'Sin nombre',
+          joinTime: p.earliestStartTime,
+          leaveTime: p.latestEndTime,
+        });
+      }
+    }
+
+    res.json({
+      meetCode,
+      totalRecords: records.length,
+      participants: allParticipants,
+    });
+  } catch (err) {
+    console.error('Meet participants error:', err.message);
+    if (err.message?.includes('insufficient authentication scopes') || err.code === 403) {
+      return res.status(403).json({
+        error: 'Se requiere re-autorizar Google con permisos de Meet. Ve a Calendario > desconecta y vuelve a conectar Google.',
+        needsReauth: true,
+      });
+    }
+    res.status(500).json({ error: 'Error al obtener participantes: ' + err.message });
+  }
+});
+
+// ─── GET /api/google/all-meet-attendance ───
+// Get attendance for all upcoming/recent appointments
+router.get('/all-meet-attendance', verifyToken, async (req, res) => {
+  try {
+    const tokens = await getStoredTokens();
+    if (!tokens) return res.status(400).json({ error: 'Google Calendar no está conectado' });
+
+    const { google } = require('googleapis');
+    const auth = new google.auth.OAuth2(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      process.env.GOOGLE_REDIRECT_URI
+    );
+    auth.setCredentials(tokens);
+
+    const meet = google.meet({ version: 'v2', auth });
+
+    // Get recent conference records
+    const confResp = await meet.conferenceRecords.list({ pageSize: 25 });
+    const records = confResp.data.conferenceRecords || [];
+
+    const results = [];
+    for (const record of records) {
+      const partResp = await meet.conferenceRecords.participants.list({
+        parent: record.name,
+      });
+      const participants = (partResp.data.participants || []).map(p => ({
+        email: p.signedinUser?.user || p.anonymousUser?.displayName || 'Anónimo',
+        displayName: p.signedinUser?.displayName || p.anonymousUser?.displayName || '',
+        joinTime: p.earliestStartTime,
+        leaveTime: p.latestEndTime,
+      }));
+
+      results.push({
+        meetCode: record.space?.meetingCode || '',
+        startTime: record.startTime,
+        endTime: record.endTime,
+        participants,
+      });
+    }
+
+    res.json({ meetings: results });
+  } catch (err) {
+    console.error('All meet attendance error:', err.message);
+    if (err.message?.includes('insufficient authentication scopes') || err.code === 403) {
+      return res.status(403).json({ error: 'Re-autorizar Google con permisos de Meet', needsReauth: true });
+    }
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── POST /api/google/disconnect ───
 // Disconnect Google Calendar
 router.post('/disconnect', verifyToken, async (req, res) => {
