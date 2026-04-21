@@ -71,6 +71,7 @@ export const api = {
   updateGoogleEvent: (id, data) => request(`/google/events/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteGoogleEvent: (id) => request(`/google/events/${id}`, { method: 'DELETE' }),
   disconnectGoogle: () => request('/google/disconnect', { method: 'POST' }),
+  getMeetParticipants: (meetCode) => request(`/google/meet-participants/${meetCode}`),
 
   // Messages
   getMessages: (channel = 'general') => request(`/messages?channel=${channel}`),

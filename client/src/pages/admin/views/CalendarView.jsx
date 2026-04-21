@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { C, SPANISH_LABELS } from '../constants';
-import { Plus, X, Clock, Link2, Unlink, RefreshCw, MapPin, Calendar, ChevronRight, Trash2, Pencil, ExternalLink, Video } from 'lucide-react';
+import { Plus, X, Clock, Link2, Unlink, RefreshCw, MapPin, Calendar, ChevronRight, Trash2, Pencil, ExternalLink, Video, Users } from 'lucide-react';
 import { api } from '../../../utils/api';
 
 /* ── Event Modal (Create) ─────────────────────────────────── */
@@ -116,6 +116,33 @@ function EditEventModal({ event, onClose, onSave, onDelete, googleConnected }) {
   const [meetLink, setMeetLink] = useState(extractedMeetLink);
   const [showMeetResult, setShowMeetResult] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [participants, setParticipants] = useState(null);
+  const [loadingParticipants, setLoadingParticipants] = useState(false);
+  const [participantsError, setParticipantsError] = useState('');
+
+  // Auto-fetch participants if there's a meet link
+  useEffect(() => {
+    if (!extractedMeetLink) return;
+    const match = extractedMeetLink.match(/meet\.google\.com\/([a-z\-]+)/i);
+    if (!match) return;
+    const code = match[1];
+    setLoadingParticipants(true);
+    api.getMeetParticipants(code)
+      .then(data => {
+        setParticipants(data.participants || []);
+        setParticipantsError(data.needsReauth ? 'reauth' : '');
+      })
+      .catch(err => {
+        const body = err?.response?.data || err;
+        if (body?.needsReauth) {
+          setParticipantsError('reauth');
+        } else {
+          setParticipantsError(body?.error || 'Error al cargar');
+        }
+        setParticipants([]);
+      })
+      .finally(() => setLoadingParticipants(false));
+  }, [extractedMeetLink]);
 
   // Extraer teléfono del cliente de la descripción
   const clientPhone = (() => {
@@ -261,6 +288,51 @@ function EditEventModal({ event, onClose, onSave, onDelete, googleConnected }) {
                       </button>
                     )}
                   </div>
+                </div>
+              )}
+              {/* Attendance / Participants */}
+              {meetLink && (
+                <div style={{ marginTop: 10 }}>
+                  {loadingParticipants ? (
+                    <div style={{ fontSize: '0.78rem', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <Users size={13} /> Cargando asistencia...
+                    </div>
+                  ) : participantsError === 'reauth' ? (
+                    <div style={{ fontSize: '0.75rem', color: '#f59e0b', background: '#fffbeb', padding: '6px 10px', borderRadius: 6, border: '1px solid #fde68a' }}>
+                      Para ver quién se conectó, desconecta y reconecta Google Calendar (se necesita permiso de Meet).
+                    </div>
+                  ) : participantsError ? (
+                    <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{participantsError}</div>
+                  ) : participants && participants.length > 0 ? (
+                    <div style={{ padding: '8px 10px', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                        <Users size={13} style={{ color: '#3b82f6' }} />
+                        <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#1e40af' }}>
+                          Asistencia ({participants.length})
+                        </span>
+                      </div>
+                      {participants.map((p, i) => (
+                        <div key={i} style={{ fontSize: '0.76rem', padding: '3px 0', borderBottom: i < participants.length - 1 ? '1px solid #f1f5f9' : 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <span style={{ fontWeight: 500, color: '#1e293b' }}>{p.displayName || 'Sin nombre'}</span>
+                            {p.email && p.email !== p.displayName && (
+                              <span style={{ color: '#64748b', marginLeft: 6 }}>{p.email}</span>
+                            )}
+                          </div>
+                          {p.joinTime && (
+                            <span style={{ color: '#94a3b8', fontSize: '0.7rem' }}>
+                              {new Date(p.joinTime).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}
+                              {p.leaveTime && ` — ${new Date(p.leaveTime).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}`}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : participants && participants.length === 0 ? (
+                    <div style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <Users size={12} /> Nadie se ha conectado aún
+                    </div>
+                  ) : null}
                 </div>
               )}
             </div>
