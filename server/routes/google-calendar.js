@@ -140,16 +140,27 @@ router.get('/events', verifyToken, async (req, res) => {
     const { timeMin, timeMax } = req.query;
 
     const now = new Date();
-    const response = await calendar.events.list({
-      calendarId: 'primary',
-      timeMin: timeMin || new Date(now.getFullYear(), now.getMonth(), 1).toISOString(),
-      timeMax: timeMax || new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString(),
-      singleEvents: true,
-      orderBy: 'startTime',
-      maxResults: 500,
-    });
+    const tMin = timeMin || new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    const tMax = timeMax || new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString();
 
-    const events = (response.data.items || []).map(e => ({
+    // Paginate through all events (Google Calendar API max is 250 per page)
+    let allItems = [];
+    let pageToken = null;
+    do {
+      const response = await calendar.events.list({
+        calendarId: 'primary',
+        timeMin: tMin,
+        timeMax: tMax,
+        singleEvents: true,
+        orderBy: 'startTime',
+        maxResults: 250,
+        pageToken,
+      });
+      allItems = allItems.concat(response.data.items || []);
+      pageToken = response.data.nextPageToken;
+    } while (pageToken);
+
+    const events = allItems.map(e => ({
       id: e.id,
       title: e.summary || '(Sin título)',
       description: e.description || '',
