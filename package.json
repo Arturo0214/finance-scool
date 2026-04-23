@@ -25,6 +25,7 @@
     "googleapis": "^171.4.0",
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
+    "node-cron": "^4.2.1",
     "sql.js": "^1.14.1"
   }
 }

