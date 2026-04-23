@@ -2,6 +2,11 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronDown, Menu, X, MessageCircle, BarChart3, Lightbulb, Target, Wallet, Clock, Landmark, TrendingUp, GraduationCap, Briefcase, FileText, Shield, Brain, Users, CheckCircle, Camera, Linkedin, Volume2, VolumeX, Heart, PiggyBank, HandCoins } from 'lucide-react';
 import Logo from '../components/Logo';
+import {
+  getWhatsAppURL, trackWhatsAppClick, trackCalculadoraISR,
+  trackMetaViewContent, initScrollTracking, detectLeadSource,
+  trackMetaLead
+} from '../utils/tracking';
 
 // ==================== ISR 2026 Tax Calculator Logic ====================
 const ISR_TABLE_2026 = [
@@ -320,6 +325,12 @@ export default function Landing() {
     return () => clearInterval(interval);
   }, []);
 
+  // Tracking — inicializar scroll depth tracking al montar
+  useEffect(() => {
+    initScrollTracking();
+    trackMetaViewContent({ seccion: 'Landing_Home' });
+  }, []);
+
   // Hero carousel slides with videos
   const heroSlides = [
     {
@@ -592,6 +603,12 @@ export default function Landing() {
       });
       if (response.ok) {
         setFormStatus('success');
+        trackMetaLead({
+          tipo: 'CTA Landing Form',
+          categoria: cleanData.incomeType,
+          valor_estimado: 0,
+          ingreso: cleanData.approxIncome,
+        });
         const savedName = cleanData.name;
         const savedEmail = cleanData.email;
         setFormData({ name: '', phone: '', email: '', incomeType: '', approxIncome: '', declaracion: '', retiroPlan: '' });
@@ -2499,7 +2516,10 @@ export default function Landing() {
               <button
                 className="landing-btn landing-btn-primary story-next-btn"
                 disabled={!taxCalc.ingresoAnual || taxCalc.ingresoAnual <= 0}
-                onClick={() => setStoryStep(2)}
+                onClick={() => {
+                  setStoryStep(2);
+                  trackCalculadoraISR(taxCalc.ingresoAnual / 12, taxResults.devolucion);
+                }}
               >
                 Ver mi impuesto →
               </button>
@@ -2659,11 +2679,24 @@ export default function Landing() {
 
                   <button
                     className="landing-btn landing-btn-gold"
-                    onClick={() => scrollToSection('contacto')}
+                    onClick={() => {
+                      trackWhatsAppClick('calculadora');
+                      const ingreso = Math.round(taxCalc.ingresoAnual / 12);
+                      const ahorro = Math.round(taxResults.devolucion);
+                      const msg = encodeURIComponent(
+                        `Hola, usé la calculadora de Finance S Cool y con un ingreso de $${ingreso.toLocaleString('es-MX')}/mes podría recuperar $${ahorro.toLocaleString('es-MX')} al año. Me interesa una asesoría.`
+                      );
+                      window.open(`https://wa.me/5215583352096?text=${msg}`, '_blank');
+                    }}
                     style={{ fontSize: '1rem', padding: '0.85rem 2.5rem', width: '100%', maxWidth: '400px' }}
                   >
                     Agendar mi consultoría
                   </button>
+                  {taxCalc.ingresoAnual / 12 >= 35000 && (
+                    <p style={{ fontSize: '0.85rem', color: '#D4AF37', marginTop: '0.75rem', textAlign: 'center', fontWeight: 500 }}>
+                      Con tu nivel de ingreso, podrías recuperar {formatMXN(taxResults.devolucion)} al año con la estrategia correcta.
+                    </p>
+                  )}
                   <button
                     className="story-recalc-btn"
                     onClick={() => { setStoryStep(1); setTaxCalc({ ...taxCalc, ingresoAnual: 0, ppr: 100000 }); }}
@@ -2811,6 +2844,14 @@ export default function Landing() {
       <section id="contacto" className="landing-section landing-section-light landing-section-padding" data-section="contacto" ref={(el) => (sectionRefs.current.contacto = el)}>
         <div className={`landing-contact-form-container ${visibleSections.contacto ? 'revealed' : ''}`}>
           <h2>Descubre si hoy puedes hacer más con tu dinero</h2>
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', gap: '8px',
+            background: 'rgba(212,175,55,0.1)', border: '1px solid rgba(212,175,55,0.3)',
+            borderRadius: '20px', padding: '6px 16px', marginBottom: '1rem', fontSize: '0.85rem', color: '#D4AF37'
+          }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#34D399', animation: 'pulse 2s infinite' }} />
+            {liveUsers} personas solicitando asesoría ahora
+          </div>
           <p className="form-subcopy">
             Déjanos tus datos y uno de nuestros consultores te ayuda a revisar si esta estrategia hace sentido para ti.
           </p>
@@ -2950,7 +2991,7 @@ export default function Landing() {
             <div className="landing-social-links">
               <a href="https://instagram.com" target="_blank" rel="noopener noreferrer" aria-label="Instagram"><Camera size={18} /></a>
               <a href="https://linkedin.com" target="_blank" rel="noopener noreferrer" aria-label="LinkedIn"><Linkedin size={18} /></a>
-              <a href="https://wa.me/5215551234567" target="_blank" rel="noopener noreferrer" aria-label="WhatsApp"><MessageCircle size={18} /></a>
+              <a href={getWhatsAppURL()} target="_blank" rel="noopener noreferrer" aria-label="WhatsApp" onClick={() => trackWhatsAppClick('footer')}><MessageCircle size={18} /></a>
             </div>
           </div>
         </div>
@@ -2965,9 +3006,10 @@ export default function Landing() {
       </button>
 
       <a
-        href="https://wa.me/5215551234567?text=Hola%20Finance%20SCool%2C%20quiero%20agendar%20una%20consulta"
+        href={getWhatsAppURL()}
         target="_blank" rel="noopener noreferrer"
         className="landing-whatsapp-button" aria-label="WhatsApp"
+        onClick={() => trackWhatsAppClick('sticky')}
       >
         <MessageCircle size={28} />
       </a>

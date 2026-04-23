@@ -164,6 +164,39 @@ CREATE INDEX IF NOT EXISTS notifications_user_id_idx ON notifications(user_id);
 CREATE INDEX IF NOT EXISTS notifications_is_read_idx ON notifications(is_read);
 CREATE INDEX IF NOT EXISTS notifications_created_at_idx ON notifications(created_at DESC);
 
+-- Google Calendar OAuth tokens
+CREATE TABLE IF NOT EXISTS google_calendar_tokens (
+  id BIGSERIAL PRIMARY KEY,
+  google_email TEXT UNIQUE NOT NULL,
+  access_token TEXT NOT NULL,
+  refresh_token TEXT,
+  expiry_date TIMESTAMP WITH TIME ZONE,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS google_calendar_tokens_email_idx ON google_calendar_tokens(google_email);
+
+-- Appointments for FSC (used by Google Calendar integration)
+CREATE TABLE IF NOT EXISTS fsc_appointments (
+  id BIGSERIAL PRIMARY KEY,
+  client_phone TEXT,
+  client_name TEXT,
+  client_email TEXT,
+  event_id TEXT UNIQUE,
+  meet_link TEXT,
+  date DATE,
+  time TEXT,
+  duration INTEGER DEFAULT 30,
+  reminder_morning_sent BOOLEAN DEFAULT FALSE,
+  reminder_1h_sent BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS fsc_appointments_phone_idx ON fsc_appointments(client_phone);
+CREATE INDEX IF NOT EXISTS fsc_appointments_date_idx ON fsc_appointments(date);
+CREATE INDEX IF NOT EXISTS fsc_appointments_event_id_idx ON fsc_appointments(event_id);
+
 -- Migration: ensure fsc_conversations has modo_humano column
 ALTER TABLE fsc_conversations ADD COLUMN IF NOT EXISTS modo_humano BOOLEAN DEFAULT FALSE;
 

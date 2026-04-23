@@ -538,28 +538,17 @@ router.post('/schedule-meeting', async (req, res) => {
     const mm = String(endDate.getMinutes()).padStart(2, '0');
     const endDateTime = `${parsedDate}T${hh}:${mm}:00`;
 
-    // Build description with client info + collected data
+    // Build description with client info (plain text, no HTML)
     const descLines = [
       clientName ? `Cliente: ${clientName}` : '',
       clientPhone ? `WhatsApp: https://wa.me/${clientPhone.replace(/\D/g, '')}` : '',
       clientPhone ? `Teléfono: ${clientPhone}` : '',
-      notes ? `Notas: ${notes}` : '',
-    ];
-
-    // Add collected lead data if available
-    const dataLines = [
-      declara_impuestos != null ? `Declara impuestos: ${declara_impuestos}` : '',
-      regimen ? `Régimen fiscal: ${regimen}` : '',
-      edad ? `Edad: ${edad}` : '',
+      clientEmail ? `Email: ${clientEmail}` : '',
+      '',
       ingreso ? `Ingreso mensual: ${ingreso}` : '',
-      situacion_laboral ? `Sit. laboral: ${situacion_laboral}` : '',
       objetivo ? `Objetivo: ${objetivo}` : '',
-      prioridad ? `Prioridad: ${prioridad}` : '',
+      notes ? `\nNotas: ${notes}` : '',
     ].filter(Boolean);
-
-    if (dataLines.length > 0) {
-      descLines.push('', '🏷️ Datos recopilados', ...dataLines);
-    }
 
     const event = {
       summary: `📞 Check-up Financiero: ${clientName || 'Lead'}`,

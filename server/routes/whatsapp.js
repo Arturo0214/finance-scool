@@ -698,6 +698,36 @@ router.get('/stats', async (req, res) => {
 const WA_PHONE_ID_FSC = '991785554028931';
 const WA_TOKEN_FSC = 'EAAXOU1ELZAK0BRPk2qu8TR5qx00Qe9Mi3wGJ7JT1AlZAOzXvl60LnIXFsjFBmuHSDZAIzxnTn7UyXn0ygFDvoNmdor4snZBsDmhhjrhDdYPInLyWMPQNT2dzylydcgZBLpcByNVldVsiZCifKfZCU2T0Uh2ncFrEV6ZB8dDngAmEJktKkTNjizi7AKByFMil2RqAeAZDZD';
 
+// Helper: build WhatsApp template message payload
+function buildTemplatePayload(phone, templateName, params = []) {
+  const components = params.length > 0 ? [{
+    type: 'body',
+    parameters: params.map(p => ({ type: 'text', text: String(p) }))
+  }] : [];
+
+  return {
+    messaging_product: 'whatsapp',
+    to: phone.replace(/\D/g, ''),
+    type: 'template',
+    template: {
+      name: templateName,
+      language: { code: 'en' },
+      components
+    }
+  };
+}
+
+// Helper: send WhatsApp message (text or template)
+async function sendWAMessage(phone, payload) {
+  const resp = await fetch(`https://graph.facebook.com/v22.0/${WA_PHONE_ID_FSC}/messages`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${WA_TOKEN_FSC}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await resp.json();
+  return { ok: resp.ok, messageId: data.messages?.[0]?.id, error: data.error?.message };
+}
+
 function buildFollowUpMessage(lead, hoursInactive) {
   const nombre = (lead.nombre_lead || '').split(' ')[0] || '';
   const saludo = nombre ? `Hola ${nombre}` : 'Hola';
@@ -938,21 +968,17 @@ router.post('/reminders', verifyToken, async (req, res) => {
       );
       if (alreadySent) continue;
 
-      // Send WhatsApp message
+      // Send WhatsApp template message
       try {
-        const waResp = await fetch(`https://graph.facebook.com/v22.0/${WA_PHONE_ID_FSC}/messages`, {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${WA_TOKEN_FSC}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            messaging_product: 'whatsapp',
-            to: phone.replace(/\D/g, ''),
-            type: 'text',
-            text: { body: message },
-          }),
-        });
+        const fechaStr = lead.fecha_cita;
+        const payload = reminderType === '24h'
+          ? buildTemplatePayload(phone, 'fsc_recordatorio_24h', [lead.nombre_lead || 'Hola', fechaStr, lead.hora_cita])
+          : reminderType === '1h'
+          ? buildTemplatePayload(phone, 'fsc_recordatorio_1h', [lead.nombre_lead || 'Hola'])
+          : buildTemplatePayload(phone, 'fsc_recordatorio_10min', [lead.nombre_lead || 'Hola']);
 
-        const waData = await waResp.json();
-        const success = waResp.ok && waData.messages?.[0]?.id;
+        const { ok, messageId, error: waError } = await sendWAMessage(phone, payload);
+        const success = ok && messageId;
 
         if (success) {
           history.push({
@@ -971,7 +997,7 @@ router.post('/reminders', verifyToken, async (req, res) => {
           results.push({ phone, nombre: lead.nombre_lead, reminderType, status: 'sent' });
           sent++;
         } else {
-          results.push({ phone, nombre: lead.nombre_lead, reminderType, status: 'failed', error: waData.error?.message || 'Unknown' });
+          results.push({ phone, nombre: lead.nombre_lead, reminderType, status: 'failed', error: waError || 'Unknown' });
         }
       } catch (sendErr) {
         results.push({ phone, nombre: lead.nombre_lead, reminderType, status: 'error', error: sendErr.message });
@@ -1028,19 +1054,9 @@ router.post('/no-show', verifyToken, async (req, res) => {
       } catch { history = []; }
 
       try {
-        const waResp = await fetch(`https://graph.facebook.com/v22.0/${WA_PHONE_ID_FSC}/messages`, {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${WA_TOKEN_FSC}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            messaging_product: 'whatsapp',
-            to: phone.replace(/\D/g, ''),
-            type: 'text',
-            text: { body: message },
-          }),
-        });
-
-        const waData = await waResp.json();
-        const success = waResp.ok && waData.messages?.[0]?.id;
+        const payload = buildTemplatePayload(phone, 'fsc_no_show', [lead.nombre_lead || 'Hola']);
+        const { ok, messageId, error: waError } = await sendWAMessage(phone, payload);
+        const success = ok && messageId;
 
         if (success) {
           history.push({
@@ -1059,7 +1075,7 @@ router.post('/no-show', verifyToken, async (req, res) => {
           results.push({ phone, nombre: lead.nombre_lead, status: 'sent' });
           sent++;
         } else {
-          results.push({ phone, nombre: lead.nombre_lead, status: 'failed', error: waData.error?.message || 'Unknown' });
+          results.push({ phone, nombre: lead.nombre_lead, status: 'failed', error: waError || 'Unknown' });
         }
       } catch (sendErr) {
         results.push({ phone, nombre: lead.nombre_lead, status: 'error', error: sendErr.message });
@@ -1132,19 +1148,12 @@ router.post('/post-cita', verifyToken, async (req, res) => {
       if (!nurtureTier) continue;
 
       try {
-        const waResp = await fetch(`https://graph.facebook.com/v22.0/${WA_PHONE_ID_FSC}/messages`, {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${WA_TOKEN_FSC}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            messaging_product: 'whatsapp',
-            to: phone.replace(/\D/g, ''),
-            type: 'text',
-            text: { body: message },
-          }),
-        });
+        const payload = nurtureTier === 1
+          ? buildTemplatePayload(phone, 'fsc_nurture_dia1', [lead.nombre_lead || 'Hola'])
+          : buildTemplatePayload(phone, 'fsc_nurture_segunda_cita', [lead.nombre_lead || 'Hola']);
 
-        const waData = await waResp.json();
-        const success = waResp.ok && waData.messages?.[0]?.id;
+        const { ok, messageId, error: waError } = await sendWAMessage(phone, payload);
+        const success = ok && messageId;
 
         if (success) {
           history.push({
@@ -1163,7 +1172,7 @@ router.post('/post-cita', verifyToken, async (req, res) => {
           results.push({ phone, nombre: lead.nombre_lead, nurtureTier, status: 'sent' });
           sent++;
         } else {
-          results.push({ phone, nombre: lead.nombre_lead, nurtureTier, status: 'failed', error: waData.error?.message || 'Unknown' });
+          results.push({ phone, nombre: lead.nombre_lead, nurtureTier, status: 'failed', error: waError || 'Unknown' });
         }
       } catch (sendErr) {
         results.push({ phone, nombre: lead.nombre_lead, nurtureTier, status: 'error', error: sendErr.message });
