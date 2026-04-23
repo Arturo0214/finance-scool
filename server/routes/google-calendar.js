@@ -146,7 +146,7 @@ router.get('/events', verifyToken, async (req, res) => {
       timeMax: timeMax || new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString(),
       singleEvents: true,
       orderBy: 'startTime',
-      maxResults: 100,
+      maxResults: 500,
     });
 
     const events = (response.data.items || []).map(e => ({
