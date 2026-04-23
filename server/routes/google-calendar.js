@@ -4,6 +4,25 @@ const { verifyToken } = require('../middleware/auth');
 const { oauth2Client, getAuthUrl, getCalendarClient } = require('../config/google-calendar');
 const { getDB } = require('../models/database');
 
+// Helper: persist refreshed tokens to Supabase
+const saveRefreshedTokens = async (newTokens) => {
+  try {
+    const db = getDB();
+    const update = { updated_at: new Date().toISOString() };
+    if (newTokens.access_token) update.access_token = newTokens.access_token;
+    if (newTokens.expiry_date) update.expiry_date = new Date(newTokens.expiry_date).toISOString();
+    await db.from('google_calendar_tokens').update(update).order('updated_at', { ascending: false }).limit(1);
+    console.log('✅ Google token persisted to DB');
+  } catch (e) { console.warn('⚠️ Failed to persist refreshed Google token:', e.message); }
+};
+
+// Helper: get calendar client with auto-persist
+const getCalendar = async () => {
+  const tokens = await getStoredTokens();
+  if (!tokens) return null;
+  return getCalendarClient(tokens, saveRefreshedTokens);
+};
+
 // ─── GET /api/google/auth-url ───
 // Returns the Google OAuth URL to start the connection flow
 router.get('/auth-url', verifyToken, (req, res) => {
@@ -115,10 +134,8 @@ async function getStoredTokens() {
 // Fetch events from Google Calendar
 router.get('/events', verifyToken, async (req, res) => {
   try {
-    const tokens = await getStoredTokens();
-    if (!tokens) return res.status(400).json({ error: 'Google Calendar no está conectado' });
-
-    const calendar = getCalendarClient(tokens);
+    const calendar = await getCalendar();
+    if (!calendar) return res.status(400).json({ error: 'Google Calendar no está conectado' });
     const { timeMin, timeMax } = req.query;
 
     const now = new Date();
@@ -156,10 +173,8 @@ router.get('/events', verifyToken, async (req, res) => {
 // Create an event in Google Calendar
 router.post('/events', verifyToken, async (req, res) => {
   try {
-    const tokens = await getStoredTokens();
-    if (!tokens) return res.status(400).json({ error: 'Google Calendar no está conectado' });
-
-    const calendar = getCalendarClient(tokens);
+    const calendar = await getCalendar();
+    if (!calendar) return res.status(400).json({ error: 'Google Calendar no está conectado' });
     const { title, description, start_date, end_date, time, duration, addMeet, attendeeEmail } = req.body;
 
     // Duración por defecto: 30 minutos
@@ -218,10 +233,8 @@ router.post('/events', verifyToken, async (req, res) => {
 // Update an event in Google Calendar
 router.put('/events/:eventId', verifyToken, async (req, res) => {
   try {
-    const tokens = await getStoredTokens();
-    if (!tokens) return res.status(400).json({ error: 'Google Calendar no está conectado' });
-
-    const calendar = getCalendarClient(tokens);
+    const calendar = await getCalendar();
+    if (!calendar) return res.status(400).json({ error: 'Google Calendar no está conectado' });
     const { title, description, start_date, end_date, time, addMeet } = req.body;
 
     const startDateTime = time ? `${start_date}T${time}:00` : start_date;
@@ -264,10 +277,8 @@ router.put('/events/:eventId', verifyToken, async (req, res) => {
 // Delete an event from Google Calendar
 router.delete('/events/:eventId', verifyToken, async (req, res) => {
   try {
-    const tokens = await getStoredTokens();
-    if (!tokens) return res.status(400).json({ error: 'Google Calendar no está conectado' });
-
-    const calendar = getCalendarClient(tokens);
+    const calendar = await getCalendar();
+    if (!calendar) return res.status(400).json({ error: 'Google Calendar no está conectado' });
     await calendar.events.delete({
       calendarId: 'primary',
       eventId: req.params.eventId,
@@ -468,10 +479,8 @@ function parseFlexibleTime(input) {
 
 router.post('/schedule-meeting', async (req, res) => {
   try {
-    const tokens = await getStoredTokens();
-    if (!tokens) return res.status(400).json({ error: 'Google Calendar no está conectado' });
-
-    const calendar = getCalendarClient(tokens);
+    const calendar = await getCalendar();
+    if (!calendar) return res.status(400).json({ error: 'Google Calendar no está conectado' });
     const {
       clientName, clientEmail, clientPhone, date, time, duration, notes,
       declara_impuestos, regimen, edad, ingreso, situacion_laboral, objetivo, prioridad,
