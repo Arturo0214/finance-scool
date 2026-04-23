@@ -11,8 +11,9 @@ const saveRefreshedTokens = async (newTokens) => {
     const update = { updated_at: new Date().toISOString() };
     if (newTokens.access_token) update.access_token = newTokens.access_token;
     if (newTokens.expiry_date) update.expiry_date = new Date(newTokens.expiry_date).toISOString();
-    await db.from('google_calendar_tokens').update(update).order('updated_at', { ascending: false }).limit(1);
-    console.log('✅ Google token persisted to DB');
+    const { error } = await db.from('google_calendar_tokens').update(update).gt('id', 0);
+    if (error) console.warn('⚠️ Token persist error:', error.message);
+    else console.log('✅ Google token persisted to DB, expiry:', update.expiry_date || 'unchanged');
   } catch (e) { console.warn('⚠️ Failed to persist refreshed Google token:', e.message); }
 };
 
