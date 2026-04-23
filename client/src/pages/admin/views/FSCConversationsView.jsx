@@ -27,8 +27,7 @@ const STATUS_COLORS = {
 };
 
 const FILTRO_STEPS = [
-  'Saludo', 'Regimen', 'Ingreso', 'Edad', 'Objetivo',
-  'Prioridad', 'Contacto', 'Cierre',
+  'Nombre', 'Ingreso', 'Objetivo', 'Email', 'Agendar',
 ];
 
 const PIPELINE_STAGES = [

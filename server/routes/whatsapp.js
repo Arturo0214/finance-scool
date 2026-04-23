@@ -703,17 +703,12 @@ function buildFollowUpMessage(lead, hoursInactive) {
   const saludo = nombre ? `Hola ${nombre}` : 'Hola';
   const filtro = lead.filtro_actual || 1;
 
-  // PRIORIDAD MÁXIMA: Filtro 8 — estaban a punto de agendar
-  if (filtro >= 8) {
-    return `${saludo}, soy Sofía de Finance S Cool 😊\n\nVi que estábamos a punto de agendar tu cita con nuestra asesora. ¿Quieres que la programemos ahora? Solo necesito tu email y listo.\n\nLa asesoría es sin costo y sin compromiso.`;
-  }
-
-  // Filtro 5-7 — ya avanzados, empujar a cita
+  // PRIORIDAD MÁXIMA: Filtro 5 — estaban a punto de agendar
   if (filtro >= 5) {
-    return `${saludo}, soy Sofía de Finance S Cool 👋\n\nYa tenemos casi toda tu información. Solo nos falta un par de datos para agendarte tu asesoría gratuita.\n\n¿Tienes 2 minutos para que terminemos? Te va a servir mucho.`;
+    return `${saludo}, soy Sofía de Finance S Cool 😊\n\nVi que estábamos a punto de agendar tu cita con nuestra asesora. ¿Quieres que la programemos ahora?\n\nLa asesoría es sin costo y sin compromiso.`;
   }
 
-  // Filtro 3-4 — a medio camino
+  // Filtro 3-4 — ya avanzados, empujar a cita
   if (filtro >= 3) {
     if (hoursInactive < 48) {
       return `${saludo}, soy Sofía de Finance S Cool 😊\n\nNos quedamos a medias en la plática. Me faltan un par de preguntas rápidas para poder orientarte mejor sobre tus deducciones fiscales.\n\n¿Continuamos?`;
@@ -837,9 +832,9 @@ router.post('/follow-up', verifyToken, async (req, res) => {
       total: leads.length,
       results,
       breakdown: {
-        hot: results.filter(r => r.filtro >= 8).length,
-        warm: results.filter(r => r.filtro >= 5 && r.filtro < 8).length,
-        cold: results.filter(r => r.filtro < 5).length,
+        hot: results.filter(r => r.filtro >= 5).length,
+        warm: results.filter(r => r.filtro >= 3 && r.filtro < 5).length,
+        cold: results.filter(r => r.filtro < 3).length,
       },
     });
   } catch (err) {
@@ -870,11 +865,316 @@ router.get('/follow-up/preview', verifyToken, async (req, res) => {
 
   res.json({
     total: preview.length,
-    hot: preview.filter(p => p.filtro >= 8).length,
-    warm: preview.filter(p => p.filtro >= 5 && p.filtro < 8).length,
-    cold: preview.filter(p => p.filtro < 5).length,
+    hot: preview.filter(p => p.filtro >= 5).length,
+    warm: preview.filter(p => p.filtro >= 3 && p.filtro < 5).length,
+    cold: preview.filter(p => p.filtro < 3).length,
     leads: preview,
   });
+});
+
+// ==================== APPOINTMENT REMINDERS ====================
+
+router.post('/reminders', verifyToken, async (req, res) => {
+  try {
+    const db = getDB();
+    const now = new Date();
+    const today = now.toISOString().slice(0, 10);
+    const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+    const { data: leads, error } = await db
+      .from('fsc_conversations')
+      .select('id, whatsapp_number, nombre_lead, fecha_cita, hora_cita, conversation_history, modo_humano')
+      .eq('lead_status', 'cita_agendada')
+      .in('fecha_cita', [today, tomorrow]);
+
+    if (error) throw new Error(error.message);
+    if (!leads || leads.length === 0) {
+      return res.json({ success: true, sent: 0, message: 'No hay citas próximas para recordar' });
+    }
+
+    const results = [];
+    let sent = 0;
+
+    for (const lead of leads) {
+      if (lead.modo_humano) continue;
+      const phone = lead.whatsapp_number;
+      if (!phone || !lead.fecha_cita || !lead.hora_cita) continue;
+
+      const nombre = (lead.nombre_lead || '').split(' ')[0] || 'ahí';
+
+      // Calculate hours until appointment
+      const [hh, mm] = lead.hora_cita.split(':').map(Number);
+      const appointmentTime = new Date(`${lead.fecha_cita}T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00`);
+      const hoursUntil = (appointmentTime.getTime() - now.getTime()) / (1000 * 60 * 60);
+
+      // Determine which reminder to send
+      let reminderType = null;
+      let message = null;
+
+      if (hoursUntil >= 23 && hoursUntil <= 25) {
+        reminderType = '24h';
+        message = `Hola ${nombre}, mañana es tu asesoría fiscal:\n\n📅 ${lead.fecha_cita}\n🕐 ${lead.hora_cita}\n\n¿Nos confirmas que asistirás?`;
+      } else if (hoursUntil >= 0.5 && hoursUntil <= 1.5) {
+        reminderType = '1h';
+        message = `⏰ En 1 hora es tu asesoría fiscal.\n\nTip: ten a la mano tu último recibo de nómina.\n¡Te esperamos!`;
+      } else if (hoursUntil >= 0 && hoursUntil <= 0.17) {
+        reminderType = '10min';
+        message = `🟢 ¡Ya estamos listos!\n\nTu asesora ya está conectada.\n📹 Entra por WhatsApp o espera el link de Meet.`;
+      }
+
+      if (!reminderType) continue;
+
+      // Parse conversation history
+      let history = [];
+      try {
+        history = typeof lead.conversation_history === 'string'
+          ? JSON.parse(lead.conversation_history)
+          : (lead.conversation_history || []);
+      } catch { history = []; }
+
+      // Check if this reminder was already sent
+      const alreadySent = history.some(
+        (entry) => entry.isReminder === true && entry.reminderType === reminderType
+      );
+      if (alreadySent) continue;
+
+      // Send WhatsApp message
+      try {
+        const waResp = await fetch(`https://graph.facebook.com/v22.0/${WA_PHONE_ID_FSC}/messages`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${WA_TOKEN_FSC}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messaging_product: 'whatsapp',
+            to: phone.replace(/\D/g, ''),
+            type: 'text',
+            text: { body: message },
+          }),
+        });
+
+        const waData = await waResp.json();
+        const success = waResp.ok && waData.messages?.[0]?.id;
+
+        if (success) {
+          history.push({
+            role: 'assistant',
+            content: message,
+            timestamp: new Date().toISOString(),
+            isReminder: true,
+            reminderType,
+          });
+
+          await db.from('fsc_conversations').update({
+            conversation_history: JSON.stringify(history),
+            updated_at: new Date().toISOString(),
+          }).eq('id', lead.id);
+
+          results.push({ phone, nombre: lead.nombre_lead, reminderType, status: 'sent' });
+          sent++;
+        } else {
+          results.push({ phone, nombre: lead.nombre_lead, reminderType, status: 'failed', error: waData.error?.message || 'Unknown' });
+        }
+      } catch (sendErr) {
+        results.push({ phone, nombre: lead.nombre_lead, reminderType, status: 'error', error: sendErr.message });
+      }
+    }
+
+    res.json({ success: true, sent, total: leads.length, results });
+  } catch (err) {
+    console.error('Reminders error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ==================== NO-SHOW HANDLER ====================
+
+router.post('/no-show', verifyToken, async (req, res) => {
+  try {
+    const db = getDB();
+    const now = new Date();
+
+    const { data: leads, error } = await db
+      .from('fsc_conversations')
+      .select('id, whatsapp_number, nombre_lead, fecha_cita, hora_cita, conversation_history, modo_humano')
+      .eq('lead_status', 'cita_agendada');
+
+    if (error) throw new Error(error.message);
+    if (!leads || leads.length === 0) {
+      return res.json({ success: true, sent: 0, message: 'No hay no-shows detectados' });
+    }
+
+    const results = [];
+    let sent = 0;
+
+    for (const lead of leads) {
+      if (lead.modo_humano) continue;
+      const phone = lead.whatsapp_number;
+      if (!phone || !lead.fecha_cita || !lead.hora_cita) continue;
+
+      const [hh, mm] = lead.hora_cita.split(':').map(Number);
+      const appointmentTime = new Date(`${lead.fecha_cita}T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00`);
+      const minutesSince = (now.getTime() - appointmentTime.getTime()) / (1000 * 60);
+
+      // Only flag as no-show if appointment was 15+ minutes ago
+      if (minutesSince < 15) continue;
+
+      const nombre = (lead.nombre_lead || '').split(' ')[0] || 'ahí';
+      const message = `Hola ${nombre}, no pudimos conectarnos hoy. No te preocupes, te puedo reagendar.\n\n¿Qué horario te funciona esta semana?`;
+
+      let history = [];
+      try {
+        history = typeof lead.conversation_history === 'string'
+          ? JSON.parse(lead.conversation_history)
+          : (lead.conversation_history || []);
+      } catch { history = []; }
+
+      try {
+        const waResp = await fetch(`https://graph.facebook.com/v22.0/${WA_PHONE_ID_FSC}/messages`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${WA_TOKEN_FSC}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messaging_product: 'whatsapp',
+            to: phone.replace(/\D/g, ''),
+            type: 'text',
+            text: { body: message },
+          }),
+        });
+
+        const waData = await waResp.json();
+        const success = waResp.ok && waData.messages?.[0]?.id;
+
+        if (success) {
+          history.push({
+            role: 'assistant',
+            content: message,
+            timestamp: new Date().toISOString(),
+            isNoShow: true,
+          });
+
+          await db.from('fsc_conversations').update({
+            conversation_history: JSON.stringify(history),
+            lead_status: 'no_show',
+            updated_at: new Date().toISOString(),
+          }).eq('id', lead.id);
+
+          results.push({ phone, nombre: lead.nombre_lead, status: 'sent' });
+          sent++;
+        } else {
+          results.push({ phone, nombre: lead.nombre_lead, status: 'failed', error: waData.error?.message || 'Unknown' });
+        }
+      } catch (sendErr) {
+        results.push({ phone, nombre: lead.nombre_lead, status: 'error', error: sendErr.message });
+      }
+    }
+
+    res.json({ success: true, sent, total: leads.length, results });
+  } catch (err) {
+    console.error('No-show error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ==================== POST-CITA NURTURE ====================
+
+router.post('/post-cita', verifyToken, async (req, res) => {
+  try {
+    const db = getDB();
+    const now = new Date();
+
+    const { data: leads, error } = await db
+      .from('fsc_conversations')
+      .select('id, whatsapp_number, nombre_lead, updated_at, conversation_history, modo_humano')
+      .eq('lead_status', 'cita_asistida');
+
+    if (error) throw new Error(error.message);
+    if (!leads || leads.length === 0) {
+      return res.json({ success: true, sent: 0, message: 'No hay leads post-cita para nurture' });
+    }
+
+    const results = [];
+    let sent = 0;
+
+    for (const lead of leads) {
+      if (lead.modo_humano) continue;
+      const phone = lead.whatsapp_number;
+      if (!phone) continue;
+
+      const nombre = (lead.nombre_lead || '').split(' ')[0] || 'ahí';
+      const daysSinceUpdate = (now.getTime() - new Date(lead.updated_at).getTime()) / (1000 * 60 * 60 * 24);
+
+      let history = [];
+      try {
+        history = typeof lead.conversation_history === 'string'
+          ? JSON.parse(lead.conversation_history)
+          : (lead.conversation_history || []);
+      } catch { history = []; }
+
+      // Determine which nurture tiers have already been sent
+      const sentTiers = new Set(
+        history
+          .filter((entry) => entry.isNurture === true)
+          .map((entry) => entry.nurtureTier)
+      );
+
+      let nurtureTier = null;
+      let message = null;
+
+      if (!sentTiers.has(1) && daysSinceUpdate >= 1 && daysSinceUpdate < 3) {
+        nurtureTier = 1;
+        message = `¡Gracias por tu tiempo, ${nombre}! ¿Tienes alguna duda sobre lo que platicamos?`;
+      } else if (!sentTiers.has(2) && daysSinceUpdate >= 3 && daysSinceUpdate < 7) {
+        nurtureTier = 2;
+        message = `Hola ${nombre}, te comparto un dato: profesionistas como tú logran ahorrar en promedio $45,000 al año con una estrategia fiscal bien armada. ¿Te gustaría que agendemos la segunda sesión para armar tu plan?`;
+      } else if (!sentTiers.has(3) && daysSinceUpdate >= 7) {
+        nurtureTier = 3;
+        message = `Hola ${nombre}, esta semana tenemos disponibilidad para tu sesión de plan fiscal personalizado. ¿Te agendo?`;
+      }
+
+      if (!nurtureTier) continue;
+
+      try {
+        const waResp = await fetch(`https://graph.facebook.com/v22.0/${WA_PHONE_ID_FSC}/messages`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${WA_TOKEN_FSC}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messaging_product: 'whatsapp',
+            to: phone.replace(/\D/g, ''),
+            type: 'text',
+            text: { body: message },
+          }),
+        });
+
+        const waData = await waResp.json();
+        const success = waResp.ok && waData.messages?.[0]?.id;
+
+        if (success) {
+          history.push({
+            role: 'assistant',
+            content: message,
+            timestamp: new Date().toISOString(),
+            isNurture: true,
+            nurtureTier,
+          });
+
+          await db.from('fsc_conversations').update({
+            conversation_history: JSON.stringify(history),
+            updated_at: new Date().toISOString(),
+          }).eq('id', lead.id);
+
+          results.push({ phone, nombre: lead.nombre_lead, nurtureTier, status: 'sent' });
+          sent++;
+        } else {
+          results.push({ phone, nombre: lead.nombre_lead, nurtureTier, status: 'failed', error: waData.error?.message || 'Unknown' });
+        }
+      } catch (sendErr) {
+        results.push({ phone, nombre: lead.nombre_lead, nurtureTier, status: 'error', error: sendErr.message });
+      }
+    }
+
+    res.json({ success: true, sent, total: leads.length, results });
+  } catch (err) {
+    console.error('Post-cita nurture error:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;
