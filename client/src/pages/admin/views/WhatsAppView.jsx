@@ -636,8 +636,9 @@ export default function WhatsAppView({ onOpenMenu }) {
                 { key: 'en_calificacion', label: '⏳ En calificación', bg: '#DBEAFE', color: '#1E40AF', match: l => l.estado === 'en_calificacion' },
                 { key: 'calificado',      label: '✅ Calificado para asesoría', bg: '#E0E7FF', color: '#3730A3', match: l => l.estado === 'calificado' },
                 { key: 'cita_agendada',   label: '📅 Cita agendada', bg: '#D1FAE5', color: '#065F46', match: l => l.estado === 'cita_agendada' },
+                { key: 'no_show',         label: '⚠️ No-show (reagendar)', bg: '#FEF3C7', color: '#92400E', match: l => l.estado === 'no_show' },
                 { key: 'seguimiento',     label: '🔄 Seguimiento / objeciones', bg: '#FCE7F3', color: '#9D174D', match: l => ['analisis_necesidades','propuesta','seguimiento','solicitud_completada'].includes(l.estado) },
-                { key: 'cerradas',        label: '🏁 Cerradas', bg: '#F3F4F6', color: '#6B7280', match: l => ['cerrada_ganada','cerrada_perdida','no_calificado','cerrado_no_calificado'].includes(l.estado) },
+                { key: 'cerradas',        label: '🏁 Cerradas', bg: '#F3F4F6', color: '#6B7280', match: l => ['cerrada_ganada','cerrada_perdida','no_calificado','cerrado_no_calificado','descartado'].includes(l.estado) },
               ];
               const assigned = new Set();
               const grouped = SECTIONS.map(sec => {
