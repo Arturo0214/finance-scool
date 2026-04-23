@@ -697,4 +697,22 @@ setInterval(sendAppointmentReminders, 30 * 60 * 1000);
 // Ejecutar al arrancar después de 10s
 setTimeout(sendAppointmentReminders, 10000);
 
+// Temporary: force token refresh and persist
+router.post('/force-refresh', async (req, res) => {
+  try {
+    const calendar = await getCalendar();
+    if (!calendar) return res.status(400).json({ error: 'No calendar' });
+    // Make a simple API call to trigger token refresh
+    const now = new Date();
+    const resp = await calendar.events.list({
+      calendarId: 'primary',
+      timeMin: now.toISOString(),
+      maxResults: 1,
+    });
+    res.json({ success: true, eventsFound: resp.data.items?.length || 0 });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
