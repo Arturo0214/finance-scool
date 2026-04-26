@@ -247,7 +247,7 @@ export default function WhatsAppView({ onOpenMenu }) {
 
   // Poll every 12s — only refresh page 1 to detect new messages
   useEffect(() => {
-    pollRef.current = setInterval(() => loadLeads(true), 30000);
+    pollRef.current = setInterval(() => loadLeads(true), 15000);
     return () => clearInterval(pollRef.current);
   }, [loadLeads]);
 
@@ -334,6 +334,10 @@ export default function WhatsAppView({ onOpenMenu }) {
         .wa-item.sel { background:#e8f5e9; border-left:3px solid #25d366; }
         .wa-item.human { border-left:3px solid #ff9800; }
         .wa-item.sel.human { border-left:3px solid #ff9800; background:#fff3e0; }
+        .wa-item.has-unread { background:#f0fdf4; }
+        .wa-item.has-unread .wa-name { font-weight:800; color:#000; }
+        .wa-item.has-unread .wa-prev-text { font-weight:600; color:#111; }
+        .wa-item.has-unread .wa-time { color:#25D366; font-weight:700; }
 
         .wa-av { position:relative; width:42px; height:42px; border-radius:50%; background:#dfe5e7; display:flex; align-items:center; justify-content:center; font-size:0.85rem; font-weight:700; flex-shrink:0; color:#fff; }
         .wa-av-badge { position:absolute; bottom:-2px; right:-2px; background:#ff9800; color:#fff; border-radius:50%; width:14px; height:14px; display:flex; align-items:center; justify-content:center; font-size:7px; font-weight:700; border:2px solid #fff; }
@@ -660,7 +664,7 @@ export default function WhatsAppView({ onOpenMenu }) {
                     return (
                       <div
                         key={lead.wa_id}
-                        className={`wa-item${sel ? ' sel' : ''}${lead.modo_humano ? ' human' : ''}`}
+                        className={`wa-item${sel ? ' sel' : ''}${lead.modo_humano ? ' human' : ''}${unr ? ' has-unread' : ''}`}
                         onClick={() => selectLead(lead)}
                       >
                         <div className="wa-av" style={{ background: avColor(lead.contact_name) }}>
