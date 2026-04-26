@@ -733,7 +733,7 @@ function buildFollowUpMessage(lead, hoursInactive) {
   const saludo = nombre ? `Hola ${nombre}` : 'Hola';
   const filtro = lead.filtro_actual || 1;
 
-  // PRIORIDAD MÁXIMA: Filtro 5 — estaban a punto de agendar
+  // PRIORIDAD MÁXIMA: Filtro 5-6 — estaban a punto de agendar
   if (filtro >= 5) {
     return `${saludo}, soy Sofía de Finance S Cool 😊\n\nVi que estábamos a punto de agendar tu cita con nuestra asesora. ¿Quieres que la programemos ahora?\n\nLa asesoría es sin costo y sin compromiso.`;
   }
