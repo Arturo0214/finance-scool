@@ -417,13 +417,18 @@ router.get('/leads', async (req, res) => {
     const fscIds = paginated.filter(l => l._source === 'fsc').map(l => l.id.replace('fsc_', ''));
     let fscPreviews = {};
     if (fscIds.length > 0) {
-      // Solo traer updated_at para saber que existen - el preview se construye en el upsert
       const { data: fscHist } = await db.from('fsc_conversations')
-        .select('id, updated_at')
+        .select('id, conversation_history')
         .in('id', fscIds);
-      // Preview vacío - se llena cuando el usuario abre el chat individual
       for (const f of (fscHist || [])) {
-        fscPreviews[f.id] = '';
+        try {
+          const hist = f.conversation_history || [];
+          if (hist.length > 0) {
+            const last = hist[hist.length - 1];
+            const text = (last.content || '').replace(/---FSC_META---[\s\S]*?---END_FSC_META---/g, '').trim().slice(0, 80);
+            fscPreviews[f.id] = last.role === 'assistant' ? 'Sofía: ' + text : text;
+          }
+        } catch {}
       }
     }
 
