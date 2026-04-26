@@ -357,7 +357,7 @@ router.get('/leads', async (req, res) => {
       .select('id, wa_id, contact_name, estado, origin, assigned_to, last_message_at, unread_count, blocked, modo_humano, created_at, last_message_preview');
     if (estado && estado !== 'todos') query = query.eq('estado', estado);
     if (assigned_to) query = query.eq('assigned_to', assigned_to);
-    if (search) query = query.or(`contact_name.ilike.%${search}%,wa_id.ilike.%${search}%,historial_chat.ilike.%${search}%`);
+    if (search) query = query.or(`contact_name.ilike.%${search}%,wa_id.ilike.%${search}%`);
     query = query.order('last_message_at', { ascending: false });
     const { data: waLeads, error: waError } = await query;
     // Si last_message_preview no existe como columna, hacer fallback sin historial
@@ -374,7 +374,7 @@ router.get('/leads', async (req, res) => {
     // 2. Get fsc_conversations (Sofía bot) — sin conversation_history para rendimiento
     let fscQuery = db.from('fsc_conversations')
       .select('id, whatsapp_number, nombre_lead, lead_status, filtro_actual, prioridad, modo_humano, created_at, updated_at');
-    if (search) fscQuery = fscQuery.or(`nombre_lead.ilike.%${search}%,whatsapp_number.ilike.%${search}%,conversation_history.ilike.%${search}%`);
+    if (search) fscQuery = fscQuery.or(`nombre_lead.ilike.%${search}%,whatsapp_number.ilike.%${search}%`);
     fscQuery = fscQuery.order('updated_at', { ascending: false });
     const { data: fscLeads } = await fscQuery;
 
@@ -417,18 +417,13 @@ router.get('/leads', async (req, res) => {
     const fscIds = paginated.filter(l => l._source === 'fsc').map(l => l.id.replace('fsc_', ''));
     let fscPreviews = {};
     if (fscIds.length > 0) {
+      // Solo traer updated_at para saber que existen - el preview se construye en el upsert
       const { data: fscHist } = await db.from('fsc_conversations')
-        .select('id, conversation_history')
+        .select('id, updated_at')
         .in('id', fscIds);
+      // Preview vacío - se llena cuando el usuario abre el chat individual
       for (const f of (fscHist || [])) {
-        try {
-          const hist = typeof f.conversation_history === 'string' ? JSON.parse(f.conversation_history) : (f.conversation_history || []);
-          if (hist.length > 0) {
-            const last = hist[hist.length - 1];
-            const text = (last.content || last.body || '').slice(0, 80);
-            fscPreviews[f.id] = last.role === 'assistant' ? 'Sofía: ' + text : text;
-          }
-        } catch {}
+        fscPreviews[f.id] = '';
       }
     }
 

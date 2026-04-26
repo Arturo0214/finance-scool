@@ -113,7 +113,7 @@ router.get('/', async (req, res) => {
     let query = db
       .from('fsc_conversations')
       .select(
-        'id, whatsapp_number, nombre_lead, lead_status, filtro_actual, prioridad, regimen_fiscal, rango_ingreso, objetivo, fecha_cita, hora_cita, created_at, updated_at, conversation_history'
+        'id, whatsapp_number, nombre_lead, lead_status, filtro_actual, prioridad, regimen_fiscal, rango_ingreso, objetivo, fecha_cita, hora_cita, created_at, updated_at'
       );
 
     if (status) query = query.eq('lead_status', status);
@@ -125,18 +125,7 @@ router.get('/', async (req, res) => {
     if (error) throw error;
 
     const conversations = (data || []).map(row => {
-      let lastMessagePreview = '';
-      try {
-        const history = row.conversation_history || [];
-        if (history.length > 0) {
-          const last = history[history.length - 1];
-          const content = last.content || '';
-          lastMessagePreview = content.slice(0, 80);
-        }
-      } catch { /* ignore parse errors */ }
-
-      const { conversation_history, ...rest } = row;
-      return { ...rest, lastMessagePreview };
+      return { ...row, lastMessagePreview: '' };
     });
 
     res.json({ conversations });

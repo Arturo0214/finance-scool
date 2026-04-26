@@ -247,7 +247,7 @@ export default function WhatsAppView({ onOpenMenu }) {
 
   // Poll every 12s — only refresh page 1 to detect new messages
   useEffect(() => {
-    pollRef.current = setInterval(() => loadLeads(true), 12000);
+    pollRef.current = setInterval(() => loadLeads(true), 30000);
     return () => clearInterval(pollRef.current);
   }, [loadLeads]);
 
