@@ -6,8 +6,8 @@ import { api } from '../../../utils/api';
 const FUNNEL_STAGES = [
   { filtro: 1, name: 'Saludo', desc: 'Respondió al botón inicial', color: '#94a3b8', icon: MessageCircle },
   { filtro: 2, name: 'Nombre', desc: 'Dio su nombre', color: '#60a5fa', icon: Users },
-  { filtro: 3, name: 'Ingreso mensual', desc: 'Indicó rango de ingreso', color: '#f59e0b', icon: Percent },
-  { filtro: 4, name: 'Objetivo', desc: 'Reducir impuestos, retiro o ambos', color: '#818cf8', icon: Target },
+  { filtro: 3, name: 'Objetivo', desc: 'Reducir impuestos, retiro o ambos', color: '#818cf8', icon: Target },
+  { filtro: 4, name: 'Ingreso mensual', desc: 'Indicó rango de ingreso', color: '#f59e0b', icon: Percent },
   { filtro: 5, name: 'Email', desc: 'Compartió correo electrónico', color: '#a78bfa', icon: Mail },
   { filtro: 6, name: 'Agendar cita', desc: 'Seleccionando horario', color: '#10b981', icon: Calendar },
 ];
