@@ -416,6 +416,7 @@ router.get('/leads', async (req, res) => {
     // 8. Build previews — para leads FSC, traer conversation_history solo de los paginados
     const fscIds = paginated.filter(l => l._source === 'fsc').map(l => l.id.replace('fsc_', ''));
     let fscPreviews = {};
+    let fscUnread = {};
     if (fscIds.length > 0) {
       const { data: fscHist } = await db.from('fsc_conversations')
         .select('id, conversation_history')
@@ -427,6 +428,14 @@ router.get('/leads', async (req, res) => {
             const last = hist[hist.length - 1];
             const text = (last.content || '').replace(/---FSC_META---[\s\S]*?---END_FSC_META---/g, '').trim().slice(0, 80);
             fscPreviews[f.id] = last.role === 'assistant' ? 'Sofía: ' + text : text;
+
+            // Count unread: user messages after last assistant message
+            let unread = 0;
+            for (let i = hist.length - 1; i >= 0; i--) {
+              if (hist[i].role === 'user') unread++;
+              else break;
+            }
+            fscUnread[f.id] = unread;
           }
         } catch {}
       }
@@ -435,11 +444,13 @@ router.get('/leads', async (req, res) => {
     const leadsWithPreview = paginated.map(l => {
       const { historial_chat, last_message_preview, _source, ...rest } = l;
       let preview = last_message_preview || '';
-      if (!preview && _source === 'fsc') {
+      let unread = l.unread_count || 0;
+      if (_source === 'fsc') {
         const fscId = l.id.replace('fsc_', '');
-        preview = fscPreviews[fscId] || '';
+        if (!preview) preview = fscPreviews[fscId] || '';
+        unread = fscUnread[fscId] || 0;
       }
-      return { ...rest, lastMessage: preview, filtro_actual: l.filtro_actual || 0 };
+      return { ...rest, lastMessage: preview, unread_count: unread, filtro_actual: l.filtro_actual || 0 };
     });
 
     res.json({ leads: leadsWithPreview, total: filtered.length, page: parseInt(page), limit: parseInt(limit) });
