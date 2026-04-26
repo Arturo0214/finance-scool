@@ -161,6 +161,9 @@ export default function WhatsAppView({ onOpenMenu }) {
   const [waStats, setWaStats]           = useState(null);
   const [windowStatus, setWindowStatus] = useState(null);
   const [showTemplates, setShowTemplates] = useState(false);
+  const [showTplPanel, setShowTplPanel]   = useState(false);
+  const [tplSending, setTplSending]       = useState(null);
+  const [tplResult, setTplResult]         = useState(null);
   const [togglingHuman, setTogglingHuman] = useState(false);
   const [togglingBlock, setTogglingBlock] = useState(false);
 
@@ -276,6 +279,32 @@ export default function WhatsAppView({ onOpenMenu }) {
 
   const handleSend = async () => { if (!messageText.trim() || !selectedLead || sending) return; setSending(true); try { const r = await api.sendWhatsAppMessage(selectedLead.wa_id, messageText); setMessageText(''); const f = await api.getWhatsAppLead(selectedLead.wa_id); setChatData(f); if (r?.queued) alert('Ventana expirada — mensaje en cola. Envía una plantilla.'); } catch (e) { alert('Error: ' + (e.message || '')); } finally { setSending(false); } };
   const handleTemplate = async (name, lang) => { if (!selectedLead) return; try { await api.sendWhatsAppTemplate(selectedLead.wa_id, name, lang); setChatData(await api.getWhatsAppLead(selectedLead.wa_id)); setWindowStatus(await api.getWhatsAppWindowStatus(selectedLead.wa_id).catch(() => null)); } catch (e) { alert('Error: ' + (e.message || '')); } };
+
+  const TEMPLATES = [
+    { name: 'followup_lead', label: 'Seguimiento', desc: 'Re-engancha leads inactivos', language: 'es_MX', hasParam: true, paramField: 'nombre' },
+  ];
+
+  const handleBulkTemplate = async (tpl, targetFilter) => {
+    if (!window.confirm(`¿Enviar plantilla "${tpl.label}" a todos los leads ${targetFilter.label}? Esto no se puede deshacer.`)) return;
+    setTplSending(tpl.name);
+    setTplResult(null);
+    try {
+      const targetLeads = leads.filter(targetFilter.fn);
+      let sent = 0, failed = 0;
+      for (const lead of targetLeads) {
+        try {
+          const param = tpl.hasParam ? (lead.contact_name || 'Hola') : undefined;
+          await api.sendWhatsAppTemplate(lead.wa_id, tpl.name, tpl.language, param ? [{ type: 'body', parameters: [{ type: 'text', text: param }] }] : undefined);
+          sent++;
+        } catch { failed++; }
+      }
+      setTplResult({ sent, failed, total: targetLeads.length });
+      loadLeads(false);
+    } catch (e) {
+      setTplResult({ error: e.message });
+    }
+    setTplSending(null);
+  };
   const handleEstadoChange = async (waId, estado) => { try { await api.updateWhatsAppEstado(waId, estado); if (chatData?.wa_id === waId) setChatData(p => ({ ...p, estado })); setLeads(p => p.map(l => l.wa_id === waId ? { ...l, estado } : l)); } catch {} };
   const handleClaim = async (waId) => { try { const r = await api.claimWhatsAppLead(waId); if (chatData?.wa_id === waId) setChatData(p => ({ ...p, assigned_to: r.assigned_to })); loadLeads(false); } catch {} };
   const handleToggleHuman = async () => { if (!chatData || togglingHuman) return; setTogglingHuman(true); try { const r = await api.toggleWhatsAppModoHumano(chatData.wa_id); setChatData(p => ({ ...p, modo_humano: r.modo_humano })); setLeads(p => p.map(l => l.wa_id === chatData.wa_id ? { ...l, modo_humano: r.modo_humano } : l)); } catch {} setTogglingHuman(false); };
@@ -605,6 +634,103 @@ export default function WhatsAppView({ onOpenMenu }) {
               </select>
             ) : (
               <select className="wa-fsel" disabled><option>Agente: Todos</option></select>
+            )}
+          </div>
+
+          {/* Sección de plantillas */}
+          <div style={{ borderBottom: '1px solid #e5e7eb' }}>
+            <button
+              onClick={() => setShowTplPanel(p => !p)}
+              style={{
+                width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '8px 12px', background: showTplPanel ? '#f0fdf4' : '#f9fafb',
+                border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700, color: '#065F46',
+                transition: 'background .15s'
+              }}
+            >
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <FileText size={14} />
+                Plantillas
+              </span>
+              <span style={{ fontSize: 10, color: '#94a3b8' }}>{showTplPanel ? '▲' : '▼'}</span>
+            </button>
+            {showTplPanel && (
+              <div style={{ padding: '8px 12px', background: '#fafffe', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {TEMPLATES.map(tpl => {
+                  const targets = [
+                    { key: 'sin_respuesta', label: 'sin respuesta (>24h)', fn: l => {
+                      const h = (Date.now() - new Date(l.last_message_at || l.updated_at || 0).getTime()) / 3600000;
+                      return h > 24 && !['cita_agendada', 'cita_asistida'].includes(l.estado);
+                    }},
+                    { key: 'en_calificacion', label: 'en calificación', fn: l => l.estado === 'en_calificacion' },
+                    { key: 'no_show', label: 'no-show', fn: l => l.estado === 'no_show' },
+                    { key: 'visible', label: 'visibles en lista', fn: () => true },
+                  ];
+                  return (
+                    <div key={tpl.name} style={{ background: '#fff', borderRadius: 8, border: '1px solid #e2e8f0', padding: '10px 12px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>{tpl.label}</div>
+                          <div style={{ fontSize: 11, color: '#64748b' }}>{tpl.desc}</div>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <div style={{ fontSize: 10, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.5 }}>Enviar a:</div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                          {targets.map(t => {
+                            const count = leads.filter(t.fn).length;
+                            if (count === 0) return null;
+                            return (
+                              <button
+                                key={t.key}
+                                disabled={tplSending === tpl.name}
+                                onClick={() => handleBulkTemplate(tpl, t)}
+                                style={{
+                                  background: tplSending === tpl.name ? '#94a3b8' : '#25D366',
+                                  color: '#fff', border: 'none', borderRadius: 6,
+                                  padding: '4px 10px', fontSize: 11, fontWeight: 600,
+                                  cursor: tplSending ? 'wait' : 'pointer',
+                                  display: 'flex', alignItems: 'center', gap: 4
+                                }}
+                              >
+                                {t.label} ({count})
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      {tplSending === tpl.name && (
+                        <div style={{ marginTop: 6, fontSize: 11, color: '#64748b', display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <div className="wa-spin" style={{ width: 14, height: 14 }} /> Enviando...
+                        </div>
+                      )}
+                      {tplResult && !tplSending && (
+                        <div style={{ marginTop: 6, fontSize: 11, padding: '4px 8px', borderRadius: 6, background: tplResult.error ? '#fef2f2' : '#f0fdf4', color: tplResult.error ? '#ef4444' : '#065F46' }}>
+                          {tplResult.error ? `Error: ${tplResult.error}` : `Enviados: ${tplResult.sent}/${tplResult.total}${tplResult.failed > 0 ? ` (${tplResult.failed} fallidos)` : ''}`}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {/* Enviar a lead individual */}
+                {selectedLead && (
+                  <div style={{ background: '#eff6ff', borderRadius: 8, border: '1px solid #bfdbfe', padding: '8px 12px' }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: '#1e40af', marginBottom: 4 }}>Enviar a: {selectedLead.contact_name || selectedLead.wa_id}</div>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      {TEMPLATES.map(tpl => (
+                        <button
+                          key={tpl.name}
+                          onClick={() => handleTemplate(tpl.name, tpl.language)}
+                          style={{ background: '#3B82F6', color: '#fff', border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+                        >
+                          {tpl.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
           </div>
 
