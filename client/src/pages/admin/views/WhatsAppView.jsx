@@ -584,13 +584,11 @@ export default function WhatsAppView({ onOpenMenu }) {
             <select className="wa-fsel" value={filterFiltro} onChange={e => setFilterFiltro(e.target.value)}>
               <option value="todos">Embudo: Todos</option>
               <option value="1">Paso 1 — Saludo</option>
-              <option value="2">Paso 2 — Impuestos</option>
-              <option value="3">Paso 3 — Régimen</option>
-              <option value="4">Paso 4 — Edad</option>
-              <option value="5">Paso 5 — Ingreso</option>
-              <option value="6">Paso 6 — Laboral</option>
-              <option value="7">Paso 7 — Objetivo</option>
-              <option value="8">Paso 8 — Agendar</option>
+              <option value="2">Paso 2 — Nombre</option>
+              <option value="3">Paso 3 — Objetivo</option>
+              <option value="4">Paso 4 — Ingreso</option>
+              <option value="5">Paso 5 — Email</option>
+              <option value="6">Paso 6 — Agendar</option>
             </select>
             <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
               <input type="date" className="wa-fsel" value={filterDate} onChange={e => setFilterDate(e.target.value)} style={{ fontSize: 11, padding: '4px 6px' }} />

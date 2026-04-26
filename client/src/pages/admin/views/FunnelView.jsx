@@ -230,8 +230,8 @@ export default function FunnelView() {
                         <td style={{ padding: '6px 12px', textAlign: 'center' }}>
                           <span style={{
                             padding: '2px 8px', borderRadius: 10, fontSize: 12, fontWeight: 600,
-                            background: l.filtro >= 8 ? '#fef2f2' : l.filtro >= 5 ? '#fef9c3' : '#f1f5f9',
-                            color: l.filtro >= 8 ? '#ef4444' : l.filtro >= 5 ? '#ca8a04' : '#64748b',
+                            background: l.filtro >= 6 ? '#fef2f2' : l.filtro >= 4 ? '#fef9c3' : '#f1f5f9',
+                            color: l.filtro >= 6 ? '#ef4444' : l.filtro >= 4 ? '#ca8a04' : '#64748b',
                           }}>{l.filtro}</span>
                         </td>
                         <td style={{ padding: '6px 12px', textAlign: 'center', color: '#94a3b8' }}>{l.hoursInactive}h</td>
@@ -262,10 +262,10 @@ export default function FunnelView() {
       <div className="section">
         <h2 className="section-title">Insights</h2>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {(filtroCounts[8] || 0) > 0 && (
+          {(filtroCounts[6] || 0) > 0 && (
             <div className="info-box" style={{ background: '#fef2f2', borderColor: '#ef444440', color: '#ef4444' }}>
               <Zap size={16} />
-              <p><strong>{filtroCounts[8]} leads están en el paso 8</strong> — a punto de agendar cita. Un follow-up puede convertirlos inmediatamente.</p>
+              <p><strong>{filtroCounts[6]} leads están en el paso 6</strong> — a punto de agendar cita. Un follow-up puede convertirlos inmediatamente.</p>
             </div>
           )}
           {(filtroCounts[1] || 0) > 50 && (
@@ -300,12 +300,12 @@ export default function FunnelView() {
             <div style={{ padding: '10px 20px', background: '#fffbeb', borderBottom: '1px solid #fef3c7', fontSize: 13, color: '#92400e', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
               <Zap size={16} style={{ flexShrink: 0, marginTop: 2 }} />
               <span>{
-                stageModal.filtro === 1 ? 'Estos leads solo respondieron al saludo. Un follow-up rápido tipo "¿Tienes un minuto?" puede reactivarlos.' :
-                stageModal.filtro === 2 ? 'Ya declararon impuestos o no. Los que SÍ declaran son más valiosos — priorízalos.' :
-                stageModal.filtro === 3 ? 'Ya indicaron su régimen. Están comprometidos — un mensaje personalizado por régimen aumenta conversión.' :
-                stageModal.filtro <= 5 ? 'Estos leads ya dieron datos personales. Están interesados — un follow-up con beneficio concreto los mueve.' :
-                stageModal.filtro <= 7 ? 'Leads avanzados con objetivo claro. Están a pasos de agendar — ofréceles horario directo.' :
-                'A punto de agendar. Solo les falta email o confirmación. Un mensaje directo los convierte YA.'
+                stageModal.filtro === 1 ? 'Estos leads solo respondieron al saludo. Un follow-up rápido puede reactivarlos.' :
+                stageModal.filtro === 2 ? 'Ya dieron su nombre. Están enganchados — un mensaje con beneficio concreto los mueve al objetivo.' :
+                stageModal.filtro === 3 ? 'Ya indicaron su objetivo. Están comprometidos — pregúntales por ingreso para avanzar.' :
+                stageModal.filtro === 4 ? 'Ya dieron ingreso. Están calificados — pídeles email o agenda directo.' :
+                stageModal.filtro === 5 ? 'Ya dieron email. Solo falta agendar — ofréceles horario directo.' :
+                'En proceso de agendar. Un mensaje directo los convierte YA.'
               }</span>
             </div>
 
