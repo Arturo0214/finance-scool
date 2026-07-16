@@ -115,28 +115,186 @@ const AVATAR_COLORS = ['#25D366','#0088E0','#7C3AED','#F59E0B','#EF4444','#10B98
 const avColor = (name) => AVATAR_COLORS[(name || '?').charCodeAt(0) % AVATAR_COLORS.length];
 
 /* ════════════════════════════════
+   Catálogo completo de plantillas autorizadas en Meta
+   ════════════════════════════════ */
+const TEMPLATES = [
+  // ── Contacto inicial ──
+  { name: 'saludo_inicial', label: 'Saludo inicial', category: 'contacto', language: 'es',
+    body: 'Hola, te contactamos desde Finance S Cool. ¿En qué podemos ayudarte?', params: [] },
+  { name: 'followup_lead', label: 'Seguimiento de interés', category: 'contacto', language: 'es',
+    body: 'Hola, notamos interés en nuestro Plan Personal de Retiro. ¿Tienes alguna pregunta?', params: [] },
+  { name: 'appointment', label: 'Agendar cita', category: 'contacto', language: 'es',
+    body: '¡Hola! Queremos agendar una llamada. ¿Cuándo tienes disponibilidad?', params: [] },
+
+  // ── Reengagement ──
+  { name: 'fsc_reengagement', label: 'Re-engagement', category: 'reengagement', language: 'en',
+    body: 'Hola {{1}}, soy Sofía de Finance S Cool.\n\nHace unos días platicamos sobre como optimizar tus impuestos y se nos quedó pendiente.\n\nEsta semana tenemos espacios para asesorías gratuitas de 30 minutos. Responde a este mensaje si te interesa agendar la tuya.',
+    params: [{ key: 'nombre', label: 'Nombre del lead', placeholder: 'Juan' }] },
+  { name: 'fsc_nurture_segunda_citafsc_reengagement', label: 'Nurture — segunda cita', category: 'reengagement', language: 'en',
+    body: 'Hola {{1}}, soy Sofía de Finance S Cool.\n\nHace unos días platicamos sobre como optimizar tus impuestos y se nos quedó pendiente.\n\nEsta semana tenemos espacios para asesorías gratuitas de 30 minutos. Responde a este mensaje si te interesa agendar la tuya.',
+    params: [{ key: 'nombre', label: 'Nombre del lead', placeholder: 'Juan' }] },
+
+  // ── Post-cita (nurture) ──
+  { name: 'fsc_nurture_dia1', label: 'Nurture — día 1 post-cita', category: 'nurture', language: 'en',
+    body: 'Gracias por tu tiempo, {{1}}. Fue un gusto platicar contigo sobre tu situación fiscal.\n\nSi te quedó alguna duda sobre lo que comentamos, puedes escribirme aquí.\n\nTu asesora queda pendiente de ti.\n\n– Equipo Finance S Cool',
+    params: [{ key: 'nombre', label: 'Nombre del lead', placeholder: 'Juan' }] },
+
+  // ── Recordatorios de cita ──
+  { name: 'fsc_recordatorio_24h', label: 'Recordatorio — 24 horas', category: 'recordatorio', language: 'en',
+    body: 'Hola {{1}}, te recordamos que tu asesoría está programada para el {{2}} a las {{3}}.\n\nTe esperamos.',
+    params: [
+      { key: 'nombre', label: 'Nombre', placeholder: 'Juan' },
+      { key: 'fecha', label: 'Fecha de la cita', placeholder: '2026-04-28' },
+      { key: 'hora', label: 'Hora de la cita', placeholder: '10:00 AM' },
+    ] },
+  { name: 'fsc_recordatorio_1h', label: 'Recordatorio — 1 hora', category: 'recordatorio', language: 'en',
+    body: 'Hola {{1}}, en 1 hora es tu consulta con Finance S Cool.\n\nPrepárate con tus dudas, te esperamos.',
+    params: [{ key: 'nombre', label: 'Nombre', placeholder: 'Juan' }] },
+  { name: 'fsc_recordatorio_10min', label: 'Recordatorio — 10 minutos', category: 'recordatorio', language: 'en',
+    body: 'Hola {{1}}, ya estamos listos para tu asesoría. Tu consultor está conectado.',
+    params: [{ key: 'nombre', label: 'Nombre', placeholder: 'Juan' }] },
+
+  // ── No-show ──
+  { name: 'fsc_no_show', label: 'No-show (reagendar)', category: 'noshow', language: 'en',
+    body: 'Hola {{1}}, vimos que no pudimos conectarnos hoy. No te preocupes, te puedo reagendar.\n\n¿Qué horario te funciona esta semana?',
+    params: [{ key: 'nombre', label: 'Nombre', placeholder: 'Juan' }] },
+];
+
+const CATEGORY_META = {
+  contacto:     { label: '📩 Contacto inicial', color: '#3B82F6' },
+  reengagement: { label: '🔄 Re-engagement',    color: '#F59E0B' },
+  nurture:      { label: '🌱 Post-cita',        color: '#10B981' },
+  recordatorio: { label: '⏰ Recordatorios',     color: '#8B5CF6' },
+  noshow:       { label: '⚠️ No-show',           color: '#EF4444' },
+};
+
+/* ════════════════════════════════
    Modal de plantillas
    ════════════════════════════════ */
-function TemplatesModal({ onClose, onSend }) {
-  const T = [
-    { name: 'hello_world',   label: 'Saludo Inicial',  body: 'Hola, te contactamos desde Finance SCool. ¿En qué podemos ayudarte?', language: 'es' },
-    { name: 'followup_lead', label: 'Seguimiento',     body: 'Hola, notamos interés en nuestro Plan Personal de Retiro. ¿Tienes alguna pregunta?', language: 'es' },
-    { name: 'appointment',   label: 'Agendar Cita',    body: '¡Hola! Queremos agendar una llamada. ¿Cuándo tienes disponibilidad?', language: 'es' },
-  ];
+function TemplatesModal({ onClose, onSend, leadName }) {
+  const [selectedTpl, setSelectedTpl] = useState(null);
+  const [paramValues, setParamValues] = useState({});
+  const [filterCat, setFilterCat] = useState('all');
+  const [sending, setSending] = useState(false);
+
+  const handleSelect = (tpl) => {
+    setSelectedTpl(tpl);
+    const defaults = {};
+    tpl.params.forEach(p => {
+      defaults[p.key] = p.key === 'nombre' ? (leadName || '') : '';
+    });
+    setParamValues(defaults);
+  };
+
+  const handleSend = async () => {
+    if (!selectedTpl) return;
+    const missing = selectedTpl.params.filter(p => !paramValues[p.key]?.trim());
+    if (missing.length > 0) { alert(`Completa: ${missing.map(p => p.label).join(', ')}`); return; }
+    setSending(true);
+    const components = selectedTpl.params.length > 0 ? [{
+      type: 'body',
+      parameters: selectedTpl.params.map(p => ({ type: 'text', text: paramValues[p.key].trim() }))
+    }] : undefined;
+    await onSend(selectedTpl.name, selectedTpl.language, components);
+    setSending(false);
+    onClose();
+  };
+
+  const preview = selectedTpl ? selectedTpl.params.reduce((text, p, i) =>
+    text.replace(`{{${i + 1}}}`, paramValues[p.key] || `[${p.label}]`), selectedTpl.body) : '';
+
+  const filtered = filterCat === 'all' ? TEMPLATES : TEMPLATES.filter(t => t.category === filterCat);
+  const grouped = filtered.reduce((acc, t) => { (acc[t.category] = acc[t.category] || []).push(t); return acc; }, {});
+
   return (
-    <div style={{ position:'fixed', inset:0, background:'rgba(15,23,42,.5)', backdropFilter:'blur(4px)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:2000 }} onClick={onClose}>
-      <div style={{ background:'#fff', borderRadius:12, padding:20, width:440, maxWidth:'94vw', boxShadow:'0 20px 40px rgba(0,0,0,.15)' }} onClick={e => e.stopPropagation()}>
-        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14 }}>
-          <h2 style={{ margin:0, fontSize:16, fontWeight:700, color:'#0f172a' }}>Plantillas de WhatsApp</h2>
+    <div style={{ position:'fixed', inset:0, background:'rgba(15,23,42,.55)', backdropFilter:'blur(4px)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:2000 }} onClick={onClose}>
+      <div style={{ background:'#fff', borderRadius:14, width:580, maxWidth:'96vw', maxHeight:'90vh', display:'flex', flexDirection:'column', boxShadow:'0 20px 50px rgba(0,0,0,.2)' }} onClick={e => e.stopPropagation()}>
+
+        {/* Header */}
+        <div style={{ padding:'16px 20px 12px', borderBottom:'1px solid #e2e8f0', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+          <div>
+            <h2 style={{ margin:0, fontSize:16, fontWeight:700, color:'#0f172a' }}>Plantillas de WhatsApp</h2>
+            <p style={{ margin:'2px 0 0', fontSize:11.5, color:'#64748b' }}>10 plantillas autorizadas en Meta Business</p>
+          </div>
           <button onClick={onClose} style={{ background:'none', border:'none', cursor:'pointer', color:'#64748b', padding:4, display:'flex' }}><X size={18} /></button>
         </div>
-        <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-          {T.map(t => (
-            <div key={t.name} style={{ background:'#f8fafc', borderRadius:8, padding:'10px 12px', border:'1px solid #e2e8f0', display:'flex', justifyContent:'space-between', alignItems:'center', gap:12 }}>
-              <div><div style={{ fontSize:13, fontWeight:600, color:'#0f172a', marginBottom:2 }}>{t.label}</div><div style={{ fontSize:11.5, color:'#64748b', lineHeight:1.4 }}>{t.body}</div></div>
-              <button onClick={() => { onSend(t.name, t.language); onClose(); }} style={{ background:'#25D366', color:'#fff', border:'none', borderRadius:7, padding:'6px 13px', fontSize:12, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap', flexShrink:0 }}>Enviar</button>
-            </div>
+
+        {/* Filtros de categoría */}
+        <div style={{ padding:'8px 20px', display:'flex', gap:6, flexWrap:'wrap', borderBottom:'1px solid #f1f5f9' }}>
+          <button onClick={() => setFilterCat('all')} style={{ padding:'4px 10px', borderRadius:14, border:'1px solid', fontSize:11, fontWeight:600, cursor:'pointer', background: filterCat==='all' ? '#0f172a' : '#fff', color: filterCat==='all' ? '#fff' : '#64748b', borderColor: filterCat==='all' ? '#0f172a' : '#e2e8f0' }}>Todas</button>
+          {Object.entries(CATEGORY_META).map(([k, v]) => (
+            <button key={k} onClick={() => setFilterCat(k)} style={{ padding:'4px 10px', borderRadius:14, border:'1px solid', fontSize:11, fontWeight:600, cursor:'pointer', background: filterCat===k ? v.color : '#fff', color: filterCat===k ? '#fff' : '#64748b', borderColor: filterCat===k ? v.color : '#e2e8f0' }}>{v.label}</button>
           ))}
+        </div>
+
+        <div style={{ display:'flex', flex:1, overflow:'hidden', minHeight:0 }}>
+
+          {/* Lista de plantillas */}
+          <div style={{ width: selectedTpl ? '55%' : '100%', overflowY:'auto', padding:'10px 0', transition:'width .2s' }}>
+            {Object.entries(grouped).map(([cat, tpls]) => (
+              <div key={cat}>
+                <div style={{ padding:'6px 20px 4px', fontSize:11, fontWeight:700, color: CATEGORY_META[cat]?.color || '#64748b', textTransform:'uppercase', letterSpacing:'.5px' }}>
+                  {CATEGORY_META[cat]?.label || cat}
+                </div>
+                {tpls.map(t => (
+                  <div key={t.name} onClick={() => handleSelect(t)} style={{ padding:'8px 20px', cursor:'pointer', borderLeft: selectedTpl?.name === t.name ? '3px solid #25D366' : '3px solid transparent', background: selectedTpl?.name === t.name ? '#f0fdf4' : 'transparent', transition:'all .12s' }}>
+                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:8 }}>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontSize:13, fontWeight:600, color:'#0f172a', marginBottom:1 }}>{t.label}</div>
+                        <div style={{ fontSize:11, color:'#94a3b8', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{t.body.split('\n')[0]}</div>
+                      </div>
+                      {t.params.length > 0 && (
+                        <span style={{ fontSize:9.5, background:'#f1f5f9', color:'#64748b', padding:'2px 6px', borderRadius:8, whiteSpace:'nowrap', flexShrink:0 }}>{t.params.length} param{t.params.length > 1 ? 's' : ''}</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+
+          {/* Panel derecho: parámetros + preview */}
+          {selectedTpl && (
+            <div style={{ width:'45%', borderLeft:'1px solid #e2e8f0', display:'flex', flexDirection:'column', background:'#fafbfc' }}>
+
+              {/* Parámetros */}
+              {selectedTpl.params.length > 0 && (
+                <div style={{ padding:'14px 16px', borderBottom:'1px solid #e2e8f0' }}>
+                  <div style={{ fontSize:12, fontWeight:700, color:'#0f172a', marginBottom:8 }}>Parámetros</div>
+                  {selectedTpl.params.map(p => (
+                    <div key={p.key} style={{ marginBottom:8 }}>
+                      <label style={{ fontSize:11, fontWeight:600, color:'#475569', display:'block', marginBottom:3 }}>{p.label}</label>
+                      <input
+                        value={paramValues[p.key] || ''} placeholder={p.placeholder}
+                        onChange={e => setParamValues(prev => ({ ...prev, [p.key]: e.target.value }))}
+                        style={{ width:'100%', padding:'6px 10px', border:'1px solid #d1d5db', borderRadius:7, fontSize:12.5, fontFamily:'inherit', outline:'none', boxSizing:'border-box' }}
+                        onFocus={e => e.target.style.borderColor = '#25D366'}
+                        onBlur={e => e.target.style.borderColor = '#d1d5db'}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Preview estilo WhatsApp */}
+              <div style={{ flex:1, padding:16, overflowY:'auto', background:'#e5ddd5', backgroundImage:"url(\"data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none'%3E%3Cg fill='%23d5cec4' fill-opacity='0.3'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E\")" }}>
+                <div style={{ background:'#dcf8c6', borderRadius:8, borderTopRightRadius:2, padding:'8px 12px', maxWidth:'100%', fontSize:13, lineHeight:1.5, whiteSpace:'pre-wrap', wordBreak:'break-word', boxShadow:'0 1px 2px rgba(0,0,0,.08)', color:'#111' }}>
+                  {preview}
+                  <div style={{ display:'flex', justifyContent:'flex-end', marginTop:4 }}>
+                    <span style={{ fontSize:10, color:'#888' }}>ahora</span>
+                    <span style={{ marginLeft:3 }}><CheckCheck size={11} color="#53BDEB" /></span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Botón enviar */}
+              <div style={{ padding:'12px 16px', borderTop:'1px solid #e2e8f0', background:'#fff' }}>
+                <button onClick={handleSend} disabled={sending} style={{ width:'100%', padding:'9px 0', background: sending ? '#94a3b8' : '#25D366', color:'#fff', border:'none', borderRadius:8, fontSize:13, fontWeight:700, cursor: sending ? 'not-allowed' : 'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:6, transition:'background .15s' }}>
+                  {sending ? <><div className="wa-spin" style={{ width:14, height:14, borderWidth:2 }} /> Enviando...</> : <><Send size={14} /> Enviar plantilla</>}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -166,6 +324,17 @@ export default function WhatsAppView({ onOpenMenu }) {
   const [tplResult, setTplResult]         = useState(null);
   const [togglingHuman, setTogglingHuman] = useState(false);
   const [togglingBlock, setTogglingBlock] = useState(false);
+
+  /* ── Panel izquierdo: tabs ── */
+  const [leftTab, setLeftTab] = useState('chats'); // 'chats' | 'templates'
+  const [bulkTpl, setBulkTpl] = useState(null);
+  const [bulkSelected, setBulkSelected] = useState(new Set());
+  const [bulkSearch, setBulkSearch] = useState('');
+  const [bulkFilterEstado, setBulkFilterEstado] = useState('todos');
+  const [bulkSending, setBulkSending] = useState(false);
+  const [bulkResult, setBulkResult] = useState(null);
+  const [bulkParamValues, setBulkParamValues] = useState({});
+  const [bulkSelectAll, setBulkSelectAll] = useState(false);
 
   /* ── Infinite scroll state ── */
   const [currentPage, setCurrentPage]     = useState(1);
@@ -278,9 +447,11 @@ export default function WhatsAppView({ onOpenMenu }) {
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chatData]);
 
   const handleSend = async () => { if (!messageText.trim() || !selectedLead || sending) return; setSending(true); try { const r = await api.sendWhatsAppMessage(selectedLead.wa_id, messageText); setMessageText(''); const f = await api.getWhatsAppLead(selectedLead.wa_id); setChatData(f); if (r?.queued) alert('Ventana expirada — mensaje en cola. Envía una plantilla.'); } catch (e) { alert('Error: ' + (e.message || '')); } finally { setSending(false); } };
-  const handleTemplate = async (name, lang) => { if (!selectedLead) return; try { await api.sendWhatsAppTemplate(selectedLead.wa_id, name, lang); setChatData(await api.getWhatsAppLead(selectedLead.wa_id)); setWindowStatus(await api.getWhatsAppWindowStatus(selectedLead.wa_id).catch(() => null)); } catch (e) { alert('Error: ' + (e.message || '')); } };
+  const handleTemplate = async (name, lang, components) => { if (!selectedLead) return; try { await api.sendWhatsAppTemplate(selectedLead.wa_id, name, lang, components); setChatData(await api.getWhatsAppLead(selectedLead.wa_id)); setWindowStatus(await api.getWhatsAppWindowStatus(selectedLead.wa_id).catch(() => null)); } catch (e) { alert('Error: ' + (e.message || '')); } };
 
-  const TEMPLATES = [
+  // Plantillas rápidas del panel izquierdo (envío por segmento); el catálogo
+  // completo con categorías/params vive en el TEMPLATES global.
+  const QUICK_TEMPLATES = [
     { name: 'followup_lead', label: 'Seguimiento', desc: 'Re-engancha leads inactivos', language: 'es_MX', hasParam: true, paramField: 'nombre' },
   ];
 
@@ -309,6 +480,29 @@ export default function WhatsAppView({ onOpenMenu }) {
   const handleClaim = async (waId) => { try { const r = await api.claimWhatsAppLead(waId); if (chatData?.wa_id === waId) setChatData(p => ({ ...p, assigned_to: r.assigned_to })); loadLeads(false); } catch {} };
   const handleToggleHuman = async () => { if (!chatData || togglingHuman) return; setTogglingHuman(true); try { const r = await api.toggleWhatsAppModoHumano(chatData.wa_id); setChatData(p => ({ ...p, modo_humano: r.modo_humano })); setLeads(p => p.map(l => l.wa_id === chatData.wa_id ? { ...l, modo_humano: r.modo_humano } : l)); } catch {} setTogglingHuman(false); };
   const handleToggleBlock = async () => { if (!chatData || togglingBlock) return; if (!window.confirm(chatData.blocked ? '¿Desbloquear?' : '¿Bloquear? No recibirá mensajes del bot.')) return; setTogglingBlock(true); try { const r = await api.toggleWhatsAppBlock(chatData.wa_id); setChatData(p => ({ ...p, blocked: r.blocked })); } catch {} setTogglingBlock(false); };
+
+  /* ── Bulk send handler ── */
+  const handleBulkSend = async () => {
+    if (!bulkTpl || bulkSelected.size === 0 || bulkSending) return;
+    if (!window.confirm(`¿Enviar "${bulkTpl.label}" a ${bulkSelected.size} contacto${bulkSelected.size > 1 ? 's' : ''}?`)) return;
+    setBulkSending(true); setBulkResult(null);
+    try {
+      const components = bulkTpl.params.length > 0 ? [{
+        type: 'body',
+        parameters: bulkTpl.params.map(p => ({ type: 'text', text: bulkParamValues[p.key]?.trim() || p.placeholder }))
+      }] : undefined;
+      const r = await api.sendWhatsAppTemplateBulk([...bulkSelected], bulkTpl.name, bulkTpl.language, components);
+      setBulkResult(r);
+      setBulkSelected(new Set());
+      setBulkSelectAll(false);
+    } catch (e) { alert('Error: ' + (e.message || '')); }
+    setBulkSending(false);
+  };
+
+  const toggleBulkSelectAll = (filteredLeads) => {
+    if (bulkSelectAll) { setBulkSelected(new Set()); setBulkSelectAll(false); }
+    else { setBulkSelected(new Set(filteredLeads.map(l => l.wa_id))); setBulkSelectAll(true); }
+  };
 
   const hist    = chatData?.historial_chat || [];
   const agents  = [...new Set(leads.map(l => l.assigned_to).filter(Boolean))];
@@ -589,12 +783,12 @@ export default function WhatsAppView({ onOpenMenu }) {
             ══════════════════════════════ */}
         <div className="wa-left">
 
-          {/* Header verde */}
+          {/* Header verde + tabs */}
           <div className="wa-hdr">
             {onOpenMenu && <button className="wa-menu-btn" onClick={onOpenMenu}><Menu size={20} /></button>}
             <span className="wa-hdr-icon"><MessageCircle size={20} /></span>
             <span className="wa-hdr-title">WhatsApp</span>
-            {(st.total || leads.length) > 0 && (
+            {leftTab === 'chats' && (st.total || leads.length) > 0 && (
               <span className="wa-hdr-count">{totalLeads || st.total || leads.length}</span>
             )}
             <button className="wa-hdr-btn" onClick={() => { loadLeads(false); loadStats(); }} title="Actualizar">
@@ -602,11 +796,169 @@ export default function WhatsAppView({ onOpenMenu }) {
             </button>
           </div>
 
-          {/* Búsqueda */}
-          <div className="wa-search">
-            <Search size={14} color="#999" />
-            <input placeholder="Buscar por nombre, teléfono..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+          {/* Tabs: Chats / Plantillas */}
+          <div style={{ display:'flex', borderBottom:'1px solid #e0e0e0', flexShrink:0 }}>
+            <button onClick={() => setLeftTab('chats')} style={{ flex:1, padding:'8px 0', fontSize:12, fontWeight:600, border:'none', cursor:'pointer', fontFamily:'inherit', background: leftTab==='chats' ? '#fff' : '#f6f6f6', color: leftTab==='chats' ? '#075e54' : '#999', borderBottom: leftTab==='chats' ? '2px solid #25D366' : '2px solid transparent', display:'flex', alignItems:'center', justifyContent:'center', gap:4, transition:'all .15s' }}>
+              <MessageCircle size={13} /> Chats
+            </button>
+            <button onClick={() => setLeftTab('templates')} style={{ flex:1, padding:'8px 0', fontSize:12, fontWeight:600, border:'none', cursor:'pointer', fontFamily:'inherit', background: leftTab==='templates' ? '#fff' : '#f6f6f6', color: leftTab==='templates' ? '#075e54' : '#999', borderBottom: leftTab==='templates' ? '2px solid #25D366' : '2px solid transparent', display:'flex', alignItems:'center', justifyContent:'center', gap:4, transition:'all .15s' }}>
+              <FileText size={13} /> Plantillas
+            </button>
           </div>
+
+          {/* Búsqueda — solo en tab chats */}
+          {leftTab === 'chats' && (
+            <div className="wa-search">
+              <Search size={14} color="#999" />
+              <input placeholder="Buscar por nombre, teléfono..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+            </div>
+          )}
+
+          {/* ══ PANEL PLANTILLAS (ENVÍO MASIVO) ══ */}
+          {leftTab === 'templates' && (
+            <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden' }}>
+              {/* Paso 1: Seleccionar plantilla */}
+              <div style={{ padding:'10px 12px 6px', borderBottom:'1px solid #e5e7eb', flexShrink:0 }}>
+                <div style={{ fontSize:11, fontWeight:700, color:'#075e54', marginBottom:6, textTransform:'uppercase', letterSpacing:'.4px' }}>1. Selecciona plantilla</div>
+                <select
+                  className="wa-fsel"
+                  value={bulkTpl?.name || ''}
+                  onChange={e => {
+                    const t = TEMPLATES.find(x => x.name === e.target.value);
+                    setBulkTpl(t || null);
+                    setBulkResult(null);
+                    if (t) { const d = {}; t.params.forEach(p => { d[p.key] = ''; }); setBulkParamValues(d); }
+                  }}
+                  style={{ width:'100%', marginBottom:4 }}
+                >
+                  <option value="">— Elige una plantilla —</option>
+                  {Object.entries(CATEGORY_META).map(([cat, meta]) => (
+                    <optgroup key={cat} label={meta.label}>
+                      {TEMPLATES.filter(t => t.category === cat).map(t => (
+                        <option key={t.name} value={t.name}>{t.label}</option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+              </div>
+
+              {bulkTpl && (
+                <>
+                  {/* Preview de la plantilla */}
+                  <div style={{ padding:'8px 12px', borderBottom:'1px solid #e5e7eb', flexShrink:0, background:'#f0fdf4' }}>
+                    <div style={{ fontSize:11, color:'#065F46', lineHeight:1.4, whiteSpace:'pre-wrap', maxHeight:60, overflow:'auto' }}>
+                      {bulkTpl.body.split('\n')[0].slice(0, 100)}{bulkTpl.body.length > 100 ? '...' : ''}
+                    </div>
+                    {bulkTpl.params.length > 0 && (
+                      <div style={{ marginTop:6 }}>
+                        {bulkTpl.params.map(p => (
+                          <div key={p.key} style={{ display:'flex', alignItems:'center', gap:4, marginBottom:3 }}>
+                            <label style={{ fontSize:10, fontWeight:600, color:'#475569', whiteSpace:'nowrap', minWidth:50 }}>{p.label}:</label>
+                            <input
+                              value={bulkParamValues[p.key] || ''} placeholder={p.placeholder}
+                              onChange={e => setBulkParamValues(prev => ({ ...prev, [p.key]: e.target.value }))}
+                              style={{ flex:1, padding:'3px 6px', border:'1px solid #d1d5db', borderRadius:5, fontSize:11, fontFamily:'inherit', outline:'none' }}
+                            />
+                          </div>
+                        ))}
+                        <div style={{ fontSize:9.5, color:'#94a3b8', marginTop:2 }}>* En envío masivo se usa el mismo valor para todos</div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Paso 2: Seleccionar contactos */}
+                  <div style={{ padding:'8px 12px 4px', borderBottom:'1px solid #e5e7eb', flexShrink:0 }}>
+                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
+                      <div style={{ fontSize:11, fontWeight:700, color:'#075e54', textTransform:'uppercase', letterSpacing:'.4px' }}>2. Selecciona contactos</div>
+                      <span style={{ fontSize:11, fontWeight:700, color: bulkSelected.size > 0 ? '#25D366' : '#94a3b8' }}>{bulkSelected.size} seleccionado{bulkSelected.size !== 1 ? 's' : ''}</span>
+                    </div>
+                    <div style={{ display:'flex', gap:4, marginBottom:4 }}>
+                      <div style={{ flex:1, display:'flex', alignItems:'center', background:'#fff', borderRadius:6, border:'1px solid #d1d5db', padding:'0 6px' }}>
+                        <Search size={11} color="#999" />
+                        <input placeholder="Buscar..." value={bulkSearch} onChange={e => setBulkSearch(e.target.value)} style={{ flex:1, border:'none', padding:'4px 6px', fontSize:11, fontFamily:'inherit', outline:'none', background:'transparent' }} />
+                      </div>
+                      <select className="wa-fsel" value={bulkFilterEstado} onChange={e => setBulkFilterEstado(e.target.value)} style={{ width:'auto', fontSize:10 }}>
+                        <option value="todos">Todos</option>
+                        {Object.entries(EC).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Lista de contactos con checkboxes */}
+                  <div style={{ flex:1, overflowY:'auto' }}>
+                    {(() => {
+                      const bulkFiltered = leads.filter(l => {
+                        if (bulkFilterEstado !== 'todos' && l.estado !== bulkFilterEstado) return false;
+                        if (bulkSearch) {
+                          const s = bulkSearch.toLowerCase();
+                          return (l.contact_name || '').toLowerCase().includes(s) || (l.wa_id || '').includes(s);
+                        }
+                        return true;
+                      });
+                      return (
+                        <>
+                          <div onClick={() => toggleBulkSelectAll(bulkFiltered)} style={{ padding:'6px 12px', cursor:'pointer', borderBottom:'1px solid #f0f0f0', background:'#f9fafb', display:'flex', alignItems:'center', gap:8, fontSize:11, fontWeight:600, color:'#475569', position:'sticky', top:0, zIndex:2 }}>
+                            <input type="checkbox" checked={bulkSelectAll && bulkSelected.size === bulkFiltered.length} readOnly style={{ accentColor:'#25D366', cursor:'pointer' }} />
+                            Seleccionar todos ({bulkFiltered.length})
+                          </div>
+                          {bulkFiltered.map(l => {
+                            const checked = bulkSelected.has(l.wa_id);
+                            const ec = EC[l.estado] || EC.nuevo;
+                            return (
+                              <div key={l.wa_id} onClick={() => {
+                                setBulkSelected(prev => {
+                                  const s = new Set(prev);
+                                  if (s.has(l.wa_id)) s.delete(l.wa_id); else s.add(l.wa_id);
+                                  return s;
+                                });
+                              }} style={{ padding:'6px 12px', cursor:'pointer', borderBottom:'1px solid #f5f5f5', display:'flex', alignItems:'center', gap:8, background: checked ? '#f0fdf4' : 'transparent', transition:'background .1s' }}>
+                                <input type="checkbox" checked={checked} readOnly style={{ accentColor:'#25D366', cursor:'pointer', flexShrink:0 }} />
+                                <div className="wa-av" style={{ background:avColor(l.contact_name), width:30, height:30, fontSize:11 }}>
+                                  {(l.contact_name || '?')[0].toUpperCase()}
+                                </div>
+                                <div style={{ flex:1, minWidth:0 }}>
+                                  <div style={{ fontSize:12, fontWeight:600, color:'#111', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{l.contact_name || l.wa_id}</div>
+                                  <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+                                    <span className="wa-badge" style={{ background:ec.bg, color:ec.text, fontSize:'0.58rem' }}>
+                                      <span style={{ width:4, height:4, borderRadius:'50%', background:ec.dot, display:'inline-block' }} />
+                                      {ec.label}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Botón de envío masivo */}
+                  <div style={{ padding:'10px 12px', borderTop:'1px solid #e2e8f0', flexShrink:0, background:'#fff' }}>
+                    {bulkResult && (
+                      <div style={{ marginBottom:8, padding:'6px 10px', borderRadius:6, fontSize:11, background: bulkResult.failed > 0 ? '#fef3c7' : '#d1fae5', color: bulkResult.failed > 0 ? '#92400e' : '#065f46' }}>
+                        Enviados: {bulkResult.sent} | Fallidos: {bulkResult.failed}
+                      </div>
+                    )}
+                    <button onClick={handleBulkSend} disabled={bulkSending || bulkSelected.size === 0} style={{ width:'100%', padding:'9px 0', background: bulkSending || bulkSelected.size === 0 ? '#94a3b8' : '#25D366', color:'#fff', border:'none', borderRadius:8, fontSize:12, fontWeight:700, cursor: bulkSending || bulkSelected.size === 0 ? 'not-allowed' : 'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:6, fontFamily:'inherit', transition:'background .15s' }}>
+                      {bulkSending ? <><div className="wa-spin" style={{ width:14, height:14, borderWidth:2 }} /> Enviando...</> : <><Send size={14} /> Enviar a {bulkSelected.size} contacto{bulkSelected.size !== 1 ? 's' : ''}</>}
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {!bulkTpl && (
+                <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:20, color:'#94a3b8', textAlign:'center', gap:8 }}>
+                  <FileText size={36} color="#cbd5e1" />
+                  <p style={{ margin:0, fontSize:13, fontWeight:600, color:'#64748b' }}>Envío masivo de plantillas</p>
+                  <p style={{ margin:0, fontSize:11.5 }}>Selecciona una plantilla arriba para empezar</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ══ TAB CHATS ══ */}
+          {leftTab === 'chats' && <>
 
           {/* Filtros */}
           <div className="wa-filters">
@@ -656,7 +1008,7 @@ export default function WhatsAppView({ onOpenMenu }) {
             </button>
             {showTplPanel && (
               <div style={{ padding: '8px 12px', background: '#fafffe', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {TEMPLATES.map(tpl => {
+                {QUICK_TEMPLATES.map(tpl => {
                   const targets = [
                     { key: 'sin_respuesta', label: 'sin respuesta (>24h)', fn: l => {
                       const h = (Date.now() - new Date(l.last_message_at || l.updated_at || 0).getTime()) / 3600000;
@@ -718,7 +1070,7 @@ export default function WhatsAppView({ onOpenMenu }) {
                   <div style={{ background: '#eff6ff', borderRadius: 8, border: '1px solid #bfdbfe', padding: '8px 12px' }}>
                     <div style={{ fontSize: 11, fontWeight: 600, color: '#1e40af', marginBottom: 4 }}>Enviar a: {selectedLead.contact_name || selectedLead.wa_id}</div>
                     <div style={{ display: 'flex', gap: 4 }}>
-                      {TEMPLATES.map(tpl => (
+                      {QUICK_TEMPLATES.map(tpl => (
                         <button
                           key={tpl.name}
                           onClick={() => handleTemplate(tpl.name, tpl.language)}
@@ -843,6 +1195,7 @@ export default function WhatsAppView({ onOpenMenu }) {
               </div>
             )}
           </div>
+          </>}
         </div>
 
         {/* ══════════════════════════════
@@ -954,7 +1307,7 @@ export default function WhatsAppView({ onOpenMenu }) {
         </div>
       </div>
 
-      {showTemplates && <TemplatesModal onClose={() => setShowTemplates(false)} onSend={handleTemplate} />}
+      {showTemplates && <TemplatesModal onClose={() => setShowTemplates(false)} onSend={handleTemplate} leadName={chatData?.contact_name || selectedLead?.contact_name || ''} />}
     </>
   );
 }

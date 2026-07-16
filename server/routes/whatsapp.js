@@ -612,6 +612,51 @@ router.post('/send-template', async (req, res) => {
   }
 });
 
+// ─── POST /send-template-bulk ───
+router.post('/send-template-bulk', async (req, res) => {
+  try {
+    const db = getDB();
+    const { wa_ids, template_name, language = 'es', components } = req.body;
+    if (!wa_ids || !Array.isArray(wa_ids) || wa_ids.length === 0 || !template_name) {
+      return res.status(400).json({ error: 'wa_ids (array) y template_name requeridos' });
+    }
+
+    const results = { sent: 0, failed: 0, errors: [] };
+
+    for (const wa_id of wa_ids) {
+      try {
+        const result = await sendWhatsApp(wa_id, 'template', {
+          template: { name: template_name, language: { code: language }, ...(components ? { components } : {}) },
+        });
+
+        // Update historial
+        const { data: lead } = await db.from('whatsapp_leads').select('historial_chat').eq('wa_id', wa_id).maybeSingle();
+        if (lead) {
+          const historial = JSON.parse(lead.historial_chat || '[]');
+          historial.push({
+            role: 'admin', body: `[Plantilla masiva: ${template_name}]`, type: 'template',
+            timestamp: new Date().toISOString(), status: 'sent',
+            wa_msg_id: result.messages?.[0]?.id, sender: 'Envío masivo'
+          });
+          await db.from('whatsapp_leads').update({ historial_chat: JSON.stringify(historial) }).eq('wa_id', wa_id);
+        }
+        results.sent++;
+
+        // Throttle: 50ms between messages to avoid rate limiting
+        await new Promise(r => setTimeout(r, 50));
+      } catch (err) {
+        results.failed++;
+        results.errors.push({ wa_id, error: err.message });
+      }
+    }
+
+    res.json({ success: true, ...results });
+  } catch (err) {
+    console.error('WA bulk template error:', err);
+    res.status(500).json({ error: err.message || 'Error en envío masivo' });
+  }
+});
+
 // ─── PATCH /leads/:waId/estado ───
 router.patch('/leads/:waId/estado', async (req, res) => {
   try {
@@ -1161,7 +1206,7 @@ router.post('/post-cita', verifyToken, async (req, res) => {
       try {
         const payload = nurtureTier === 1
           ? buildTemplatePayload(phone, 'fsc_nurture_dia1', [lead.nombre_lead || 'Hola'])
-          : buildTemplatePayload(phone, 'fsc_nurture_segunda_cita', [lead.nombre_lead || 'Hola']);
+          : buildTemplatePayload(phone, 'fsc_nurture_segunda_citafsc_reengagement', [lead.nombre_lead || 'Hola']);
 
         const { ok, messageId, error: waError } = await sendWAMessage(phone, payload);
         const success = ok && messageId;

@@ -19,6 +19,16 @@ const STAGE_LABELS = {
 // All routes require authentication
 router.use(verifyToken);
 
+// Conversaciones de Meta (Sofía Bot): solo agencia/admins.
+// /stats queda abierto (agregados sin PII, lo usa el Embudo de Conversión).
+router.use((req, res, next) => {
+  if (req.path === '/stats') return next();
+  if (!['superadmin', 'agencia', 'admin'].includes(req.user.role)) {
+    return res.status(403).json({ error: 'Solo administración puede ver las conversaciones' });
+  }
+  next();
+});
+
 // ─── GET /stats ───
 // NOTE: defined before /:phone to avoid matching "stats" as a phone param
 router.get('/stats', async (req, res) => {

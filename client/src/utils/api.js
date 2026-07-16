@@ -97,11 +97,69 @@ export const api = {
   getWhatsAppWindowStatus: (waId) => request(`/whatsapp/leads/${waId}/window-status`),
   sendWhatsAppMessage: (wa_id, message) => request('/whatsapp/send', { method: 'POST', body: JSON.stringify({ wa_id, message }) }),
   sendWhatsAppTemplate: (wa_id, template_name, language, components) => request('/whatsapp/send-template', { method: 'POST', body: JSON.stringify({ wa_id, template_name, language, ...(components ? { components } : {}) }) }),
+  sendWhatsAppTemplateBulk: (wa_ids, template_name, language, components) => request('/whatsapp/send-template-bulk', { method: 'POST', body: JSON.stringify({ wa_ids, template_name, language, ...(components ? { components } : {}) }) }),
   updateWhatsAppEstado: (waId, estado) => request(`/whatsapp/leads/${waId}/estado`, { method: 'PATCH', body: JSON.stringify({ estado }) }),
   toggleWhatsAppModoHumano: (waId) => request(`/whatsapp/leads/${waId}/modo-humano`, { method: 'PATCH' }),
   claimWhatsAppLead: (waId) => request(`/whatsapp/leads/${waId}/claim`, { method: 'PATCH' }),
   toggleWhatsAppBlock: (waId) => request(`/whatsapp/leads/${waId}/block`, { method: 'PATCH' }),
   getWhatsAppStats: () => request('/whatsapp/stats'),
+
+  // ── CRM Incubadora S-COOL ──
+  crmGetDashboard: (anio) => request(`/crm/dashboard${anio ? `?anio=${anio}` : ''}`),
+  crmGetAgentSummary: (id, anio) => request(`/crm/agents/${id}/summary${anio ? `?anio=${anio}` : ''}`),
+  crmGetAgents: () => request('/crm/agents'),
+  crmCreateAgent: (data) => request('/crm/agents', { method: 'POST', body: JSON.stringify(data) }),
+  crmUpdateAgent: (id, data) => request(`/crm/agents/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  crmGetClients: (params = {}) => request(`/crm/clients?${new URLSearchParams(params)}`),
+  crmGetClient: (id) => request(`/crm/clients/${id}`),
+  crmCreateClient: (data) => request('/crm/clients', { method: 'POST', body: JSON.stringify(data) }),
+  crmUpdateClient: (id, data) => request(`/crm/clients/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  crmDeleteClient: (id) => request(`/crm/clients/${id}`, { method: 'DELETE' }),
+  crmGetPolicies: (params = {}) => request(`/crm/policies?${new URLSearchParams(params)}`),
+  crmCreatePolicy: (data) => request('/crm/policies', { method: 'POST', body: JSON.stringify(data) }),
+  crmUpdatePolicy: (id, data) => request(`/crm/policies/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  crmDeletePolicy: (id) => request(`/crm/policies/${id}`, { method: 'DELETE' }),
+  crmGetGoals: (anio) => request(`/crm/goals${anio ? `?anio=${anio}` : ''}`),
+  crmSaveGoals: (goals) => request('/crm/goals', { method: 'PUT', body: JSON.stringify({ goals }) }),
+  crmGetReminders: (params = {}) => request(`/crm/reminders?${new URLSearchParams(params)}`),
+  crmCreateReminder: (data) => request('/crm/reminders', { method: 'POST', body: JSON.stringify(data) }),
+  crmUpdateReminder: (id, data) => request(`/crm/reminders/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  crmDeleteReminder: (id) => request(`/crm/reminders/${id}`, { method: 'DELETE' }),
+  crmGetFiles: (params = {}) => request(`/crm/files?${new URLSearchParams(params)}`),
+  crmRunAutoReminders: () => request('/crm/auto-reminders', { method: 'POST', body: JSON.stringify({}) }),
+  crmDownloadReport: async (agentId, anio) => {
+    const token = getToken();
+    const res = await fetch(`${API}/crm/report/${agentId}?anio=${anio || ''}`, {
+      credentials: 'include',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || 'Error al generar PDF'); }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = (res.headers.get('Content-Disposition') || '').match(/filename="(.+)"/)?.[1] || `BusinessReview_${agentId}.pdf`;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
+  crmDeleteFile: (id) => request(`/crm/files/${id}`, { method: 'DELETE' }),
+  crmUploadFile: async (file, { client_id, policy_id, categoria } = {}) => {
+    const token = getToken();
+    const fd = new FormData();
+    fd.append('file', file);
+    if (client_id) fd.append('client_id', client_id);
+    if (policy_id) fd.append('policy_id', policy_id);
+    if (categoria) fd.append('categoria', categoria);
+    const res = await fetch(`${API}/crm/files`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: fd,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Error al subir archivo');
+    return data;
+  },
 
   // Notifications
   getNotifications: () => request('/notifications'),

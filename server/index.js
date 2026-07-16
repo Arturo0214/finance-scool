@@ -45,7 +45,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
 // Rate limiting for API
-app.use('/api/', rateLimit({ windowMs: 15 * 60 * 1000, max: 200 }));
+app.use('/api/', rateLimit({ windowMs: 15 * 60 * 1000, max: isProd ? 200 : 5000 }));
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -59,6 +59,7 @@ app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api/fsc', fscRoutes);
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/google', googleCalendarRoutes);
+app.use('/api/crm', require('./routes/crm'));
 app.use('/api', apiRoutes);
 
 // Serve React build in production
@@ -76,9 +77,9 @@ initDB().catch(err => {
 });
 
 // ── CRON JOBS ──
-const cronFetch = async (endpoint, label) => {
+const cronFetch = async (endpoint, label, prefix = 'whatsapp') => {
   try {
-    const resp = await fetch(`http://localhost:${PORT}/api/whatsapp/${endpoint}`, {
+    const resp = await fetch(`http://localhost:${PORT}/api/${prefix}/${endpoint}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer INTERNAL_CRON' },
       body: JSON.stringify({}),
@@ -96,6 +97,12 @@ cron.schedule('*/30 * * * *', () => cronFetch('no-show', 'No-show'));
 
 // Nurture post-cita cada 6 horas
 cron.schedule('0 */6 * * *', () => cronFetch('post-cita', 'Post-cita'));
+
+// CRM: recordatorios automáticos (renovaciones 30d / cumpleaños) — diario 8:00
+cron.schedule('0 8 * * *', () => cronFetch('auto-reminders', 'CRM auto-reminders', 'crm'));
+
+// CRM: reporte PDF mensual por asesor (día 1, 8:30) — requiere CRM_MONTHLY_REPORT_ENABLED=true
+cron.schedule('30 8 1 * *', () => cronFetch('monthly-reports', 'CRM monthly reports', 'crm'));
 
 app.listen(PORT, () => {
   console.log(`🚀 Finance SCool API running at http://localhost:${PORT}`);

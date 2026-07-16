@@ -8,9 +8,10 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'https://finance-scool-production.up.railway.app',
+        // VITE_API_LOCAL=1 → backend local (npm run server); default → Railway
+        target: process.env.VITE_API_LOCAL ? 'http://localhost:3001' : 'https://finance-scool-production.up.railway.app',
         changeOrigin: true,
-        secure: true
+        secure: !process.env.VITE_API_LOCAL
       }
     }
   },

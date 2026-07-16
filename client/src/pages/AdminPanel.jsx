@@ -14,7 +14,8 @@ import {
   Menu, X, LogOut, BarChart3, Users, Calendar, MessageSquare,
   MessageCircle, Link as LinkIcon, Zap, Eye, Settings,
   Activity, Filter, PieChart, Megaphone, Briefcase,
-  UserCheck, Bot,
+  UserCheck, Bot, LayoutDashboard, Contact, FileText, Target, Bell,
+  KanbanSquare, HandCoins,
 } from 'lucide-react';
 
 import { C, SPANISH_LABELS, isAgencyRole } from './admin/constants';
@@ -37,6 +38,13 @@ const HubSpotView         = lazy(() => import('./admin/views/HubSpotView'));
 const WorkflowAIView      = lazy(() => import('./admin/views/WorkflowAIView'));
 const TeamView            = lazy(() => import('./admin/views/TeamView'));
 const FSCConversationsView = lazy(() => import('./admin/views/FSCConversationsView'));
+const CrmDashboardView    = lazy(() => import('./admin/views/crm/CrmDashboardView'));
+const CrmPipelineView     = lazy(() => import('./admin/views/crm/CrmPipelineView'));
+const CrmClientsView      = lazy(() => import('./admin/views/crm/CrmClientsView'));
+const CrmPoliciesView     = lazy(() => import('./admin/views/crm/CrmPoliciesView'));
+const CrmGoalsView        = lazy(() => import('./admin/views/crm/CrmGoalsView'));
+const CrmRemindersView    = lazy(() => import('./admin/views/crm/CrmRemindersView'));
+const CrmCommissionsView  = lazy(() => import('./admin/views/crm/CrmCommissionsView'));
 
 /* ── Spinner de suspense ── */
 function ViewSpinner() {
@@ -86,12 +94,21 @@ export default function AdminPanel() {
   const userIsAgency    = isAgencyRole(user?.role);
   const canManageTeam   = ['superadmin', 'agencia', 'admin'].includes(user?.role);
 
-  /* ── Navegación del sidebar — todos ven lo mismo ── */
+  /* ── Navegación del sidebar ──
+     Sofía Bot (conversaciones de Meta) es solo para agencia/admins. */
   const navItems = [
     { id: 'agency-dashboard', label: SPANISH_LABELS.agencyDashboard, icon: Activity   },
     { id: 'funnel',           label: SPANISH_LABELS.funnel,           icon: Filter     },
     { id: 'sources',          label: SPANISH_LABELS.sources,          icon: PieChart   },
     { id: 'campaigns',        label: SPANISH_LABELS.campaigns,        icon: Megaphone  },
+    { id: 'divider-crm',      label: '── CRM Asesores ──',            icon: null       },
+    { id: 'crm',              label: 'Tableros CRM',                  icon: LayoutDashboard },
+    { id: 'crm-pipeline',     label: 'Pipeline',                      icon: KanbanSquare },
+    { id: 'crm-clientes',     label: 'Clientes',                      icon: Contact    },
+    { id: 'crm-polizas',      label: 'Pólizas',                       icon: FileText   },
+    { id: 'crm-comisiones',   label: 'Comisiones',                    icon: HandCoins  },
+    { id: 'crm-metas',        label: 'Metas & Forecast',              icon: Target     },
+    { id: 'crm-recordatorios', label: 'Recordatorios',                icon: Bell       },
     { id: 'divider-1',        label: '── Operativo ──',               icon: null       },
     { id: 'dashboard',        label: SPANISH_LABELS.dashboard,        icon: BarChart3  },
     { id: 'leads',            label: SPANISH_LABELS.leads,            icon: Users      },
@@ -103,7 +120,7 @@ export default function AdminPanel() {
     { id: 'divider-2',        label: '── Config ──',                  icon: null       },
     { id: 'team',             label: SPANISH_LABELS.team,             icon: Settings   },
     { id: 'workflow',         label: SPANISH_LABELS.workflow,         icon: Zap        },
-  ];
+  ].filter(item => item.id !== 'sofia-bot' || userIsAgency);
 
   /* ── Carga inicial de datos ── */
   useEffect(() => {
@@ -308,8 +325,16 @@ export default function AdminPanel() {
                 <HubSpotView hubspotPortal={hubspotPortal} setHubspotPortal={setHubspotPortal} />}
               {!loading && activeView === 'workflow' &&
                 <WorkflowAIView metaToken={metaToken} setMetaToken={setMetaToken} />}
-              {!loading && activeView === 'sofia-bot' &&
+              {!loading && activeView === 'sofia-bot' && userIsAgency &&
                 <FSCConversationsView onOpenMenu={() => setMobileMenuOpen(o => !o)} />}
+              {/* ── CRM Asesores ── */}
+              {!loading && activeView === 'crm' && <CrmDashboardView />}
+              {!loading && activeView === 'crm-pipeline' && <CrmPipelineView isAgency={userIsAgency} />}
+              {!loading && activeView === 'crm-clientes' && <CrmClientsView isAgency={userIsAgency} />}
+              {!loading && activeView === 'crm-polizas' && <CrmPoliciesView isAgency={userIsAgency} />}
+              {!loading && activeView === 'crm-comisiones' && <CrmCommissionsView isAgency={userIsAgency} />}
+              {!loading && activeView === 'crm-metas' && <CrmGoalsView isAgency={userIsAgency} />}
+              {!loading && activeView === 'crm-recordatorios' && <CrmRemindersView isAgency={userIsAgency} />}
             </Suspense>
           </main>
         </div>
