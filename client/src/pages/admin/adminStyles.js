@@ -86,6 +86,7 @@ export const getAdminCSS = () => `
     background:rgba(255,255,255,.72); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
     padding:13px 30px; border-bottom:1px solid rgba(11,27,51,.07);
     display:flex; justify-content:space-between; align-items:center; flex-shrink:0;
+    position:relative; z-index:300; /* el blur crea stacking context: sin esto el dropdown de notificaciones queda debajo del contenido */
   }
   .topbar-left { display:flex; align-items:center; gap:10px; }
   .role-badge { display:inline-flex; align-items:center; gap:5px; padding:4px 11px; border-radius:20px; font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:1.2px; }
