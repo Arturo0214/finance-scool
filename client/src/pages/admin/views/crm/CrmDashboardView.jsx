@@ -8,9 +8,9 @@ import { api } from '../../../../utils/api';
 import { C } from '../../constants';
 import {
   ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis,
-  Tooltip, Legend, CartesianGrid, PieChart, Pie, Cell,
+  Tooltip, Legend, CartesianGrid, PieChart, Pie, Cell, Area, LabelList,
 } from 'recharts';
-import { TrendingUp, Target, Shield, Award, Users, RefreshCw, X, Briefcase, Bell, FileDown } from 'lucide-react';
+import { TrendingUp, TrendingDown, Target, Shield, Award, Users, RefreshCw, X, Briefcase, Bell, FileDown, Trophy, Medal } from 'lucide-react';
 import { getCrmCSS, MESES, fmtMoney, fmtMoneyFull, fmtPct, fmtDate, etapaInfo, ETAPAS, tipoRecordatorio } from './crmShared';
 
 const ANIOS = [2025, 2026, 2027];
@@ -156,12 +156,263 @@ function AgentBoard({ summary }) {
   );
 }
 
+/* ═══════════ Pestaña RENDIMIENTO — tableros tipo Power BI ═══════════ */
+
+const PIE_COLORS = ['#003DA5', '#0088E0', '#C1975B', '#0E8A63', '#6D28D9', '#B97F1E', '#0891B2', '#DB2777'];
+
+function DeltaBadge({ actual, anterior }) {
+  if (!anterior) return <span style={{ fontSize: 11.5, color: C.textLight }}>sin periodo previo</span>;
+  const d = (actual - anterior) / anterior;
+  const up = d >= 0;
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 12, fontWeight: 700, color: up ? C.green : C.red }}>
+      {up ? <TrendingUp size={13} /> : <TrendingDown size={13} />} {up ? '+' : ''}{(d * 100).toFixed(1)}% vs anterior
+    </span>
+  );
+}
+
+/* Matriz de calor asesor × mes (estilo matrix de Power BI) */
+function HeatMatrix({ agentes }) {
+  const cell = (a, i) => (a.kpis.months[i].primaNueva + a.kpis.months[i].primaRenovacion);
+  const max = Math.max(1, ...agentes.flatMap(a => Array.from({ length: 12 }, (_, i) => cell(a, i))));
+  const totalMes = (i) => agentes.reduce((s, a) => s + cell(a, i), 0);
+  return (
+    <div className="tbl-wrap" style={{ overflowX: 'auto' }}>
+      <table style={{ minWidth: 900 }}>
+        <thead>
+          <tr>
+            <th style={{ position: 'sticky', left: 0, background: '#F5F6F8', zIndex: 1 }}>Asesor</th>
+            {MESES.map(m => <th key={m} style={{ textAlign: 'center' }}>{m}</th>)}
+            <th style={{ textAlign: 'right' }}>Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {agentes.map(a => {
+            const total = Array.from({ length: 12 }, (_, i) => cell(a, i)).reduce((s, v) => s + v, 0);
+            return (
+              <tr key={a.agent.id}>
+                <td style={{ position: 'sticky', left: 0, background: '#fff', zIndex: 1, whiteSpace: 'nowrap' }}><b>{a.agent.nombre.split(' ').slice(0, 2).join(' ')}</b></td>
+                {MESES.map((_, i) => {
+                  const v = cell(a, i);
+                  const t = v / max;
+                  return (
+                    <td key={i} style={{
+                      textAlign: 'center', fontSize: 11.5, fontWeight: 600, padding: '9px 6px',
+                      background: v > 0 ? `rgba(0,61,165,${0.06 + t * 0.8})` : 'transparent',
+                      color: t > 0.5 ? '#fff' : v > 0 ? C.primaryDark : C.textLight,
+                    }}>
+                      {v > 0 ? fmtMoney(v) : '·'}
+                    </td>
+                  );
+                })}
+                <td style={{ textAlign: 'right' }}><b>{fmtMoney(total)}</b></td>
+              </tr>
+            );
+          })}
+          <tr style={{ background: '#F7F8FA' }}>
+            <td style={{ position: 'sticky', left: 0, background: '#F7F8FA', zIndex: 1 }}><b>Promotoría</b></td>
+            {MESES.map((_, i) => <td key={i} style={{ textAlign: 'center', fontSize: 11.5, fontWeight: 700 }}>{totalMes(i) > 0 ? fmtMoney(totalMes(i)) : '·'}</td>)}
+            <td style={{ textAlign: 'right' }}><b>{fmtMoney(MESES.reduce((s, _, i) => s + totalMes(i), 0))}</b></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function PerformanceTab({ data, anio }) {
+  const [periodo, setPeriodo] = useState('mensual');
+  const months = data.global.kpis.months;
+  const forecast = data.global.forecast;
+
+  const mensual = months.map((m, i) => ({
+    label: MESES[i],
+    'Prima nueva': Math.round(m.primaNueva), 'Renovación': Math.round(m.primaRenovacion),
+    Meta: Math.round(m.meta), 'Proyección': Math.round(forecast[i]?.proyeccion || 0),
+    total: m.primaNueva + m.primaRenovacion, meta: m.meta,
+  }));
+  const trimestral = [0, 1, 2, 3].map(q => {
+    const s = mensual.slice(q * 3, q * 3 + 3);
+    const sum = (k) => Math.round(s.reduce((acc, x) => acc + x[k], 0));
+    return { label: `Q${q + 1}`, 'Prima nueva': sum('Prima nueva'), 'Renovación': sum('Renovación'), Meta: sum('Meta'), 'Proyección': sum('Proyección'), total: sum('total'), meta: sum('meta') };
+  });
+  let ar = 0, am = 0, ap = 0;
+  const anual = mensual.map(m => ({ label: m.label, 'Real acumulado': Math.round(ar += m.total), 'Meta acumulada': Math.round(am += m.meta), 'Proyección acumulada': Math.round(ap += m['Proyección']) }));
+
+  const now = new Date();
+  const curM = anio === now.getFullYear() ? now.getMonth() : 11;
+  const curQ = Math.floor(curM / 3);
+  const serie = periodo === 'trimestral' ? trimestral : mensual;
+  const curIdx = periodo === 'trimestral' ? curQ : curM;
+  const actual = serie[curIdx] || { total: 0, meta: 0 };
+  const anterior = serie[curIdx - 1];
+  const nombrePeriodo = periodo === 'trimestral' ? `Q${curQ + 1} ${anio}` : `${MESES[curM]} ${anio}`;
+
+  /* Ranking y participación de asesores */
+  const rank = [...data.porAgente]
+    .map(a => ({ nombre: a.agent.nombre.split(' ').slice(0, 2).join(' '), Prima: Math.round(a.kpis.totales.primaTotal), Meta: Math.round(a.kpis.totales.meta) }))
+    .sort((a, b) => b.Prima - a.Prima);
+  const totalPrima = rank.reduce((s, r) => s + r.Prima, 0);
+  const share = rank.filter(r => r.Prima > 0).map((r, i) => ({ name: r.nombre, value: r.Prima, color: PIE_COLORS[i % PIE_COLORS.length] }));
+
+  const top = (fn) => [...data.porAgente].sort((a, b) => fn(b) - fn(a))[0];
+  const topPrima = top(a => a.kpis.totales.primaTotal);
+  const topCumpl = top(a => a.kpis.totales.cumplimiento || 0);
+  const topCons = top(a => a.kpis.conservacion.indiceProyectado || 0);
+
+  const mixNueva = months.reduce((s, m) => s + m.primaNueva, 0);
+  const mixRenov = months.reduce((s, m) => s + m.primaRenovacion, 0);
+
+  return (
+    <>
+      {/* ═══ Rendimiento de la empresa ═══ */}
+      <div className="crm-chart-card">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+          <div>
+            <h3>Rendimiento de la empresa</h3>
+            <p className="sub" style={{ marginBottom: 10 }}>Prima pagada por periodo vs meta y proyección</p>
+          </div>
+          <div className="filter-tabs">
+            {[['mensual', 'Mensual'], ['trimestral', 'Trimestral'], ['anual', 'Acumulado anual']].map(([id, l]) => (
+              <button key={id} className={`f-tab${periodo === id ? ' active' : ''}`} onClick={() => setPeriodo(id)}>{l}</button>
+            ))}
+          </div>
+        </div>
+
+        {periodo !== 'anual' && (
+          <div className="crm-kpi-detail" style={{ marginTop: 10 }}>
+            <div className="crm-kpi-box">
+              <div className="k-label">Prima {nombrePeriodo}</div>
+              <div className="k-value">{fmtMoney(actual.total)}</div>
+              <div className="k-sub"><DeltaBadge actual={actual.total} anterior={anterior?.total} /></div>
+            </div>
+            <div className="crm-kpi-box">
+              <div className="k-label">Meta del periodo</div>
+              <div className="k-value">{fmtMoney(actual.meta)}</div>
+              <div className="k-sub">{actual.meta > 0 ? `cumplimiento ${fmtPct(actual.total / actual.meta)}` : 'sin meta capturada'}</div>
+            </div>
+            <div className="crm-kpi-box">
+              <div className="k-label">Proyección del periodo</div>
+              <div className="k-value" style={{ color: C.green }}>{fmtMoney(actual['Proyección'] || 0)}</div>
+              <div className="k-sub">real + pipeline + run-rate</div>
+            </div>
+            <div className="crm-kpi-box">
+              <div className="k-label">Mix del año</div>
+              <div className="k-value" style={{ fontSize: 18 }}>{fmtPct(mixNueva / Math.max(mixNueva + mixRenov, 1))} nueva</div>
+              <div className="k-sub">Nueva {fmtMoney(mixNueva)} · Renov. {fmtMoney(mixRenov)}</div>
+            </div>
+          </div>
+        )}
+
+        <ResponsiveContainer width="100%" height={300}>
+          {periodo === 'anual' ? (
+            <ComposedChart data={anual} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false} />
+              <XAxis dataKey="label" tick={{ fontSize: 11.5, fill: C.textMuted }} axisLine={false} tickLine={false} />
+              <YAxis tickFormatter={fmtMoney} tick={{ fontSize: 11, fill: C.textMuted }} axisLine={false} tickLine={false} width={62} />
+              <Tooltip content={<MoneyTooltip />} />
+              <Legend wrapperStyle={{ fontSize: 12 }} />
+              <Area type="monotone" dataKey="Real acumulado" stroke={C.primary} strokeWidth={2.5} fill={`${C.primary}22`} />
+              <Line type="monotone" dataKey="Proyección acumulada" stroke={C.green} strokeWidth={2.5} strokeDasharray="4 3" dot={false} />
+              <Line type="monotone" dataKey="Meta acumulada" stroke={C.gold} strokeWidth={2} strokeDasharray="7 4" dot={false} />
+            </ComposedChart>
+          ) : (
+            <ComposedChart data={serie} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false} />
+              <XAxis dataKey="label" tick={{ fontSize: 11.5, fill: C.textMuted }} axisLine={false} tickLine={false} />
+              <YAxis tickFormatter={fmtMoney} tick={{ fontSize: 11, fill: C.textMuted }} axisLine={false} tickLine={false} width={62} />
+              <Tooltip content={<MoneyTooltip />} />
+              <Legend wrapperStyle={{ fontSize: 12 }} />
+              <Bar dataKey="Prima nueva" stackId="p" fill={C.primary} maxBarSize={periodo === 'trimestral' ? 64 : 34} />
+              <Bar dataKey="Renovación" stackId="p" fill={C.accent} radius={[6, 6, 0, 0]} maxBarSize={periodo === 'trimestral' ? 64 : 34} />
+              <Line type="monotone" dataKey="Meta" stroke={C.gold} strokeWidth={2.5} strokeDasharray="6 4" dot={false} />
+              <Line type="monotone" dataKey="Proyección" stroke={C.green} strokeWidth={2.5} dot={{ r: 3 }} />
+            </ComposedChart>
+          )}
+        </ResponsiveContainer>
+      </div>
+
+      {/* ═══ Podio de asesores ═══ */}
+      <div className="crm-kpi-detail" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))' }}>
+        <div className="crm-kpi-box" style={{ borderTop: `3px solid ${C.gold}` }}>
+          <div className="k-label" style={{ display: 'flex', alignItems: 'center', gap: 5 }}><Trophy size={13} color={C.gold} /> Mayor prima pagada</div>
+          <div className="k-value" style={{ fontSize: 18 }}>{topPrima?.agent.nombre || '—'}</div>
+          <div className="k-sub">{fmtMoney(topPrima?.kpis.totales.primaTotal || 0)} en {anio}</div>
+        </div>
+        <div className="crm-kpi-box" style={{ borderTop: `3px solid ${C.primary}` }}>
+          <div className="k-label" style={{ display: 'flex', alignItems: 'center', gap: 5 }}><Medal size={13} color={C.primary} /> Mejor cumplimiento</div>
+          <div className="k-value" style={{ fontSize: 18 }}>{topCumpl?.agent.nombre || '—'}</div>
+          <div className="k-sub">{fmtPct(topCumpl?.kpis.totales.cumplimiento || 0)} de su meta</div>
+        </div>
+        <div className="crm-kpi-box" style={{ borderTop: `3px solid ${C.green}` }}>
+          <div className="k-label" style={{ display: 'flex', alignItems: 'center', gap: 5 }}><Shield size={13} color={C.green} /> Mejor conservación</div>
+          <div className="k-value" style={{ fontSize: 18 }}>{topCons?.agent.nombre || '—'}</div>
+          <div className="k-sub">{fmtPct(topCons?.kpis.conservacion.indiceProyectado || 0, 1)} proyectado</div>
+        </div>
+      </div>
+
+      {/* ═══ Ranking + participación ═══ */}
+      <div className="two-col">
+        <div className="crm-chart-card" style={{ marginBottom: 0 }}>
+          <h3>Ranking de asesores</h3>
+          <p className="sub">Prima pagada {anio} vs meta anual</p>
+          <ResponsiveContainer width="100%" height={Math.max(rank.length * 56, 160)}>
+            <ComposedChart data={rank} layout="vertical" margin={{ top: 0, right: 70, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={C.border} horizontal={false} />
+              <XAxis type="number" tickFormatter={fmtMoney} tick={{ fontSize: 10.5, fill: C.textMuted }} axisLine={false} tickLine={false} />
+              <YAxis type="category" dataKey="nombre" tick={{ fontSize: 12, fill: C.text, fontWeight: 600 }} axisLine={false} tickLine={false} width={130} />
+              <Tooltip content={<MoneyTooltip />} />
+              <Bar dataKey="Meta" fill="rgba(193,151,91,.25)" radius={[0, 6, 6, 0]} barSize={10} />
+              <Bar dataKey="Prima" fill={C.primary} radius={[0, 6, 6, 0]} barSize={16}>
+                <LabelList dataKey="Prima" position="right" formatter={fmtMoney} style={{ fontSize: 11, fontWeight: 700, fill: C.primaryDark }} />
+              </Bar>
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="crm-chart-card" style={{ marginBottom: 0 }}>
+          <h3>Participación en la producción</h3>
+          <p className="sub">Aporte de cada asesor a la prima total ({fmtMoney(totalPrima)})</p>
+          {share.length === 0 ? <p className="empty">Sin prima pagada aún</p> : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' }}>
+              <ResponsiveContainer width={190} height={190}>
+                <PieChart>
+                  <Pie data={share} dataKey="value" innerRadius={55} outerRadius={88} paddingAngle={3} strokeWidth={0}>
+                    {share.map(d => <Cell key={d.name} fill={d.color} />)}
+                  </Pie>
+                  <Tooltip formatter={(v, n) => [`${fmtMoneyFull(v)} (${((v / totalPrima) * 100).toFixed(1)}%)`, n]} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div style={{ flex: 1, minWidth: 150 }}>
+                {share.map(d => (
+                  <div key={d.name} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', fontSize: 13 }}>
+                    <span style={{ width: 10, height: 10, borderRadius: 3, background: d.color, flexShrink: 0 }} />
+                    <span style={{ flex: 1, color: C.textMuted }}>{d.name}</span>
+                    <b style={{ color: C.text, fontVariantNumeric: 'tabular-nums' }}>{((d.value / totalPrima) * 100).toFixed(1)}%</b>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ═══ Matriz de calor ═══ */}
+      <div className="crm-chart-card" style={{ marginTop: 20 }}>
+        <h3>Matriz de producción — asesor × mes</h3>
+        <p className="sub">Intensidad = prima pagada del mes (estilo matrix de Power BI)</p>
+        <HeatMatrix agentes={data.porAgente} />
+      </div>
+    </>
+  );
+}
+
 export default function CrmDashboardView() {
   const [anio, setAnio] = useState(2026);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [drill, setDrill] = useState(null); // summary del asesor seleccionado
+  const [tab, setTab] = useState('resumen'); // resumen | rendimiento (solo admins)
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -241,11 +492,19 @@ export default function CrmDashboardView() {
         )}
       </div>
 
-      {/* ── Asesor: tablero directo. Admin: chart global + ranking ── */}
+      {/* ── Asesor: tablero directo. Admin: tabs Resumen | Rendimiento ── */}
       {single ? (
         <AgentBoard summary={{ ...data.porAgente[0], anio }} />
       ) : (
         <>
+          <div className="crm-detail-tabs">
+            <button className={`crm-dtab${tab === 'resumen' ? ' active' : ''}`} onClick={() => setTab('resumen')}>Resumen</button>
+            <button className={`crm-dtab${tab === 'rendimiento' ? ' active' : ''}`} onClick={() => setTab('rendimiento')}>📊 Rendimiento</button>
+          </div>
+
+          {tab === 'rendimiento' && <PerformanceTab data={data} anio={anio} />}
+
+          {tab === 'resumen' && (<>
           <div className="crm-chart-card">
             <h3>Producción de la promotoría {anio}</h3>
             <p className="sub">Prima pagada mensual (nueva + renovación) vs meta y proyección</p>
@@ -318,6 +577,7 @@ export default function CrmDashboardView() {
               })}
             </div>
           </div>
+          </>)}
         </>
       )}
 
