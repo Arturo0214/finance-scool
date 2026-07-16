@@ -5,7 +5,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../../../../utils/api';
 import { C } from '../../constants';
-import { Plus, X, Trash2 } from 'lucide-react';
+import { Plus, X, Trash2, Search, ChevronUp, ChevronDown } from 'lucide-react';
 import { getCrmCSS, ESTATUS_POLIZA, estatusPoliza, PLANES, fmtMoney, fmtDate } from './crmShared';
 
 const EMPTY = { client_id: '', poliza: '', plan: PLANES[0], tipo: 'nueva', prima: '', forma_pago: 'anual', suma_asegurada: '', fecha_emision: '', fecha_pago: '', fecha_renovacion: '', estatus: 'en_tramite', notas: '' };
@@ -17,8 +17,20 @@ export default function CrmPoliciesView({ isAgency }) {
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('todas');
   const [agentFilter, setAgentFilter] = useState('');
+  const [search, setSearch] = useState('');
+  const [sort, setSort] = useState({ key: '', dir: 'desc' });
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
+
+  const toggleSort = (key) => setSort(s => ({ key, dir: s.key === key && s.dir === 'desc' ? 'asc' : 'desc' }));
+  const SortTh = ({ k, children }) => (
+    <th onClick={() => toggleSort(k)} style={{ cursor: 'pointer', userSelect: 'none' }} title="Ordenar">
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+        {children}
+        {sort.key === k ? (sort.dir === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />) : null}
+      </span>
+    </th>
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -51,8 +63,24 @@ export default function CrmPoliciesView({ isAgency }) {
   const filtered = policies.filter(p => {
     if (statusFilter !== 'todas' && p.estatus !== statusFilter) return false;
     if (agentFilter && String(p.agent_id) !== agentFilter) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      const hay = [p.plan, p.poliza, p.crm_clients?.nombre, p.crm_agents?.nombre].filter(Boolean).join(' ').toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
     return true;
   });
+
+  const fechaRef = (p) => p.fecha_pago || p.fecha_renovacion || p.fecha_emision || '';
+  const sorted = sort.key ? [...filtered].sort((a, b) => {
+    let va, vb;
+    if (sort.key === 'prima') { va = Number(a.prima) || 0; vb = Number(b.prima) || 0; }
+    else if (sort.key === 'cliente') { va = a.crm_clients?.nombre || ''; vb = b.crm_clients?.nombre || ''; }
+    else if (sort.key === 'fecha') { va = fechaRef(a); vb = fechaRef(b); }
+    else { va = a[sort.key] || ''; vb = b[sort.key] || ''; }
+    const c = typeof va === 'number' ? va - vb : String(va).localeCompare(String(vb), 'es');
+    return sort.dir === 'asc' ? c : -c;
+  }) : filtered;
 
   const totalPrima = filtered.reduce((s, p) => s + (Number(p.prima) || 0), 0);
 
@@ -68,6 +96,10 @@ export default function CrmPoliciesView({ isAgency }) {
           <p className="view-subtitle" style={{ marginBottom: 0 }}>{filtered.length} pólizas · prima total {fmtMoney(totalPrima)}</p>
         </div>
         <div className="crm-toolbar-right">
+          <div className="crm-search-wrap">
+            <Search size={15} />
+            <input className="crm-search" placeholder="Buscar póliza, plan o cliente..." value={search} onChange={e => setSearch(e.target.value)} />
+          </div>
           {isAgency && (
             <select className="crm-select" value={agentFilter} onChange={e => setAgentFilter(e.target.value)}>
               <option value="">Todos los asesores</option>
@@ -91,11 +123,11 @@ export default function CrmPoliciesView({ isAgency }) {
       <div className="tbl-wrap desktop-only-table">
         <table>
           <thead>
-            <tr><th>Póliza / Plan</th><th>Cliente</th>{isAgency && <th>Asesor</th>}<th>Tipo</th><th>Prima</th><th>Pago / Renovación</th><th>Estatus</th></tr>
+            <tr><SortTh k="plan">Póliza / Plan</SortTh><SortTh k="cliente">Cliente</SortTh>{isAgency && <th>Asesor</th>}<SortTh k="tipo">Tipo</SortTh><SortTh k="prima">Prima</SortTh><SortTh k="fecha">Pago / Renovación</SortTh><SortTh k="estatus">Estatus</SortTh></tr>
           </thead>
           <tbody>
-            {filtered.length === 0 && <tr><td colSpan={7} className="empty">Sin pólizas con estos filtros</td></tr>}
-            {filtered.map(p => {
+            {sorted.length === 0 && <tr><td colSpan={7} className="empty">Sin pólizas con estos filtros</td></tr>}
+            {sorted.map(p => {
               const s = estatusPoliza(p.estatus);
               return (
                 <tr key={p.id} className="crm-rank-row" onClick={() => setForm({ ...EMPTY, ...p })}>
@@ -115,8 +147,8 @@ export default function CrmPoliciesView({ isAgency }) {
 
       {/* Mobile */}
       <div className="mobile-only-cards" style={{ flexDirection: 'column' }}>
-        {filtered.length === 0 && <p className="empty">Sin pólizas con estos filtros</p>}
-        {filtered.map(p => {
+        {sorted.length === 0 && <p className="empty">Sin pólizas con estos filtros</p>}
+        {sorted.map(p => {
           const s = estatusPoliza(p.estatus);
           return (
             <div key={p.id} className="crm-mobile-card" onClick={() => setForm({ ...EMPTY, ...p })}>

@@ -6,7 +6,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../../../../utils/api';
 import { C } from '../../constants';
-import { Plus, X, Trash2, Check, MessageCircle } from 'lucide-react';
+import { Plus, X, Trash2, Check, MessageCircle, RotateCcw } from 'lucide-react';
 import { getCrmCSS, TIPOS_RECORDATORIO, tipoRecordatorio, fmtDate } from './crmShared';
 
 const EMPTY = { titulo: '', descripcion: '', tipo: 'seguimiento', fecha: '', hora: '', client_id: '', agent_id: '' };
@@ -33,6 +33,7 @@ export default function CrmRemindersView({ isAgency }) {
   const [agents, setAgents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tipoFilter, setTipoFilter] = useState('todos');
+  const [agentFilter, setAgentFilter] = useState('');
   const [showDone, setShowDone] = useState(false);
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -65,11 +66,13 @@ export default function CrmRemindersView({ isAgency }) {
   };
 
   const complete = async (r) => { await api.crmUpdateReminder(r.id, { estatus: 'completado' }); load(); };
+  const reopen = async (r) => { await api.crmUpdateReminder(r.id, { estatus: 'pendiente' }); load(); };
   const remove = async (r) => { if (confirm('¿Eliminar recordatorio?')) { await api.crmDeleteReminder(r.id); load(); } };
 
   const visible = reminders.filter(r => {
     if (!showDone && r.estatus === 'completado') return false;
     if (tipoFilter !== 'todos' && r.tipo !== tipoFilter) return false;
+    if (agentFilter && String(r.agent_id) !== agentFilter) return false;
     return true;
   });
   const grouped = GROUPS.map(g => ({ ...g, items: visible.filter(r => groupKey(r.fecha) === g.id) })).filter(g => g.items.length);
@@ -86,6 +89,12 @@ export default function CrmRemindersView({ isAgency }) {
           <p className="view-subtitle" style={{ marginBottom: 0 }}>{visible.length} pendientes — pagos, renovaciones, citas y seguimientos</p>
         </div>
         <div className="crm-toolbar-right">
+          {isAgency && (
+            <select className="crm-select" value={agentFilter} onChange={e => setAgentFilter(e.target.value)}>
+              <option value="">Todos los asesores</option>
+              {agents.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
+            </select>
+          )}
           <button className="btn-secondary" onClick={() => setShowDone(s => !s)}>{showDone ? 'Ocultar completados' : 'Ver completados'}</button>
           <button className="btn-primary" onClick={() => setForm({ ...EMPTY })}><Plus size={16} /> Nuevo recordatorio</button>
         </div>
@@ -129,6 +138,7 @@ export default function CrmRemindersView({ isAgency }) {
                     </a>
                   )}
                   {!done && <button className="crm-icon-btn ok" title="Completar" onClick={() => complete(r)}><Check size={14} /></button>}
+                  {done && <button className="crm-icon-btn" title="Reabrir" onClick={() => reopen(r)}><RotateCcw size={14} /></button>}
                   <button className="crm-icon-btn del" title="Eliminar" onClick={() => remove(r)}><Trash2 size={14} /></button>
                 </div>
               </div>

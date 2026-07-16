@@ -6,33 +6,35 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { api } from '../../../../utils/api';
 import { C } from '../../constants';
-import { Phone, GripVertical, RefreshCw } from 'lucide-react';
+import { Phone, GripVertical, RefreshCw, Search } from 'lucide-react';
 import { getCrmCSS, ETAPAS, fmtMoney } from './crmShared';
 
 const KANBAN_CSS = `
-  .kb-board { display:flex; gap:12px; overflow-x:auto; padding-bottom:14px; align-items:flex-start; -webkit-overflow-scrolling:touch; }
-  .kb-col { min-width:230px; width:230px; flex-shrink:0; background:${C.bg}; border-radius:12px; border:1px solid ${C.border}; display:flex; flex-direction:column; max-height:calc(100vh - 300px); }
-  .kb-col.drag-over { border-color:${C.primary}; background:${C.blueBg}; box-shadow:0 0 0 2px ${C.primary}30; }
-  .kb-col-head { padding:12px 14px; display:flex; align-items:center; gap:8px; border-bottom:1px solid ${C.border}; position:sticky; top:0; }
-  .kb-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
-  .kb-col-title { font-size:13px; font-weight:700; color:${C.text}; flex:1; }
-  .kb-count { font-size:11.5px; font-weight:700; color:${C.textMuted}; background:${C.white}; border:1px solid ${C.border}; border-radius:12px; padding:1px 8px; }
-  .kb-col-body { padding:10px; overflow-y:auto; display:flex; flex-direction:column; gap:8px; min-height:60px; }
-  .kb-card { background:${C.white}; border:1px solid ${C.border}; border-radius:10px; padding:10px 12px; cursor:grab; transition:box-shadow .15s, transform .15s, opacity .15s; }
-  .kb-card:hover { box-shadow:0 4px 12px rgba(0,61,165,.1); }
-  .kb-card.dragging { opacity:.45; transform:rotate(1.5deg); }
-  .kb-card-name { font-size:13px; font-weight:700; color:${C.text}; display:flex; align-items:center; gap:6px; }
+  .kb-board { display:flex; gap:14px; overflow-x:auto; padding-bottom:16px; align-items:flex-start; -webkit-overflow-scrolling:touch; }
+  .kb-col { min-width:238px; width:238px; flex-shrink:0; background:linear-gradient(180deg,rgba(255,255,255,.72),rgba(246,248,251,.92)); border-radius:16px; border:1px solid rgba(11,27,51,.08); display:flex; flex-direction:column; max-height:calc(100vh - 300px); box-shadow:0 1px 2px rgba(11,27,51,.03); }
+  .kb-col.drag-over { border-color:${C.gold}; background:${C.goldBg}; box-shadow:0 0 0 3px rgba(193,151,91,.25), 0 12px 28px -18px rgba(11,27,51,.35); }
+  .kb-col-head { padding:13px 15px; display:flex; align-items:center; gap:8px; border-bottom:1px solid rgba(11,27,51,.07); position:sticky; top:0; z-index:1; }
+  .kb-dot { width:9px; height:9px; border-radius:50%; flex-shrink:0; box-shadow:0 0 0 3px rgba(11,27,51,.06); }
+  .kb-col-title { font-size:11.5px; font-weight:700; color:${C.ink}; flex:1; text-transform:uppercase; letter-spacing:1.2px; }
+  .kb-count { font-size:11.5px; font-weight:700; color:${C.textMuted}; background:${C.white}; border:1px solid rgba(11,27,51,.1); border-radius:12px; padding:1px 8px; font-variant-numeric:tabular-nums; }
+  .kb-col-total { font-size:11px; font-weight:700; color:${C.green}; padding:8px 4px 0; font-variant-numeric:tabular-nums; }
+  .kb-col-body { padding:10px; overflow-y:auto; display:flex; flex-direction:column; gap:9px; min-height:60px; }
+  .kb-card { background:linear-gradient(180deg,#fff,#FDFDFB); border:1px solid rgba(11,27,51,.09); border-radius:12px; padding:11px 13px; cursor:grab; transition:box-shadow .18s, transform .18s, opacity .15s, border-color .18s; box-shadow:0 1px 2px rgba(11,27,51,.04); }
+  .kb-card:hover { transform:translateY(-2px); border-color:rgba(11,27,51,.16); box-shadow:0 12px 24px -14px rgba(0,43,117,.4); }
+  .kb-card:active { cursor:grabbing; }
+  .kb-card.dragging { opacity:.45; transform:rotate(1.5deg) scale(.98); }
+  .kb-card-name { font-size:13px; font-weight:700; color:${C.ink}; display:flex; align-items:center; gap:6px; }
   .kb-card-sub { font-size:11px; color:${C.textMuted}; margin-top:2px; }
-  .kb-card-meta { display:flex; justify-content:space-between; align-items:center; margin-top:8px; gap:6px; }
-  .kb-prima { font-size:11.5px; font-weight:700; color:${C.green}; }
+  .kb-card-meta { display:flex; justify-content:space-between; align-items:center; margin-top:9px; gap:6px; }
+  .kb-prima { font-size:11.5px; font-weight:700; color:${C.green}; font-variant-numeric:tabular-nums; }
   .kb-move { display:none; }
-  .kb-empty { font-size:11.5px; color:${C.textLight}; text-align:center; padding:14px 6px; border:1.5px dashed ${C.border}; border-radius:8px; }
+  .kb-empty { font-size:11.5px; color:${C.textLight}; text-align:center; padding:16px 6px; border:1.5px dashed rgba(11,27,51,.15); border-radius:10px; font-style:italic; }
   @media(max-width:768px){
     .kb-col { min-width:78vw; width:78vw; max-height:none; }
     .kb-board { scroll-snap-type:x mandatory; }
     .kb-col { scroll-snap-align:start; }
     .kb-card { cursor:default; }
-    .kb-move { display:block; width:100%; margin-top:8px; padding:6px 8px; border:1px solid ${C.border}; border-radius:8px; font-size:12px; font-family:inherit; background:${C.bg}; color:${C.text}; }
+    .kb-move { display:block; width:100%; margin-top:8px; padding:7px 8px; border:1px solid rgba(11,27,51,.14); border-radius:8px; font-size:12px; font-family:inherit; background:${C.white}; color:${C.text}; }
   }
 `;
 
@@ -44,6 +46,7 @@ export default function CrmPipelineView({ isAgency }) {
   const [loading, setLoading] = useState(true);
   const [dragId, setDragId] = useState(null);
   const [overCol, setOverCol] = useState(null);
+  const [search, setSearch] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -65,7 +68,10 @@ export default function CrmPipelineView({ isAgency }) {
     return m;
   }, [policies]);
 
-  const visible = clients.filter(c => !isAgency || !agentFilter || String(c.agent_id) === agentFilter);
+  const visible = clients.filter(c =>
+    (!isAgency || !agentFilter || String(c.agent_id) === agentFilter) &&
+    (!search || (c.nombre || '').toLowerCase().includes(search.toLowerCase()))
+  );
   const currentAgent = agents.find(a => String(a.id) === agentFilter);
 
   const moveClient = async (clientId, etapa) => {
@@ -90,6 +96,10 @@ export default function CrmPipelineView({ isAgency }) {
           </p>
         </div>
         <div className="crm-toolbar-right">
+          <div className="crm-search-wrap">
+            <Search size={15} />
+            <input className="crm-search" placeholder="Buscar cliente..." value={search} onChange={e => setSearch(e.target.value)} />
+          </div>
           {isAgency && (
             <select className="crm-select" value={agentFilter} onChange={e => setAgentFilter(e.target.value)}>
               {agents.map(a => <option key={a.id} value={a.id}>{a.nombre} ({a.clave})</option>)}
@@ -112,13 +122,13 @@ export default function CrmPipelineView({ isAgency }) {
               onDragLeave={() => setOverCol(o => (o === etapa.id ? null : o))}
               onDrop={e => { e.preventDefault(); setOverCol(null); if (dragId) moveClient(dragId, etapa.id); setDragId(null); }}
             >
-              <div className="kb-col-head" style={{ background: `${etapa.color}0D`, borderRadius: '12px 12px 0 0' }}>
+              <div className="kb-col-head" style={{ background: `${etapa.color}0D`, borderRadius: '16px 16px 0 0' }}>
                 <span className="kb-dot" style={{ background: etapa.color }} />
                 <span className="kb-col-title">{etapa.label}</span>
                 <span className="kb-count">{items.length}</span>
               </div>
               <div className="kb-col-body">
-                {totalPrima > 0 && <div style={{ fontSize: 11, fontWeight: 700, color: C.textMuted, padding: '0 2px' }}>Prima: {fmtMoney(totalPrima)}</div>}
+                {totalPrima > 0 && <div className="kb-col-total">Prima: {fmtMoney(totalPrima)}</div>}
                 {items.length === 0 && <div className="kb-empty">Suelta aquí</div>}
                 {items.map(c => (
                   <div

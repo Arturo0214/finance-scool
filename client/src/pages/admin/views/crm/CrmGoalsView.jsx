@@ -47,6 +47,15 @@ export default function CrmGoalsView({ isAgency }) {
   }, [anio]);
   useEffect(() => { load(); }, [load]);
 
+  // Rellena los 12 meses de un asesor con la misma meta (edición rápida)
+  const fillYear = (agentId, nombre) => {
+    const v = window.prompt(`Meta mensual para ${nombre} (se aplica a los 12 meses de ${anio}):`, '');
+    if (v === null || v === '' || isNaN(Number(v))) return;
+    const patch = {};
+    for (let m = 1; m <= 12; m++) patch[`${agentId}-${m}`] = Number(v);
+    setChanged(c => ({ ...c, ...patch }));
+  };
+
   const saveGoals = async () => {
     const entries = Object.entries(changed);
     if (!entries.length) return;
@@ -149,6 +158,12 @@ export default function CrmGoalsView({ isAgency }) {
                   <tr key={a.agent.id}>
                     <td style={{ position: 'sticky', left: 0, background: '#fff', zIndex: 1 }}>
                       <b>{a.agent.nombre}</b><br /><span style={{ fontSize: 11, color: C.textMuted }}>{a.agent.clave}</span>
+                      {isAgency && (
+                        <button className="crm-icon-btn" title="Aplicar una meta a los 12 meses" onClick={() => fillYear(a.agent.id, a.agent.nombre)}
+                          style={{ width: 'auto', height: 24, padding: '0 8px', fontSize: 10.5, fontWeight: 700, marginTop: 5, display: 'inline-flex', gap: 4 }}>
+                          ⚡ Meta anual
+                        </button>
+                      )}
                     </td>
                     {MESES.map((_, i) => {
                       const key = `${a.agent.id}-${i + 1}`;
