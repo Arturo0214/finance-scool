@@ -159,7 +159,7 @@ function ActivityFeed({ activity }) {
     <div className="section">
       <h2 className="section-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <Activity size={18} color={C.green} /> Actividad en vivo
-        <span style={{ fontSize: 11, fontWeight: 500, color: C.textLight }}>· se actualiza cada 10 s</span>
+        <span style={{ fontSize: 11, fontWeight: 500, color: C.textLight }}>· se actualiza cada 30 s</span>
       </h2>
       {activity.length === 0 ? (
         <p className="empty">Sin actividad registrada todavía</p>
@@ -196,15 +196,20 @@ export default function TeamView({ userRole, currentUserId }) {
   const [feedback, setFeedback]         = useState(null);
   const [resetting, setResetting]       = useState(null);
   const pollRef = useRef(null);
+  const lastTsRef = useRef(null); // created_at del evento más reciente (polling incremental)
   const isAgency = isAgencyRole(userRole);
 
   // Un admin solo gestiona asesores; solo un superadmin toca a otro superadmin
   const canManage = (u) => (isAgency || u.role === 'asesor') && (u.role !== 'superadmin' || userRole === 'superadmin');
 
+  /* Polling ligero: cada 30 s pide solo los eventos NUEVOS (param `since` →
+     respuesta de ~15 bytes si no hay nada). La lista de usuarios solo se
+     refresca cuando hubo actividad nueva, y todo se pausa si la pestaña
+     está oculta — evita quemar egress de Railway/Supabase. */
   useEffect(() => {
     loadUsers();
     loadActivity();
-    pollRef.current = setInterval(() => { loadActivity(); loadUsers(true); }, 10000);
+    pollRef.current = setInterval(() => { if (!document.hidden) loadActivity(); }, 30000);
     return () => clearInterval(pollRef.current);
   }, []); // eslint-disable-line
 
@@ -219,8 +224,17 @@ export default function TeamView({ userRole, currentUserId }) {
 
   const loadActivity = async () => {
     try {
-      const data = await api.getCrmActivity({ limit: 60 });
-      setActivity(data.activity || []);
+      const since = lastTsRef.current;
+      const data = await api.getCrmActivity({ limit: 60, ...(since ? { since } : {}) });
+      const rows = data.activity || [];
+      if (!since) {
+        setActivity(rows);
+        if (rows[0]) lastTsRef.current = rows[0].created_at;
+      } else if (rows.length) {
+        setActivity(prev => [...rows, ...prev].slice(0, 100));
+        lastTsRef.current = rows[0].created_at;
+        loadUsers(true); // hubo movimiento → refrescar carteras/última actividad
+      }
     } catch { /* asesores no ven actividad */ }
   };
 
