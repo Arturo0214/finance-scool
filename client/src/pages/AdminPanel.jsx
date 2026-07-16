@@ -11,11 +11,11 @@ import { api } from '../utils/api';
 import Logo from '../components/Logo';
 import NotificationDropdown from '../components/NotificationDropdown';
 import {
-  Menu, X, LogOut, BarChart3, Users, Calendar, MessageSquare,
+  Menu, LogOut, BarChart3, Users, Calendar, MessageSquare,
   MessageCircle, Link as LinkIcon, Zap, Eye, Settings,
   Activity, Filter, PieChart, Megaphone, Briefcase,
   UserCheck, Bot, LayoutDashboard, Contact, FileText, Target, Bell,
-  KanbanSquare, HandCoins,
+  KanbanSquare, HandCoins, ChevronsLeft, ChevronsRight,
 } from 'lucide-react';
 
 import { C, SPANISH_LABELS, isAgencyRole } from './admin/constants';
@@ -64,7 +64,9 @@ export default function AdminPanel() {
   const { view: urlView } = useParams();
   const { user, loading: authLoading, logout } = useAuth();
   const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
-  const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
+  // Colapso del sidebar: recuerda la preferencia del usuario entre sesiones
+  const [sidebarOpen, setSidebarOpen] = useState(() => !isMobile && localStorage.getItem('fsc_sidebar') !== 'closed');
+  const toggleSidebar = () => setSidebarOpen(o => { localStorage.setItem('fsc_sidebar', o ? 'closed' : 'open'); return !o; });
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const activeView = urlView || 'dashboard';
   const setActiveView = (v) => navigate(`/admin/${v}`);
@@ -216,8 +218,8 @@ export default function AdminPanel() {
               <span className="sb-logo-full"><Logo height={32} variant="light" /></span>
               <span className="sb-logo-mini"><div className="sb-logo-icon"><Briefcase size={18} /></div></span>
             </div>
-            <button className="sb-toggle" onClick={() => setSidebarOpen(o => !o)}>
-              {sidebarOpen ? <X size={18} /> : <Menu size={18} />}
+            <button className="sb-toggle" onClick={toggleSidebar} title={sidebarOpen ? 'Colapsar menú' : 'Expandir menú'}>
+              {sidebarOpen ? <ChevronsLeft size={18} /> : <ChevronsRight size={18} />}
             </button>
           </div>
 
