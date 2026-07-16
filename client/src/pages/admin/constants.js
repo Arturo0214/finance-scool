@@ -82,7 +82,7 @@ export const SPANISH_LABELS = {
   hubspotPortal: 'ID del Portal HubSpot',
   configure: 'Configurar',
   metaWorkflow: 'Workflow Meta Business Agent',
-  team: 'Equipo',
+  team: 'Usuarios',
   incomeType: 'Tipo de Ingreso',
   approxIncome: 'Ingreso Aproximado',
   declaracion: '¿Declara Impuestos?',

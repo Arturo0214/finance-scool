@@ -4,8 +4,8 @@
  * metas, recordatorios, archivos (Cloudinary), KPIs y forecast.
  *
  * Reglas de acceso:
- *  - superadmin / agencia  → ven y administran todo
- *  - asesor / admin        → solo su propia cartera (crm_agents.user_id = req.user.id)
+ *  - superadmin / agencia / admin  → ven y administran todo
+ *  - asesor                        → solo su propia cartera (crm_agents.user_id = req.user.id)
  */
 const express = require('express');
 const multer = require('multer');
@@ -31,7 +31,17 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 
 
 router.use(verifyToken);
 
-const isAgency = (role) => ['superadmin', 'agencia'].includes(role);
+const isAgency = (role) => ['superadmin', 'agencia', 'admin'].includes(role);
+
+/* ── Bitácora de actividad (fire-and-forget; nunca bloquea la respuesta) ── */
+function logActivity(req, action, entity, entityId, detail) {
+  try {
+    getDB().from('crm_activity').insert([{
+      user_id: req.user.id, user_name: req.user.name || req.user.email, user_role: req.user.role,
+      action, entity, entity_id: entityId != null ? String(entityId) : null, detail: detail || null,
+    }]).then(({ error }) => { if (error) console.error('activity log:', error.message); });
+  } catch (e) { console.error('activity log:', e.message); }
+}
 
 /* ── Tablas de bono PIR 2026 (del Business Review) ──
    Bandas por índice de conservación: <0.86 → 0%, ≥0.86, ≥0.90, ≥0.94 */
@@ -195,6 +205,7 @@ router.post('/agents', async (req, res) => {
   const db = getDB();
   const { data, error } = await db.from('crm_agents').insert([{ clave, nombre, cuaderno: cuaderno || 'NOVEL', fecha_inicio_calculos, telefono, email, user_id }]).select();
   if (error) return res.status(500).json({ error: error.message });
+  logActivity(req, 'crear', 'asesor', data[0].id, nombre);
   res.status(201).json({ agent: data[0] });
 });
 
@@ -207,6 +218,7 @@ router.put('/agents/:id', async (req, res) => {
   const db = getDB();
   const { data, error } = await db.from('crm_agents').update(patch).eq('id', req.params.id).select();
   if (error) return res.status(500).json({ error: error.message });
+  logActivity(req, 'editar', 'asesor', req.params.id, data[0]?.nombre);
   res.json({ agent: data[0] });
 });
 
@@ -262,6 +274,7 @@ router.post('/clients', async (req, res) => {
     direccion: b.direccion, etapa: b.etapa || 'prospecto', origen: b.origen || 'referido', notas: b.notas,
   }, 'crm_clients')]).select();
   if (error) return res.status(500).json({ error: error.message });
+  logActivity(req, 'crear', 'cliente', data[0].id, b.etapa || 'prospecto');
   res.status(201).json({ client: decryptFields(data[0], 'crm_clients') });
 });
 
@@ -279,6 +292,7 @@ router.put('/clients/:id', async (req, res) => {
   patch.updated_at = new Date().toISOString();
   const { data, error } = await db.from('crm_clients').update(encryptFields(patch, 'crm_clients')).eq('id', req.params.id).select();
   if (error) return res.status(500).json({ error: error.message });
+  logActivity(req, 'editar', 'cliente', req.params.id, patch.etapa || null);
   res.json({ client: decryptFields(data[0], 'crm_clients') });
 });
 
@@ -291,6 +305,7 @@ router.delete('/clients/:id', async (req, res) => {
   if (scope.restricted && existing.agent_id !== scope.agentId) return res.status(403).json({ error: 'Sin acceso a este cliente' });
   const { error } = await db.from('crm_clients').delete().eq('id', req.params.id);
   if (error) return res.status(500).json({ error: error.message });
+  logActivity(req, 'eliminar', 'cliente', req.params.id, null);
   res.json({ ok: true });
 });
 
@@ -329,6 +344,7 @@ router.post('/policies', async (req, res) => {
     comision_estatus: b.comision_estatus || 'pendiente',
   }, 'crm_policies')]).select();
   if (error) return res.status(500).json({ error: error.message });
+  logActivity(req, 'crear', 'poliza', data[0].id, b.estatus || 'en_tramite');
   res.status(201).json({ policy: decryptFields(data[0], 'crm_policies') });
 });
 
@@ -346,6 +362,7 @@ router.put('/policies/:id', async (req, res) => {
   patch.updated_at = new Date().toISOString();
   const { data, error } = await db.from('crm_policies').update(encryptFields(patch, 'crm_policies')).eq('id', req.params.id).select();
   if (error) return res.status(500).json({ error: error.message });
+  logActivity(req, 'editar', 'poliza', req.params.id, patch.estatus || null);
   res.json({ policy: decryptFields(data[0], 'crm_policies') });
 });
 
@@ -358,6 +375,7 @@ router.delete('/policies/:id', async (req, res) => {
   if (scope.restricted && existing.agent_id !== scope.agentId) return res.status(403).json({ error: 'Sin acceso a esta póliza' });
   const { error } = await db.from('crm_policies').delete().eq('id', req.params.id);
   if (error) return res.status(500).json({ error: error.message });
+  logActivity(req, 'eliminar', 'poliza', req.params.id, null);
   res.json({ ok: true });
 });
 
@@ -387,6 +405,7 @@ router.put('/goals', async (req, res) => {
   }));
   const { error } = await db.from('crm_goals').upsert(rows, { onConflict: 'agent_id,anio,mes' });
   if (error) return res.status(500).json({ error: error.message });
+  logActivity(req, 'editar', 'metas', null, `${rows.length} metas`);
   res.json({ ok: true, count: rows.length });
 });
 
@@ -421,6 +440,7 @@ router.post('/reminders', async (req, res) => {
     fecha: b.fecha, hora: b.hora || null, estatus: 'pendiente',
   }, 'crm_reminders')]).select();
   if (error) return res.status(500).json({ error: error.message });
+  logActivity(req, 'crear', 'recordatorio', data[0].id, b.tipo || 'seguimiento');
   res.status(201).json({ reminder: decryptFields(data[0], 'crm_reminders') });
 });
 
@@ -437,6 +457,7 @@ router.put('/reminders/:id', async (req, res) => {
   patch.updated_at = new Date().toISOString();
   const { data, error } = await db.from('crm_reminders').update(encryptFields(patch, 'crm_reminders')).eq('id', req.params.id).select();
   if (error) return res.status(500).json({ error: error.message });
+  logActivity(req, 'editar', 'recordatorio', req.params.id, patch.estatus || null);
   res.json({ reminder: decryptFields(data[0], 'crm_reminders') });
 });
 
@@ -449,6 +470,7 @@ router.delete('/reminders/:id', async (req, res) => {
   if (scope.restricted && existing.agent_id !== scope.agentId) return res.status(403).json({ error: 'Sin acceso' });
   const { error } = await db.from('crm_reminders').delete().eq('id', req.params.id);
   if (error) return res.status(500).json({ error: error.message });
+  logActivity(req, 'eliminar', 'recordatorio', req.params.id, null);
   res.json({ ok: true });
 });
 
@@ -487,6 +509,7 @@ router.post('/files', upload.single('file'), async (req, res) => {
       categoria: categoria || 'general', uploaded_by: req.user.id,
     }]).select();
     if (error) return res.status(500).json({ error: error.message });
+    logActivity(req, 'subir', 'archivo', data[0].id, req.file.originalname);
     res.status(201).json({ file: { ...data[0], url: signedFileUrl(data[0]) } });
   } catch (err) {
     console.error('Cloudinary upload:', err.message);
@@ -518,6 +541,7 @@ router.delete('/files/:id', async (req, res) => {
   }
   const { error } = await db.from('crm_files').delete().eq('id', req.params.id);
   if (error) return res.status(500).json({ error: error.message });
+  logActivity(req, 'eliminar', 'archivo', req.params.id, file.nombre);
   res.json({ ok: true });
 });
 
@@ -808,6 +832,20 @@ router.post('/monthly-reports', async (req, res) => {
     } catch (e) { failed.push(`${agent.email}: ${e.message}`); }
   }
   res.json({ ok: true, sent, failed });
+});
+
+/* ═══════════════ ACTIVIDAD (bitácora, solo administración) ═══════════════ */
+
+router.get('/activity', async (req, res) => {
+  if (!isAgency(req.user.role)) return res.status(403).json({ error: 'Solo administración puede ver la actividad' });
+  const db = getDB();
+  const limit = Math.min(parseInt(req.query.limit) || 100, 300);
+  let q = db.from('crm_activity').select('*').order('created_at', { ascending: false }).limit(limit);
+  if (req.query.user_id) q = q.eq('user_id', req.query.user_id);
+  if (req.query.since) q = q.gt('created_at', req.query.since);
+  const { data, error } = await q;
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ activity: data });
 });
 
 module.exports = router;

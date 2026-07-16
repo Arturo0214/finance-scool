@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { C } from '../constants';
-import { Users, UserCheck, Settings, Plus, AlertCircle, X, Mail, Calendar } from 'lucide-react';
+import { Users, UserCheck, Settings, Plus, AlertCircle, X, Mail, Calendar, KeyRound, Activity, Contact, FileText, DollarSign } from 'lucide-react';
 import { api } from '../../../utils/api';
 
 const isAgencyRole = (role) => ['superadmin', 'agencia'].includes(role);
@@ -17,6 +17,40 @@ const ROLE_COLORS = {
   admin:      { bg: C.amberBg, text: C.amber   },
   asesor:     { bg: C.greenBg, text: C.green   },
 };
+
+const ACTION_LABELS = {
+  crear: 'creó', editar: 'editó', eliminar: 'eliminó', subir: 'subió',
+  login: 'inició sesión', reset_password: 'reseteó contraseña de',
+};
+const ENTITY_LABELS = {
+  cliente: 'cliente', poliza: 'póliza', recordatorio: 'recordatorio', asesor: 'asesor',
+  archivo: 'archivo', metas: 'metas', sesion: '', usuario: 'usuario',
+};
+const ACTION_COLORS = {
+  crear: C.green, editar: C.blue, eliminar: C.red, subir: C.amber,
+  login: C.textMuted, reset_password: '#8B5CF6',
+};
+
+const mxn = (n) => '$' + (Number(n) || 0).toLocaleString('es-MX', { maximumFractionDigits: 0 });
+
+function timeAgo(iso) {
+  if (!iso) return '—';
+  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 60) return 'hace un momento';
+  if (s < 3600) return `hace ${Math.floor(s / 60)} min`;
+  if (s < 86400) return `hace ${Math.floor(s / 3600)} h`;
+  return `hace ${Math.floor(s / 86400)} d`;
+}
+
+function genPassword(name) {
+  const base = (name || 'User').split(' ')[0].replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑ]/g, '') || 'User';
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+  let rand = '';
+  const buf = new Uint32Array(8);
+  crypto.getRandomValues(buf);
+  for (let i = 0; i < 8; i++) rand += chars[buf[i] % chars.length];
+  return `${base}.${rand}!`;
+}
 
 function AddUserModal({ onClose, onSubmit, isAgency }) {
   const [form, setForm]   = useState({ name: '', email: '', password: '', role: 'asesor' });
@@ -43,17 +77,23 @@ function AddUserModal({ onClose, onSubmit, isAgency }) {
           )}
           <div className="field"><label>Nombre completo</label><input type="text" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Ej: Juan Pérez" /></div>
           <div className="field"><label>Email</label><input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="juan@financescool.com" /></div>
-          <div className="field"><label>Contraseña</label><input type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} placeholder="Mínimo 6 caracteres" /></div>
+          <div className="field">
+            <label>Contraseña</label>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input type="text" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} placeholder="Mínimo 6 caracteres" style={{ flex: 1 }} />
+              <button className="btn-secondary" type="button" onClick={() => setForm(f => ({ ...f, password: genPassword(f.name) }))} title="Generar contraseña segura"><KeyRound size={14} /></button>
+            </div>
+          </div>
           <div className="field">
             <label>Rol</label>
             <select value={form.role} onChange={e => setForm({ ...form, role: e.target.value })}>
-              <option value="asesor">Asesor (ventas / atención)</option>
+              <option value="asesor">Asesor / Consultor (ventas / atención)</option>
               {isAgency && <option value="admin">Admin Finance SCool</option>}
               {isAgency && <option value="agencia">Agencia (marketing / analytics)</option>}
             </select>
             <small className="help-text">
-              {form.role === 'asesor'  && 'Puede ver leads, calendario, chat y WhatsApp'}
-              {form.role === 'admin'   && 'Puede ver todo lo operativo + gestionar el equipo de asesores'}
+              {form.role === 'asesor'  && 'Ve su propia cartera del CRM, leads, calendario, chat y WhatsApp'}
+              {form.role === 'admin'   && 'Ve el CRM completo de todos los consultores + gestiona el equipo'}
               {form.role === 'agencia' && 'Acceso completo: marketing analytics + operativo + gestión'}
             </small>
           </div>
@@ -67,46 +107,112 @@ function AddUserModal({ onClose, onSubmit, isAgency }) {
   );
 }
 
+/* ── Feed de actividad en vivo (se actualiza cada 10 s) ── */
+function ActivityFeed({ activity }) {
+  return (
+    <div className="section">
+      <h2 className="section-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <Activity size={18} color={C.green} /> Actividad en vivo
+        <span style={{ fontSize: 11, fontWeight: 500, color: C.textLight }}>· se actualiza cada 10 s</span>
+      </h2>
+      {activity.length === 0 ? (
+        <p className="empty">Sin actividad registrada todavía</p>
+      ) : (
+        <div style={{ maxHeight: 420, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {activity.map(a => {
+            const color = ACTION_COLORS[a.action] || C.textMuted;
+            return (
+              <div key={a.id} style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '7px 10px', borderRadius: 8, background: C.card, borderBottom: `1px solid ${C.border}` }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0, alignSelf: 'center' }} />
+                <span style={{ fontSize: 13, color: C.text, flex: 1, minWidth: 0 }}>
+                  <strong>{a.user_name}</strong>{' '}
+                  <span style={{ color }}>{ACTION_LABELS[a.action] || a.action}</span>{' '}
+                  {ENTITY_LABELS[a.entity] ?? a.entity ?? ''}
+                  {a.entity_id && a.entity !== 'sesion' ? ` #${a.entity_id}` : ''}
+                  {a.detail ? <span style={{ color: C.textMuted }}> — {a.detail}</span> : null}
+                </span>
+                <span style={{ fontSize: 11, color: C.textLight, whiteSpace: 'nowrap' }}>{timeAgo(a.created_at)}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function TeamView({ userRole }) {
-  const [users, setUsers]             = useState([]);
+  const [users, setUsers]               = useState([]);
+  const [activity, setActivity]         = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [feedback, setFeedback]       = useState(null);
+  const [feedback, setFeedback]         = useState(null);
+  const [resetting, setResetting]       = useState(null);
+  const pollRef = useRef(null);
   const isAgency = isAgencyRole(userRole);
 
-  useEffect(() => { loadUsers(); }, []);
+  useEffect(() => {
+    loadUsers();
+    loadActivity();
+    pollRef.current = setInterval(() => { loadActivity(); loadUsers(true); }, 10000);
+    return () => clearInterval(pollRef.current);
+  }, []); // eslint-disable-line
 
-  const loadUsers = async () => {
+  const loadUsers = async (silent) => {
     try {
-      setLoadingUsers(true);
+      if (!silent) setLoadingUsers(true);
       const data = await api.getUsers();
       setUsers(Array.isArray(data) ? data : []);
     } catch (err) { console.error('Error loading users:', err); }
-    finally { setLoadingUsers(false); }
+    finally { if (!silent) setLoadingUsers(false); }
+  };
+
+  const loadActivity = async () => {
+    try {
+      const data = await api.getCrmActivity({ limit: 60 });
+      setActivity(data.activity || []);
+    } catch { /* asesores no ven actividad */ }
   };
 
   const handleAddUser = async (formData) => {
     try {
       await api.register(formData);
-      setFeedback({ type: 'success', msg: `Usuario "${formData.name}" creado exitosamente` });
+      setFeedback({ type: 'success', msg: `Usuario "${formData.name}" creado — contraseña: ${formData.password}` });
       setShowAddModal(false);
       loadUsers();
-      setTimeout(() => setFeedback(null), 4000);
     } catch (err) {
       setFeedback({ type: 'error', msg: err.message || 'Error al crear usuario' });
-      setTimeout(() => setFeedback(null), 4000);
+      setTimeout(() => setFeedback(null), 6000);
     }
   };
 
+  const handleResetPassword = async (u) => {
+    const pass = genPassword(u.name);
+    if (!window.confirm(`¿Generar nueva contraseña para ${u.name} (${u.email})? La actual dejará de funcionar.`)) return;
+    setResetting(u.id);
+    try {
+      await api.resetUserPassword(u.id, pass);
+      setFeedback({ type: 'success', msg: `Nueva contraseña de ${u.name}: ${pass} — cópiala ahora, no se volverá a mostrar` });
+      loadActivity();
+    } catch (err) {
+      setFeedback({ type: 'error', msg: err.message || 'Error al resetear contraseña' });
+      setTimeout(() => setFeedback(null), 6000);
+    }
+    setResetting(null);
+  };
+
+  const asesores = users.filter(u => u.role === 'asesor');
+
   return (
     <div className="view">
-      <h1 className="view-title">Gestión del Equipo</h1>
-      <p className="view-subtitle">{isAgency ? 'Administra todos los usuarios del sistema' : 'Administra los asesores de Finance SCool'}</p>
+      <h1 className="view-title">Usuarios</h1>
+      <p className="view-subtitle">{isAgency ? 'Administra todos los usuarios, consultores y su actividad' : 'Administra los consultores de Finance SCool y su actividad'}</p>
 
       {feedback && (
-        <div className="info-box" style={{ marginBottom: 16, background: feedback.type === 'success' ? C.greenBg : C.redBg, borderColor: feedback.type === 'success' ? `${C.green}40` : `${C.red}40`, color: feedback.type === 'success' ? C.green : C.red }}>
+        <div className="info-box" style={{ marginBottom: 16, background: feedback.type === 'success' ? C.greenBg : C.redBg, borderColor: feedback.type === 'success' ? `${C.green}40` : `${C.red}40`, color: feedback.type === 'success' ? C.green : C.red, display: 'flex', alignItems: 'center', gap: 8 }}>
           {feedback.type === 'success' ? <UserCheck size={16} /> : <AlertCircle size={16} />}
-          <p>{feedback.msg}</p>
+          <p style={{ flex: 1, userSelect: 'all' }}>{feedback.msg}</p>
+          <button onClick={() => setFeedback(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }}><X size={16} /></button>
         </div>
       )}
 
@@ -118,8 +224,9 @@ export default function TeamView({ userRole }) {
         </div>
         <div className="stats-grid">
           <div className="stat-card"><div className="stat-icon" style={{ background: C.blueBg, color: C.primary }}><Users size={22} /></div><div><p className="stat-label">Total Usuarios</p><p className="stat-value">{users.length}</p></div></div>
-          <div className="stat-card"><div className="stat-icon" style={{ background: C.greenBg, color: C.green }}><UserCheck size={22} /></div><div><p className="stat-label">Asesores</p><p className="stat-value">{users.filter(u => u.role === 'asesor').length}</p></div></div>
-          <div className="stat-card"><div className="stat-icon" style={{ background: C.amberBg, color: C.amber }}><Settings size={22} /></div><div><p className="stat-label">Admins</p><p className="stat-value">{users.filter(u => u.role === 'admin').length}</p></div></div>
+          <div className="stat-card"><div className="stat-icon" style={{ background: C.greenBg, color: C.green }}><UserCheck size={22} /></div><div><p className="stat-label">Consultores</p><p className="stat-value">{asesores.length}</p></div></div>
+          <div className="stat-card"><div className="stat-icon" style={{ background: C.amberBg, color: C.amber }}><Settings size={22} /></div><div><p className="stat-label">Admins</p><p className="stat-value">{users.filter(u => ['admin', 'agencia', 'superadmin'].includes(u.role)).length}</p></div></div>
+          <div className="stat-card"><div className="stat-icon" style={{ background: '#F3E8FF', color: '#8B5CF6' }}><Activity size={22} /></div><div><p className="stat-label">Acciones hoy</p><p className="stat-value">{activity.filter(a => new Date(a.created_at).toDateString() === new Date().toDateString()).length}</p></div></div>
         </div>
       </div>
 
@@ -131,20 +238,39 @@ export default function TeamView({ userRole }) {
           <>
             <div className="tbl-wrap desktop-only-table">
               <table>
-                <thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Creado</th></tr></thead>
+                <thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Cartera CRM</th><th>Última actividad</th><th>Creado</th><th></th></tr></thead>
                 <tbody>
                   {users.map(u => {
                     const rc = ROLE_COLORS[u.role] || { bg: C.bg, text: C.textMuted };
                     return (
                       <tr key={u.id}>
-                        <td><strong>{u.name}</strong></td>
+                        <td><strong>{u.name}</strong>{u.crm?.clave ? <span style={{ color: C.textLight, fontSize: 11 }}> · {u.crm.clave}</span> : null}</td>
                         <td>{u.email}</td>
                         <td><span className="badge" style={{ backgroundColor: rc.bg, color: rc.text }}>{ROLE_LABELS[u.role] || u.role}</span></td>
+                        <td>
+                          {u.crm ? (
+                            <span style={{ display: 'inline-flex', gap: 10, fontSize: 12, color: C.textMuted, whiteSpace: 'nowrap' }}>
+                              <span title="Clientes"><Contact size={12} style={{ verticalAlign: -2 }} /> {u.crm.clientes}</span>
+                              <span title="Pólizas"><FileText size={12} style={{ verticalAlign: -2 }} /> {u.crm.polizas}</span>
+                              <span title="Prima pagada" style={{ color: C.green, fontWeight: 600 }}><DollarSign size={12} style={{ verticalAlign: -2 }} />{mxn(u.crm.prima_pagada)}</span>
+                            </span>
+                          ) : <span style={{ color: C.textLight, fontSize: 12 }}>—</span>}
+                        </td>
+                        <td style={{ fontSize: 12, color: C.textMuted, whiteSpace: 'nowrap' }}>
+                          {u.ultima_actividad ? `${timeAgo(u.ultima_actividad.fecha)} · ${ACTION_LABELS[u.ultima_actividad.action] || u.ultima_actividad.action} ${ENTITY_LABELS[u.ultima_actividad.entity] ?? ''}` : '—'}
+                        </td>
                         <td>{new Date(u.created_at || Date.now()).toLocaleDateString('es-MX')}</td>
+                        <td>
+                          {(isAgency || u.role === 'asesor') && (
+                            <button className="btn-secondary" disabled={resetting === u.id} onClick={() => handleResetPassword(u)} title="Generar nueva contraseña" style={{ padding: '4px 8px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                              <KeyRound size={12} /> {resetting === u.id ? '...' : 'Reset'}
+                            </button>
+                          )}
+                        </td>
                       </tr>
                     );
                   })}
-                  {users.length === 0 && <tr><td colSpan={4} className="empty">No hay usuarios registrados</td></tr>}
+                  {users.length === 0 && <tr><td colSpan={7} className="empty">No hay usuarios registrados</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -159,11 +285,26 @@ export default function TeamView({ userRole }) {
                         <span className="badge" style={{ backgroundColor: rc.bg, color: rc.text }}>{ROLE_LABELS[u.role] || u.role}</span>
                       </div>
                       <div className="mlc-row"><Mail size={14} color={C.textLight} /> {u.email}</div>
+                      {u.crm && (
+                        <div className="mlc-row" style={{ fontSize: 12, color: C.textMuted }}>
+                          <Contact size={12} /> {u.crm.clientes} clientes · <FileText size={12} /> {u.crm.polizas} pólizas · <span style={{ color: C.green, fontWeight: 600 }}>{mxn(u.crm.prima_pagada)}</span>
+                        </div>
+                      )}
+                      {u.ultima_actividad && (
+                        <div className="mlc-row" style={{ fontSize: 12, color: C.textMuted }}>
+                          <Activity size={12} /> {timeAgo(u.ultima_actividad.fecha)} · {ACTION_LABELS[u.ultima_actividad.action] || u.ultima_actividad.action} {ENTITY_LABELS[u.ultima_actividad.entity] ?? ''}
+                        </div>
+                      )}
                       <div className="mlc-bottom">
                         <span className="mlc-row" style={{ fontSize: 12 }}>
                           <Calendar size={12} color={C.textLight} />
                           {new Date(u.created_at || Date.now()).toLocaleDateString('es-MX')}
                         </span>
+                        {(isAgency || u.role === 'asesor') && (
+                          <button className="btn-secondary" disabled={resetting === u.id} onClick={() => handleResetPassword(u)} style={{ padding: '4px 8px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                            <KeyRound size={12} /> Reset
+                          </button>
+                        )}
                       </div>
                     </div>
                   );
@@ -173,6 +314,8 @@ export default function TeamView({ userRole }) {
           </>
         )}
       </div>
+
+      <ActivityFeed activity={activity} />
 
       {showAddModal && <AddUserModal onClose={() => setShowAddModal(false)} onSubmit={handleAddUser} isAgency={isAgency} />}
     </div>

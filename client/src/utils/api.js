@@ -105,6 +105,11 @@ export const api = {
   getWhatsAppStats: () => request('/whatsapp/stats'),
 
   // ── CRM Incubadora S-COOL ──
+  getCrmActivity: (params = {}) => {
+    const q = new URLSearchParams(params).toString();
+    return request(`/crm/activity${q ? `?${q}` : ''}`);
+  },
+  resetUserPassword: (id, password) => request(`/users/${id}/reset-password`, { method: 'POST', body: JSON.stringify({ password }) }),
   crmGetDashboard: (anio) => request(`/crm/dashboard${anio ? `?anio=${anio}` : ''}`),
   crmGetAgentSummary: (id, anio) => request(`/crm/agents/${id}/summary${anio ? `?anio=${anio}` : ''}`),
   crmGetAgents: () => request('/crm/agents'),

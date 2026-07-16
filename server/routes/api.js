@@ -238,10 +238,64 @@ router.post('/messages', verifyToken, async (req, res) => {
 router.get('/users', verifyToken, async (req, res) => {
   try {
     const users = await queryAll('SELECT id,name,email,role,created_at FROM users');
+    // Enriquecer con datos del CRM (cartera + última actividad) para administración
+    if (['superadmin', 'agencia', 'admin'].includes(req.user.role)) {
+      const { getDB } = require('../models/database');
+      const db = getDB();
+      const [{ data: agents }, { data: clients }, { data: policies }, { data: activity }] = await Promise.all([
+        db.from('crm_agents').select('id,user_id,nombre,clave,cuaderno,estatus'),
+        db.from('crm_clients').select('id,agent_id,etapa'),
+        db.from('crm_policies').select('id,agent_id,prima,estatus'),
+        db.from('crm_activity').select('user_id,created_at,action,entity').order('created_at', { ascending: false }).limit(500),
+      ]);
+      const byAgent = {};
+      for (const c of clients || []) {
+        (byAgent[c.agent_id] ||= { clientes: 0, polizas: 0, prima_pagada: 0 }).clientes++;
+      }
+      for (const p of policies || []) {
+        const s = (byAgent[p.agent_id] ||= { clientes: 0, polizas: 0, prima_pagada: 0 });
+        s.polizas++;
+        if (p.estatus === 'pagada') s.prima_pagada += Number(p.prima) || 0;
+      }
+      const lastByUser = {};
+      for (const a of activity || []) {
+        if (!lastByUser[a.user_id]) lastByUser[a.user_id] = { fecha: a.created_at, action: a.action, entity: a.entity };
+      }
+      const agentByUser = {};
+      for (const a of agents || []) if (a.user_id) agentByUser[a.user_id] = a;
+      for (const u of users) {
+        const agent = agentByUser[u.id];
+        u.crm = agent ? { agent_id: agent.id, clave: agent.clave, cuaderno: agent.cuaderno, estatus: agent.estatus, ...(byAgent[agent.id] || { clientes: 0, polizas: 0, prima_pagada: 0 }) } : null;
+        u.ultima_actividad = lastByUser[u.id] || null;
+      }
+    }
     res.json(users);
   } catch (err) {
     console.error('Users error:', err);
     res.status(500).json({ error: 'Error al obtener usuarios' });
+  }
+});
+
+// Reset de contraseña por administración: agencia/superadmin a cualquiera; admin solo a asesores
+router.post('/users/:id/reset-password', verifyToken, async (req, res) => {
+  try {
+    if (!['superadmin', 'agencia', 'admin'].includes(req.user.role)) return res.status(403).json({ error: 'No autorizado' });
+    const { password } = req.body;
+    if (!password || password.length < 8) return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres' });
+    const target = await queryOne('SELECT id,name,email,role FROM users WHERE id=?', [req.params.id]);
+    if (!target) return res.status(404).json({ error: 'Usuario no encontrado' });
+    const isAgencyReq = ['superadmin', 'agencia'].includes(req.user.role);
+    if (!isAgencyReq && target.role !== 'asesor') return res.status(403).json({ error: 'Solo puedes resetear contraseñas de asesores' });
+    const bcrypt = require('bcryptjs');
+    const hash = bcrypt.hashSync(password, 10);
+    await runQuery('UPDATE users SET password=? WHERE id=?', [hash, target.id]);
+    const { getDB } = require('../models/database');
+    getDB().from('crm_activity').insert([{ user_id: req.user.id, user_name: req.user.name, user_role: req.user.role, action: 'reset_password', entity: 'usuario', entity_id: String(target.id), detail: target.email }])
+      .then(({ error: e }) => { if (e) console.error('activity log:', e.message); });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Reset password error:', err);
+    res.status(500).json({ error: 'Error al resetear contraseña' });
   }
 });
 

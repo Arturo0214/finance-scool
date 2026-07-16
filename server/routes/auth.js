@@ -1,6 +1,6 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const { queryOne, runQuery } = require('../models/database');
+const { queryOne, runQuery, getDB } = require('../models/database');
 const { generateToken, verifyToken } = require('../middleware/auth');
 const router = express.Router();
 
@@ -14,6 +14,9 @@ router.post('/login', async (req, res) => {
     // sameSite lax: requests go through Netlify proxy (same domain), no need for 'none'
     // 'none' causes Safari ITP to restrict/delete the cookie on mobile
     res.cookie('token', token, { httpOnly: true, secure: true, maxAge: 86400000, sameSite: 'lax', path: '/' });
+    // Bitácora de sesiones (fire-and-forget)
+    getDB().from('crm_activity').insert([{ user_id: user.id, user_name: user.name, user_role: user.role, action: 'login', entity: 'sesion' }])
+      .then(({ error: e }) => { if (e) console.error('activity log:', e.message); });
     res.json({ success: true, token, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
   } catch (err) {
     console.error('Login error:', err);

@@ -93,6 +93,8 @@ export default function AdminPanel() {
   const messageInputRef = useRef(null);
   const userIsAgency    = isAgencyRole(user?.role);
   const canManageTeam   = ['superadmin', 'agencia', 'admin'].includes(user?.role);
+  // Admins ven el CRM completo de todos los consultores (Sofía Bot sigue solo agencia)
+  const userSeesAllCrm  = canManageTeam;
 
   /* ── Navegación del sidebar ──
      Sofía Bot (conversaciones de Meta) es solo para agencia/admins. */
@@ -191,8 +193,8 @@ export default function AdminPanel() {
     new Date(event.start_date || event.date).toDateString() === new Date().toDateString()
   );
 
-  const roleLabel      = userIsAgency ? 'Agencia' : 'Asesor';
-  const roleBadgeColor = userIsAgency ? C.accent : C.green;
+  const roleLabel      = userIsAgency ? 'Agencia' : (user?.role === 'admin' ? 'Admin' : 'Asesor');
+  const roleBadgeColor = userIsAgency ? C.accent : (user?.role === 'admin' ? C.amber : C.green);
 
   /* ════════════════════════════════
      RENDER
@@ -329,12 +331,12 @@ export default function AdminPanel() {
                 <FSCConversationsView onOpenMenu={() => setMobileMenuOpen(o => !o)} />}
               {/* ── CRM Asesores ── */}
               {!loading && activeView === 'crm' && <CrmDashboardView />}
-              {!loading && activeView === 'crm-pipeline' && <CrmPipelineView isAgency={userIsAgency} />}
-              {!loading && activeView === 'crm-clientes' && <CrmClientsView isAgency={userIsAgency} />}
-              {!loading && activeView === 'crm-polizas' && <CrmPoliciesView isAgency={userIsAgency} />}
-              {!loading && activeView === 'crm-comisiones' && <CrmCommissionsView isAgency={userIsAgency} />}
-              {!loading && activeView === 'crm-metas' && <CrmGoalsView isAgency={userIsAgency} />}
-              {!loading && activeView === 'crm-recordatorios' && <CrmRemindersView isAgency={userIsAgency} />}
+              {!loading && activeView === 'crm-pipeline' && <CrmPipelineView isAgency={userSeesAllCrm} />}
+              {!loading && activeView === 'crm-clientes' && <CrmClientsView isAgency={userSeesAllCrm} />}
+              {!loading && activeView === 'crm-polizas' && <CrmPoliciesView isAgency={userSeesAllCrm} />}
+              {!loading && activeView === 'crm-comisiones' && <CrmCommissionsView isAgency={userSeesAllCrm} />}
+              {!loading && activeView === 'crm-metas' && <CrmGoalsView isAgency={userSeesAllCrm} />}
+              {!loading && activeView === 'crm-recordatorios' && <CrmRemindersView isAgency={userSeesAllCrm} />}
             </Suspense>
           </main>
         </div>
