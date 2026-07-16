@@ -5,7 +5,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { api } from '../../../../utils/api';
 import { C } from '../../constants';
-import { X, RefreshCw, CheckCircle2, DollarSign, Scale, HandCoins } from 'lucide-react';
+import { useRef } from 'react';
+import { X, RefreshCw, CheckCircle2, DollarSign, Scale, HandCoins, FileSpreadsheet } from 'lucide-react';
 import { getCrmCSS, fmtMoney, fmtMoneyFull, fmtDate, MESES } from './crmShared';
 
 const COM_ESTATUS = [
@@ -70,6 +71,37 @@ export default function CrmCommissionsView({ isAgency }) {
     finally { setSaving(false); }
   };
 
+  /* ── Conciliación desde Excel/CSV de GNP ── */
+  const fileRef = useRef(null);
+  const [preview, setPreview] = useState(null);   // { matches, sinMatch }
+  const [selected, setSelected] = useState({});   // policy_id → bool
+  const [reconBusy, setReconBusy] = useState(false);
+
+  const onReconFile = async (file) => {
+    if (!file) return;
+    setReconBusy(true);
+    try {
+      const d = await api.crmReconcilePreview(file);
+      setPreview(d);
+      const sel = {};
+      d.matches.forEach(m => { sel[m.policy_id] = m.estatus_actual !== 'conciliada'; });
+      setSelected(sel);
+    } catch (e) { alert(e.message); }
+    finally { setReconBusy(false); if (fileRef.current) fileRef.current.value = ''; }
+  };
+
+  const confirmRecon = async () => {
+    const items = preview.matches.filter(m => selected[m.policy_id]).map(m => ({ policy_id: m.policy_id, monto: m.monto_gnp }));
+    if (!items.length) return;
+    setReconBusy(true);
+    try {
+      const d = await api.crmReconcileConfirm(items);
+      alert(`✓ ${d.conciliadas} comisiones conciliadas`);
+      setPreview(null); load();
+    } catch (e) { alert(e.message); }
+    finally { setReconBusy(false); }
+  };
+
   const quickAdvance = async (p) => {
     const next = (p.comision_estatus || 'pendiente') === 'pendiente' ? 'pagada_gnp' : 'conciliada';
     try {
@@ -96,9 +128,67 @@ export default function CrmCommissionsView({ isAgency }) {
               {agents.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
             </select>
           )}
+          {isAgency && (
+            <>
+              <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" hidden onChange={e => onReconFile(e.target.files[0])} />
+              <button className="btn-primary" disabled={reconBusy} onClick={() => fileRef.current?.click()}>
+                <FileSpreadsheet size={15} /> {reconBusy ? 'Leyendo...' : 'Conciliar Excel GNP'}
+              </button>
+            </>
+          )}
           <button className="btn-secondary" onClick={load}><RefreshCw size={15} /></button>
         </div>
       </div>
+
+      {/* ── Modal de conciliación masiva ── */}
+      {preview && (
+        <div className="modal-overlay" onClick={() => setPreview(null)}>
+          <div className="modal crm-modal-xl" onClick={e => e.stopPropagation()}>
+            <div className="modal-head">
+              <h2>Conciliación GNP <span style={{ fontSize: 13, color: C.textMuted, fontWeight: 500 }}>({preview.filas} filas · columnas: {preview.columnas.poliza} / {preview.columnas.monto})</span></h2>
+              <button className="close-btn" onClick={() => setPreview(null)}><X size={20} /></button>
+            </div>
+            <div className="modal-body">
+              {preview.matches.length === 0 ? <p className="empty">Ninguna póliza del archivo coincide con el CRM</p> : (
+                <div className="tbl-wrap" style={{ marginBottom: 14 }}>
+                  <table>
+                    <thead><tr><th></th><th>Póliza</th><th>Cliente</th><th>Asesor</th><th>Monto GNP</th><th>Comisión actual</th><th>Estatus</th></tr></thead>
+                    <tbody>
+                      {preview.matches.map(m => (
+                        <tr key={m.policy_id} style={{ opacity: selected[m.policy_id] ? 1 : 0.45 }}>
+                          <td><input type="checkbox" checked={!!selected[m.policy_id]} onChange={e => setSelected({ ...selected, [m.policy_id]: e.target.checked })} style={{ accentColor: C.primary, cursor: 'pointer' }} /></td>
+                          <td><b>{m.poliza}</b><br /><span style={{ fontSize: 11, color: C.textMuted }}>{m.plan}</span></td>
+                          <td>{m.cliente}</td>
+                          <td style={{ fontSize: 12.5 }}>{m.asesor}</td>
+                          <td><b style={{ color: C.green }}>{fmtMoney(m.monto_gnp)}</b></td>
+                          <td>{m.comision_actual ? fmtMoney(m.comision_actual) : '—'}
+                            {m.comision_actual > 0 && Math.abs(m.comision_actual - m.monto_gnp) > 1 && <span style={{ color: C.amber, fontSize: 11 }}> ⚠️ difiere</span>}
+                          </td>
+                          <td><span className="badge" style={{ background: comInfo(m.estatus_actual).bg, color: comInfo(m.estatus_actual).text }}>{comInfo(m.estatus_actual).label}</span></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {preview.sinMatch.length > 0 && (
+                <div className="info-box" style={{ background: C.amberBg, borderColor: `${C.amber}40`, color: C.amber }}>
+                  <p><b>{preview.sinMatch.length} filas sin match</b> (pólizas no registradas en el CRM): {preview.sinMatch.slice(0, 8).map(s => s.poliza).join(', ')}{preview.sinMatch.length > 8 ? '…' : ''}</p>
+                </div>
+              )}
+            </div>
+            <div className="modal-foot">
+              <span style={{ marginRight: 'auto', fontSize: 12.5, color: C.textMuted }}>
+                {Object.values(selected).filter(Boolean).length} seleccionadas · total {fmtMoney(preview.matches.filter(m => selected[m.policy_id]).reduce((s, m) => s + m.monto_gnp, 0))}
+              </span>
+              <button className="btn-secondary" onClick={() => setPreview(null)}>Cancelar</button>
+              <button className="btn-primary" disabled={reconBusy || !Object.values(selected).some(Boolean)} onClick={confirmRecon}>
+                <CheckCircle2 size={15} /> Conciliar seleccionadas
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="stats-grid">
         <div className="stat-card">

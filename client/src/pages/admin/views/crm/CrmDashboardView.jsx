@@ -222,6 +222,8 @@ function HeatMatrix({ agentes }) {
 
 function PerformanceTab({ data, anio }) {
   const [periodo, setPeriodo] = useState('mensual');
+  const [cohorts, setCohorts] = useState(null);
+  useEffect(() => { api.crmGetCohorts().then(d => setCohorts(d.cohortes)).catch(() => setCohorts([])); }, []);
   const months = data.global.kpis.months;
   const forecast = data.global.forecast;
 
@@ -401,6 +403,43 @@ function PerformanceTab({ data, anio }) {
         <h3>Matriz de producción — asesor × mes</h3>
         <p className="sub">Intensidad = prima pagada del mes (estilo matrix de Power BI)</p>
         <HeatMatrix agentes={data.porAgente} />
+      </div>
+
+      {/* ═══ Cohortes de conservación ═══ */}
+      <div className="crm-chart-card">
+        <h3>Conservación por cohorte de emisión</h3>
+        <p className="sub">Persistencia de las pólizas agrupadas por trimestre en que se emitieron — la métrica que mide GNP a 13 y 25 meses</p>
+        {!cohorts ? <div className="loading-wrap" style={{ minHeight: 80 }}><div className="spinner" /></div> :
+          cohorts.length === 0 ? <p className="empty">Sin pólizas con fecha de emisión registrada</p> : (
+            <div className="tbl-wrap">
+              <table>
+                <thead><tr><th>Cohorte</th><th>Emitidas</th><th>Prima</th><th>Vigentes</th><th>Conservación</th><th>13 meses</th><th>25 meses</th></tr></thead>
+                <tbody>
+                  {cohorts.map(c => {
+                    const pctColor = (p) => p == null ? C.textLight : p >= 0.94 ? C.green : p >= 0.86 ? C.amber : C.red;
+                    return (
+                      <tr key={c.cohorte}>
+                        <td><b>{c.cohorte}</b></td>
+                        <td>{c.emitidas}</td>
+                        <td>{fmtMoney(c.prima)}</td>
+                        <td>{c.vigentes} / {c.emitidas}</td>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div className="crm-progress" style={{ flex: 1, maxWidth: 120 }}>
+                              <div className="crm-progress-fill" style={{ width: `${c.pctVigente * 100}%`, background: pctColor(c.pctVigente) }} />
+                            </div>
+                            <b style={{ color: pctColor(c.pctVigente), fontSize: 12.5 }}>{fmtPct(c.pctVigente, 1)}</b>
+                          </div>
+                        </td>
+                        <td><b style={{ color: pctColor(c.p13) }}>{c.p13 == null ? `— (${Math.max(13 - c.meses, 0)}m restantes)` : fmtPct(c.p13, 1)}</b></td>
+                        <td><b style={{ color: pctColor(c.p25) }}>{c.p25 == null ? '—' : fmtPct(c.p25, 1)}</b></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
       </div>
     </>
   );

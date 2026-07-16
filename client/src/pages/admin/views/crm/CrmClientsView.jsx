@@ -6,7 +6,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../../../../utils/api';
 import { C } from '../../constants';
-import { Search, Plus, X, Trash2, Upload, FileText, ExternalLink, Phone, Mail, Pencil } from 'lucide-react';
+import { Search, Plus, X, Trash2, Upload, FileText, ExternalLink, Phone, Mail, Pencil, Link2, Sparkles, StickyNote, CheckSquare, History } from 'lucide-react';
 import {
   getCrmCSS, ETAPAS, etapaInfo, estatusPoliza, ESTATUS_POLIZA, PLANES,
   TIPOS_RECORDATORIO, tipoRecordatorio, fmtMoney, fmtDate,
@@ -43,6 +43,52 @@ export default function CrmClientsView({ isAgency }) {
   const [fileCategoria, setFileCategoria] = useState('general');
   const fileInputRef = useRef(null);
 
+  /* Timeline, notas/tareas, portal y copiloto */
+  const [timeline, setTimeline] = useState(null);
+  const [notes, setNotes] = useState(null);
+  const [noteText, setNoteText] = useState('');
+  const [noteTipo, setNoteTipo] = useState('nota');
+  const [noteDue, setNoteDue] = useState('');
+  const [portalBusy, setPortalBusy] = useState(false);
+  const [copilotOpen, setCopilotOpen] = useState(false);
+  const [copilotBusy, setCopilotBusy] = useState(false);
+  const [copilotQ, setCopilotQ] = useState('');
+  const [copilotR, setCopilotR] = useState('');
+
+  const loadTimeline = async (cid) => { try { const d = await api.crmGetTimeline(cid); setTimeline(d.timeline); } catch (e) { console.error(e); } };
+  const loadNotes = async (cid) => { try { const d = await api.crmGetNotes(cid); setNotes(d.notes); } catch (e) { console.error(e); } };
+
+  const addNote = async () => {
+    if (!noteText.trim()) return;
+    try {
+      await api.crmCreateNote({ client_id: detail.client.id, tipo: noteTipo, texto: noteText.trim(), due_date: noteTipo === 'tarea' ? (noteDue || null) : null });
+      setNoteText(''); setNoteDue('');
+      loadNotes(detail.client.id);
+    } catch (e) { alert(e.message); }
+  };
+
+  const sharePortal = async () => {
+    setPortalBusy(true);
+    try {
+      const { url } = await api.crmPortalLink(detail.client.id);
+      await navigator.clipboard.writeText(url).catch(() => {});
+      const tel = (detail.client.telefono || '').replace(/\D/g, '');
+      const waText = encodeURIComponent(`Hola ${detail.client.nombre.split(' ')[0]}, aquí puedes consultar tus pólizas y documentos con Finance SCool (enlace válido 30 días): ${url}`);
+      flash('🔗 Enlace del portal copiado al portapapeles (válido 30 días)');
+      if (tel && window.confirm('Enlace copiado. ¿Enviarlo también por WhatsApp al cliente?')) {
+        window.open(`https://wa.me/${tel}?text=${waText}`, '_blank');
+      }
+    } catch (e) { alert(e.message); }
+    finally { setPortalBusy(false); }
+  };
+
+  const askCopilot = async (pregunta) => {
+    setCopilotBusy(true); setCopilotR('');
+    try { const d = await api.crmCopilot(detail.client.id, pregunta); setCopilotR(d.respuesta); }
+    catch (e) { setCopilotR('⚠️ ' + e.message); }
+    finally { setCopilotBusy(false); }
+  };
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -54,6 +100,12 @@ export default function CrmClientsView({ isAgency }) {
   }, []);
   useEffect(() => { load(); }, [load]);
 
+  // Deep-link desde el buscador global ⌘K
+  useEffect(() => {
+    const id = sessionStorage.getItem('crm_open_client');
+    if (id && !loading) { sessionStorage.removeItem('crm_open_client'); openDetail(Number(id)); }
+  }, [loading]); // eslint-disable-line
+
   const flash = (m) => { setMsg(m); setTimeout(() => setMsg(''), 2500); };
 
   const openDetail = async (id) => {
@@ -61,6 +113,7 @@ export default function CrmClientsView({ isAgency }) {
       const d = await api.crmGetClient(id);
       setDetail(d); setEditForm({ ...EMPTY_CLIENT, ...d.client }); setTab('info');
       setPolicyForm(null); setReminderForm(null);
+      setTimeline(null); setNotes(null); setCopilotOpen(false); setCopilotR(''); setCopilotQ('');
     } catch (e) { console.error(e); }
   };
   const refreshDetail = async () => { if (detail) openDetail(detail.client.id); };
@@ -276,9 +329,17 @@ export default function CrmClientsView({ isAgency }) {
             <div className="modal-head">
               <div>
                 <h2>{detail.client.nombre}</h2>
-                <div style={{ display: 'flex', gap: 10, marginTop: 4, fontSize: 12.5, color: C.textMuted, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: 10, marginTop: 4, fontSize: 12.5, color: C.textMuted, flexWrap: 'wrap', alignItems: 'center' }}>
                   {detail.client.telefono && <a href={`https://wa.me/${detail.client.telefono.replace(/\D/g, '')}`} target="_blank" rel="noreferrer" style={{ color: '#25D366', fontWeight: 600, textDecoration: 'none' }}>WhatsApp ↗</a>}
                   {detail.client.email && <a href={`mailto:${detail.client.email}`} style={{ color: C.primary, textDecoration: 'none' }}><Mail size={11} style={{ marginRight: 3 }} />{detail.client.email}</a>}
+                  <button className="btn-secondary" disabled={portalBusy} onClick={sharePortal} title="Generar enlace del portal del cliente (30 días)"
+                    style={{ padding: '3px 10px', fontSize: 11.5, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    <Link2 size={12} /> {portalBusy ? '...' : 'Portal del cliente'}
+                  </button>
+                  <button className="btn-secondary" onClick={() => setCopilotOpen(o => !o)} title="Copiloto IA"
+                    style={{ padding: '3px 10px', fontSize: 11.5, display: 'inline-flex', alignItems: 'center', gap: 4, color: copilotOpen ? '#8B5CF6' : undefined, borderColor: copilotOpen ? '#8B5CF680' : undefined }}>
+                    <Sparkles size={12} /> Copiloto
+                  </button>
                 </div>
               </div>
               <button className="close-btn" onClick={() => setDetail(null)}><X size={20} /></button>
@@ -286,11 +347,94 @@ export default function CrmClientsView({ isAgency }) {
             <div className="modal-body">
               {msg && <div className="info-box" style={{ marginBottom: 14 }}><p>{msg}</p></div>}
 
+              {/* ── Copiloto IA ── */}
+              {copilotOpen && (
+                <div className="config-panel" style={{ marginBottom: 16, border: '1px solid #8B5CF640', background: 'linear-gradient(180deg,#FBFAFF,#F6F4FD)' }}>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+                    <button className="f-tab" disabled={copilotBusy} onClick={() => askCopilot('Prepárame para mi siguiente llamada o reunión con este cliente.')}>📞 Preparar llamada</button>
+                    <button className="f-tab" disabled={copilotBusy} onClick={() => askCopilot('¿Cuál es la siguiente mejor acción con este cliente y por qué?')}>🎯 Siguiente acción</button>
+                    <button className="f-tab" disabled={copilotBusy} onClick={() => askCopilot('Redáctame un mensaje corto de WhatsApp para dar seguimiento a este cliente, cálido y profesional.')}>💬 Redactar seguimiento</button>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input className="crm-search" style={{ flex: 1, minWidth: 0, paddingLeft: 13 }} placeholder="O pregúntale algo sobre este cliente..." value={copilotQ}
+                      onChange={e => setCopilotQ(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && copilotQ.trim()) askCopilot(copilotQ.trim()); }} />
+                    <button className="btn-primary" disabled={copilotBusy || !copilotQ.trim()} onClick={() => askCopilot(copilotQ.trim())}><Sparkles size={14} /></button>
+                  </div>
+                  {copilotBusy && <p style={{ fontSize: 12.5, color: '#8B5CF6', margin: '10px 0 0' }}>Pensando...</p>}
+                  {copilotR && <div style={{ marginTop: 12, fontSize: 13, color: C.text, whiteSpace: 'pre-wrap', lineHeight: 1.55, background: '#fff', border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 14px' }}>{copilotR}</div>}
+                </div>
+              )}
+
               <div className="crm-detail-tabs">
-                {[['info', 'Información'], ['polizas', `Pólizas (${detail.policies.length})`], ['archivos', `Archivos (${detail.files.length})`], ['recordatorios', `Recordatorios (${detail.reminders.length})`]].map(([id, label]) => (
-                  <button key={id} className={`crm-dtab${tab === id ? ' active' : ''}`} onClick={() => setTab(id)}>{label}</button>
+                {[['info', 'Información'], ['timeline', 'Timeline'], ['notas', 'Notas & Tareas'], ['polizas', `Pólizas (${detail.policies.length})`], ['archivos', `Archivos (${detail.files.length})`], ['recordatorios', `Recordatorios (${detail.reminders.length})`]].map(([id, label]) => (
+                  <button key={id} className={`crm-dtab${tab === id ? ' active' : ''}`}
+                    onClick={() => {
+                      setTab(id);
+                      if (id === 'timeline' && !timeline) loadTimeline(detail.client.id);
+                      if (id === 'notas' && !notes) loadNotes(detail.client.id);
+                    }}>{label}</button>
                 ))}
               </div>
+
+              {/* ── Tab: Timeline ── */}
+              {tab === 'timeline' && (
+                !timeline ? <div className="loading-wrap" style={{ minHeight: 120 }}><div className="spinner" /></div> :
+                timeline.length === 0 ? <p className="empty">Sin actividad registrada</p> : (
+                  <div style={{ position: 'relative', paddingLeft: 18 }}>
+                    <div style={{ position: 'absolute', left: 5, top: 6, bottom: 6, width: 2, background: `linear-gradient(180deg, ${C.gold}55, ${C.border})`, borderRadius: 2 }} />
+                    {timeline.map((ev, i) => {
+                      const dot = { actividad: C.textLight, nota: '#8B5CF6', tarea: C.amber, recordatorio: C.blue, poliza: C.primary, pago: C.green, archivo: C.gold }[ev.tipo] || C.textLight;
+                      return (
+                        <div key={i} style={{ position: 'relative', marginBottom: 14 }}>
+                          <span style={{ position: 'absolute', left: -18, top: 5, width: 10, height: 10, borderRadius: '50%', background: dot, boxShadow: `0 0 0 3px ${dot}22` }} />
+                          <div style={{ fontSize: 13, fontWeight: 600, color: C.ink }}>{ev.titulo}</div>
+                          {ev.detalle && <div style={{ fontSize: 12, color: C.textMuted, marginTop: 1 }}>{ev.detalle}</div>}
+                          <div style={{ fontSize: 11, color: C.textLight, marginTop: 2 }}>{new Date(ev.ts).toLocaleString('es-MX', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )
+              )}
+
+              {/* ── Tab: Notas & Tareas ── */}
+              {tab === 'notas' && (
+                <>
+                  <div className="config-panel" style={{ marginBottom: 14 }}>
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+                      <button className={`f-tab${noteTipo === 'nota' ? ' active' : ''}`} onClick={() => setNoteTipo('nota')}><StickyNote size={12} style={{ marginRight: 4 }} />Nota</button>
+                      <button className={`f-tab${noteTipo === 'tarea' ? ' active' : ''}`} onClick={() => setNoteTipo('tarea')}><CheckSquare size={12} style={{ marginRight: 4 }} />Tarea</button>
+                      {noteTipo === 'tarea' && <input type="date" className="crm-select" value={noteDue} onChange={e => setNoteDue(e.target.value)} title="Fecha límite" />}
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <textarea rows={2} style={{ flex: 1, padding: '9px 12px', border: '1px solid rgba(11,27,51,.14)', borderRadius: 10, fontSize: 13.5, fontFamily: 'inherit', resize: 'vertical' }}
+                        placeholder={noteTipo === 'tarea' ? 'Describe la tarea...' : 'Escribe una nota sobre este cliente...'}
+                        value={noteText} onChange={e => setNoteText(e.target.value)} />
+                      <button className="btn-primary" disabled={!noteText.trim()} onClick={addNote}><Plus size={15} /></button>
+                    </div>
+                  </div>
+                  {!notes ? <div className="loading-wrap" style={{ minHeight: 100 }}><div className="spinner" /></div> :
+                    notes.length === 0 ? <p className="empty">Sin notas ni tareas</p> :
+                    notes.map(n => (
+                      <div key={n.id} className="crm-file-row" style={{ alignItems: 'flex-start', opacity: n.done ? 0.55 : 1 }}>
+                        {n.tipo === 'tarea' ? (
+                          <button className="crm-icon-btn ok" title={n.done ? 'Reabrir' : 'Completar'} style={{ flexShrink: 0 }}
+                            onClick={async () => { await api.crmUpdateNote(n.id, { done: !n.done }); loadNotes(detail.client.id); }}>
+                            {n.done ? '↺' : '✓'}
+                          </button>
+                        ) : <StickyNote size={16} style={{ color: '#8B5CF6', flexShrink: 0, marginTop: 8 }} />}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div className="fname" style={{ textDecoration: n.done ? 'line-through' : 'none' }}>{n.texto}</div>
+                          <div className="fmeta">
+                            {n.tipo === 'tarea' ? '📋 Tarea' : '📝 Nota'} · {n.user_name || ''} · {fmtDate(n.created_at)}
+                            {n.due_date && !n.done && <b style={{ color: new Date(n.due_date) < new Date() ? C.red : C.amber }}> · vence {fmtDate(n.due_date)}</b>}
+                          </div>
+                        </div>
+                        <button className="crm-icon-btn del" onClick={async () => { if (confirm('¿Eliminar?')) { await api.crmDeleteNote(n.id); loadNotes(detail.client.id); } }}><Trash2 size={13} /></button>
+                      </div>
+                    ))}
+                </>
+              )}
 
               {/* ── Tab: Información ── */}
               {tab === 'info' && editForm && (

@@ -17,7 +17,7 @@ export default function CrmPoliciesView({ isAgency }) {
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('todas');
   const [agentFilter, setAgentFilter] = useState('');
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(() => { const s = sessionStorage.getItem('crm_polizas_search') || ''; sessionStorage.removeItem('crm_polizas_search'); return s; });
   const [sort, setSort] = useState({ key: '', dir: 'desc' });
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);

@@ -10,6 +10,7 @@ import { useAuth } from '../hooks/useAuth';
 import { api } from '../utils/api';
 import Logo from '../components/Logo';
 import NotificationDropdown from '../components/NotificationDropdown';
+import CmdK from '../components/CmdK';
 import {
   Menu, LogOut, BarChart3, Users, Calendar, MessageSquare,
   MessageCircle, Link as LinkIcon, Zap, Eye, Settings,
@@ -45,6 +46,7 @@ const CrmPoliciesView     = lazy(() => import('./admin/views/crm/CrmPoliciesView
 const CrmGoalsView        = lazy(() => import('./admin/views/crm/CrmGoalsView'));
 const CrmRemindersView    = lazy(() => import('./admin/views/crm/CrmRemindersView'));
 const CrmCommissionsView  = lazy(() => import('./admin/views/crm/CrmCommissionsView'));
+const CrmQuoteView        = lazy(() => import('./admin/views/crm/CrmQuoteView'));
 
 /* ── Spinner de suspense ── */
 function ViewSpinner() {
@@ -111,6 +113,7 @@ export default function AdminPanel() {
     { id: 'crm-comisiones',   label: 'Comisiones',                    icon: HandCoins  },
     { id: 'crm-metas',        label: 'Metas & Forecast',              icon: Target     },
     { id: 'crm-recordatorios', label: 'Recordatorios',                icon: Bell       },
+    { id: 'crm-cotizador',    label: 'Cotizador PPR',                 icon: BarChart3  },
     { id: 'divider-2',        label: '── Administración ──',          icon: null       },
     { id: 'team',             label: SPANISH_LABELS.team,             icon: Settings   },
   ].filter(item => (item.id !== 'team' && item.id !== 'divider-2') || canManageTeam);
@@ -207,6 +210,9 @@ export default function AdminPanel() {
       <style>{getAdminCSS()}</style>
 
       <div className="admin-wrap">
+
+        {/* ══ Buscador global ⌘K ══ */}
+        <CmdK />
 
         {/* ══ Mobile overlay ══ */}
         <div className={`sb-overlay${mobileMenuOpen ? ' visible' : ''}`} onClick={() => setMobileMenuOpen(false)} />
@@ -328,6 +334,7 @@ export default function AdminPanel() {
               {!loading && activeView === 'crm-comisiones' && <CrmCommissionsView isAgency={userSeesAllCrm} />}
               {!loading && activeView === 'crm-metas' && <CrmGoalsView isAgency={userSeesAllCrm} />}
               {!loading && activeView === 'crm-recordatorios' && <CrmRemindersView isAgency={userSeesAllCrm} />}
+              {!loading && activeView === 'crm-cotizador' && <CrmQuoteView />}
             </Suspense>
           </main>
         </div>

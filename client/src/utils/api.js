@@ -150,6 +150,30 @@ export const api = {
     URL.revokeObjectURL(url);
   },
   crmDeleteFile: (id) => request(`/crm/files/${id}`, { method: 'DELETE' }),
+  // ── Notas/Tareas, Timeline, Portal, Copiloto, Conciliación, Cohortes ──
+  crmGetNotes: (client_id) => request(`/crm/notes?client_id=${client_id}`),
+  crmCreateNote: (data) => request('/crm/notes', { method: 'POST', body: JSON.stringify(data) }),
+  crmUpdateNote: (id, data) => request(`/crm/notes/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  crmDeleteNote: (id) => request(`/crm/notes/${id}`, { method: 'DELETE' }),
+  crmGetTimeline: (clientId) => request(`/crm/clients/${clientId}/timeline`),
+  crmPortalLink: (clientId) => request(`/crm/clients/${clientId}/portal-link`, { method: 'POST' }),
+  crmCopilot: (clientId, pregunta) => request(`/crm/clients/${clientId}/copilot`, { method: 'POST', body: JSON.stringify({ pregunta }) }),
+  crmGetCohorts: () => request('/crm/cohorts'),
+  crmReconcilePreview: async (file) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await fetch(`${API}/crm/commissions/reconcile-preview`, {
+      method: 'POST', credentials: 'include',
+      headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {},
+      body: fd,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Error de servidor');
+    return data;
+  },
+  crmReconcileConfirm: (items) => request('/crm/commissions/reconcile-confirm', { method: 'POST', body: JSON.stringify({ items }) }),
+  crmPortalData: (t) => request(`/crm/portal?t=${encodeURIComponent(t)}`),
+
   crmUploadFile: async (file, { client_id, policy_id, categoria } = {}) => {
     const token = getToken();
     const fd = new FormData();

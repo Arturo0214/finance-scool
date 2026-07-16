@@ -10,8 +10,9 @@
 const express = require('express');
 const multer = require('multer');
 const cloudinary = require('../config/cloudinary');
+const jwt = require('jsonwebtoken');
 const { getDB } = require('../models/database');
-const { verifyToken } = require('../middleware/auth');
+const { verifyToken, JWT_SECRET } = require('../middleware/auth');
 const { encryptFields, decryptFields, decryptRows } = require('../utils/cryptoFields');
 
 /* URL firmada y temporal para archivos privados de Cloudinary (1 hora) */
@@ -28,6 +29,34 @@ function signedFileUrl(file) {
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
+
+/* ═══════════════ PORTAL DEL CLIENTE (público, con token firmado) ═══════════════
+   Registrado ANTES de verifyToken: el cliente final accede con un enlace
+   firmado (JWT scope crm-portal, 30 días) que le comparte su asesor. */
+router.get('/portal', async (req, res) => {
+  try {
+    const dec = jwt.verify(String(req.query.t || ''), JWT_SECRET);
+    if (dec.scope !== 'crm-portal') throw new Error('bad scope');
+    const db = getDB();
+    const { data: client } = await db.from('crm_clients').select('*').eq('id', dec.cid).maybeSingle();
+    if (!client) return res.status(404).json({ error: 'No encontrado' });
+    const c = decryptFields(client, 'crm_clients');
+    const [{ data: pols }, { data: files }, { data: agent }] = await Promise.all([
+      db.from('crm_policies').select('*').eq('client_id', dec.cid).order('created_at', { ascending: false }),
+      db.from('crm_files').select('*').eq('client_id', dec.cid).order('created_at', { ascending: false }),
+      db.from('crm_agents').select('nombre,telefono,email').eq('id', client.agent_id).maybeSingle(),
+    ]);
+    res.json({
+      cliente: { nombre: c.nombre },
+      asesor: agent || null,
+      polizas: decryptRows(pols || [], 'crm_policies').map(p => ({
+        id: p.id, plan: p.plan, poliza: p.poliza, tipo: p.tipo, prima: p.prima, forma_pago: p.forma_pago,
+        suma_asegurada: p.suma_asegurada, estatus: p.estatus, fecha_emision: p.fecha_emision, fecha_renovacion: p.fecha_renovacion,
+      })),
+      archivos: (files || []).map(f => ({ id: f.id, nombre: f.nombre, categoria: f.categoria, bytes: f.bytes, created_at: f.created_at, url: signedFileUrl(f) })),
+    });
+  } catch { res.status(401).json({ error: 'Enlace inválido o expirado. Pide a tu asesor uno nuevo.' }); }
+});
 
 router.use(verifyToken);
 
@@ -832,6 +861,241 @@ router.post('/monthly-reports', async (req, res) => {
     } catch (e) { failed.push(`${agent.email}: ${e.message}`); }
   }
   res.json({ ok: true, sent, failed });
+});
+
+/* ═══════════════ NOTAS Y TAREAS por cliente ═══════════════ */
+
+async function assertClientScope(req, res, clientId) {
+  const scope = await resolveScope(req, res);
+  if (!scope) return null;
+  const db = getDB();
+  const { data: client } = await db.from('crm_clients').select('id,agent_id').eq('id', clientId).maybeSingle();
+  if (!client) { res.status(404).json({ error: 'Cliente no encontrado' }); return null; }
+  if (scope.restricted && client.agent_id !== scope.agentId) { res.status(403).json({ error: 'Sin acceso a este cliente' }); return null; }
+  return { scope, client };
+}
+
+router.get('/notes', async (req, res) => {
+  if (!req.query.client_id) return res.status(400).json({ error: 'client_id requerido' });
+  const ok = await assertClientScope(req, res, req.query.client_id);
+  if (!ok) return;
+  const { data, error } = await getDB().from('crm_notes').select('*').eq('client_id', req.query.client_id).order('created_at', { ascending: false });
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ notes: data });
+});
+
+router.post('/notes', async (req, res) => {
+  const { client_id, tipo, texto, due_date } = req.body;
+  if (!client_id || !texto) return res.status(400).json({ error: 'client_id y texto son requeridos' });
+  const ok = await assertClientScope(req, res, client_id);
+  if (!ok) return;
+  const { data, error } = await getDB().from('crm_notes').insert([{
+    client_id, agent_id: ok.client.agent_id, user_id: req.user.id, user_name: req.user.name,
+    tipo: tipo === 'tarea' ? 'tarea' : 'nota', texto, due_date: due_date || null,
+  }]).select();
+  if (error) return res.status(500).json({ error: error.message });
+  logActivity(req, 'crear', tipo === 'tarea' ? 'tarea' : 'nota', data[0].id, null);
+  res.status(201).json({ note: data[0] });
+});
+
+router.put('/notes/:id', async (req, res) => {
+  const db = getDB();
+  const { data: note } = await db.from('crm_notes').select('*').eq('id', req.params.id).maybeSingle();
+  if (!note) return res.status(404).json({ error: 'No encontrada' });
+  const ok = await assertClientScope(req, res, note.client_id);
+  if (!ok) return;
+  const patch = { updated_at: new Date().toISOString() };
+  for (const k of ['texto', 'due_date', 'done']) if (k in req.body) patch[k] = req.body[k];
+  if (patch.done === true && !note.done) patch.done_at = new Date().toISOString();
+  if (patch.done === false) patch.done_at = null;
+  const { data, error } = await db.from('crm_notes').update(patch).eq('id', req.params.id).select();
+  if (error) return res.status(500).json({ error: error.message });
+  if ('done' in req.body) logActivity(req, req.body.done ? 'completar' : 'reabrir', 'tarea', req.params.id, null);
+  res.json({ note: data[0] });
+});
+
+router.delete('/notes/:id', async (req, res) => {
+  const db = getDB();
+  const { data: note } = await db.from('crm_notes').select('client_id').eq('id', req.params.id).maybeSingle();
+  if (!note) return res.status(404).json({ error: 'No encontrada' });
+  const ok = await assertClientScope(req, res, note.client_id);
+  if (!ok) return;
+  const { error } = await db.from('crm_notes').delete().eq('id', req.params.id);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ok: true });
+});
+
+/* ═══════════════ TIMELINE unificado del cliente ═══════════════ */
+
+router.get('/clients/:id/timeline', async (req, res) => {
+  const ok = await assertClientScope(req, res, req.params.id);
+  if (!ok) return;
+  const db = getDB();
+  const cid = req.params.id;
+  const [{ data: acts }, { data: notes }, { data: rems }, { data: pols }, { data: files }] = await Promise.all([
+    db.from('crm_activity').select('*').eq('entity', 'cliente').eq('entity_id', String(cid)).order('created_at', { ascending: false }).limit(80),
+    db.from('crm_notes').select('*').eq('client_id', cid),
+    db.from('crm_reminders').select('*').eq('client_id', cid),
+    db.from('crm_policies').select('*').eq('client_id', cid),
+    db.from('crm_files').select('id,nombre,categoria,created_at,uploaded_by').eq('client_id', cid),
+  ]);
+  const ev = [];
+  for (const a of acts || []) ev.push({ ts: a.created_at, tipo: 'actividad', titulo: `${a.user_name} ${a.action === 'crear' ? 'creó' : a.action === 'editar' ? 'editó' : a.action === 'eliminar' ? 'eliminó' : a.action} el cliente`, detalle: a.detail });
+  for (const n of notes || []) ev.push({ ts: n.created_at, tipo: n.tipo, titulo: n.tipo === 'tarea' ? `Tarea: ${n.texto}` : `Nota de ${n.user_name || 'asesor'}`, detalle: n.tipo === 'tarea' ? (n.done ? 'completada' : n.due_date ? `vence ${n.due_date}` : 'pendiente') : n.texto });
+  for (const r of decryptRows(rems || [], 'crm_reminders')) ev.push({ ts: r.created_at, tipo: 'recordatorio', titulo: `Recordatorio: ${r.titulo}`, detalle: `${r.tipo} · ${r.fecha}${r.estatus === 'completado' ? ' · completado' : ''}` });
+  for (const p of decryptRows(pols || [], 'crm_policies')) {
+    ev.push({ ts: p.created_at, tipo: 'poliza', titulo: `Póliza ${p.plan || ''} registrada`, detalle: `${p.poliza || 's/n'} · prima $${Number(p.prima || 0).toLocaleString('es-MX')} · ${p.estatus}` });
+    if (p.fecha_pago) ev.push({ ts: `${p.fecha_pago}T12:00:00Z`, tipo: 'pago', titulo: `Prima pagada — ${p.plan || p.poliza || ''}`, detalle: `$${Number(p.prima || 0).toLocaleString('es-MX')}` });
+  }
+  for (const f of files || []) ev.push({ ts: f.created_at, tipo: 'archivo', titulo: `Archivo subido: ${f.nombre}`, detalle: f.categoria });
+  ev.sort((a, b) => new Date(b.ts) - new Date(a.ts));
+  res.json({ timeline: ev.slice(0, 150) });
+});
+
+/* ═══════════════ PORTAL: generar enlace (asesor/admin) ═══════════════ */
+
+router.post('/clients/:id/portal-link', async (req, res) => {
+  const ok = await assertClientScope(req, res, req.params.id);
+  if (!ok) return;
+  const token = jwt.sign({ cid: Number(req.params.id), scope: 'crm-portal' }, JWT_SECRET, { expiresIn: '30d' });
+  const base = process.env.CLIENT_URL || 'https://financescool.com.mx';
+  logActivity(req, 'compartir', 'portal', req.params.id, 'enlace 30 días');
+  res.json({ url: `${base}/portal/cliente?t=${token}`, expira_dias: 30 });
+});
+
+/* ═══════════════ COPILOTO IA (Claude) ═══════════════ */
+
+router.post('/clients/:id/copilot', async (req, res) => {
+  const ok = await assertClientScope(req, res, req.params.id);
+  if (!ok) return;
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (!key) return res.status(503).json({ error: 'El copiloto requiere configurar ANTHROPIC_API_KEY en el servidor.' });
+  try {
+    const db = getDB();
+    const cid = req.params.id;
+    const [{ data: client }, { data: pols }, { data: rems }, { data: notes }] = await Promise.all([
+      db.from('crm_clients').select('*').eq('id', cid).maybeSingle(),
+      db.from('crm_policies').select('*').eq('client_id', cid),
+      db.from('crm_reminders').select('*').eq('client_id', cid).order('fecha').limit(15),
+      db.from('crm_notes').select('*').eq('client_id', cid).order('created_at', { ascending: false }).limit(20),
+    ]);
+    const c = decryptFields(client, 'crm_clients');
+    const ps = decryptRows(pols || [], 'crm_policies');
+    const rs = decryptRows(rems || [], 'crm_reminders');
+    const hoy = new Date().toISOString().slice(0, 10);
+    const contexto = [
+      `HOY: ${hoy}`,
+      `CLIENTE: ${c.nombre} | etapa: ${c.etapa} | ocupación: ${c.ocupacion || '?'} ${c.empresa ? '@ ' + c.empresa : ''} | origen: ${c.origen || '?'} | nacimiento: ${c.fecha_nacimiento || '?'}`,
+      c.notas ? `NOTAS GENERALES: ${c.notas}` : '',
+      `PÓLIZAS (${ps.length}): ` + ps.map(p => `${p.plan || '?'} ${p.poliza || ''} prima $${p.prima} ${p.forma_pago} estatus:${p.estatus} renovación:${p.fecha_renovacion || '?'}`).join(' || '),
+      `RECORDATORIOS: ` + rs.map(r => `${r.fecha} ${r.tipo}: ${r.titulo}${r.estatus === 'completado' ? ' (hecho)' : ''}`).join(' || '),
+      `NOTAS/TAREAS RECIENTES: ` + (notes || []).map(n => `[${n.tipo}${n.done ? '✓' : ''}] ${n.texto}`).join(' || '),
+    ].filter(Boolean).join('\n');
+    const pregunta = (req.body.pregunta || '').slice(0, 500) || 'Prepárame para mi siguiente contacto con este cliente.';
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: process.env.COPILOT_MODEL || 'claude-haiku-4-5-20251001',
+        max_tokens: 800,
+        system: 'Eres el copiloto de un asesor de seguros y Plan Personal de Retiro (PPR) de Finance SCool (GNP/Prudential, México). Con los datos del cliente responde en español, conciso y accionable, con viñetas. Incluye: resumen del cliente en 2 líneas, pendientes/riesgos (renovaciones, pagos, tareas), y 2-3 siguientes mejores acciones concretas. No inventes datos que no estén en el contexto.',
+        messages: [{ role: 'user', content: `${contexto}\n\nPETICIÓN DEL ASESOR: ${pregunta}` }],
+      }),
+    });
+    const data = await r.json();
+    if (data.error) return res.status(502).json({ error: data.error.message });
+    logActivity(req, 'copilot', 'cliente', cid, null);
+    res.json({ respuesta: data.content?.[0]?.text || 'Sin respuesta' });
+  } catch (e) { res.status(500).json({ error: 'Copiloto: ' + e.message }); }
+});
+
+/* ═══════════════ CONCILIACIÓN GNP desde Excel/CSV ═══════════════ */
+
+const normPoliza = (s) => String(s || '').replace(/[\s\-.]/g, '').toUpperCase();
+
+router.post('/commissions/reconcile-preview', upload.single('file'), async (req, res) => {
+  if (!isAgency(req.user.role)) return res.status(403).json({ error: 'Solo administración' });
+  if (!req.file) return res.status(400).json({ error: 'Archivo requerido' });
+  try {
+    const XLSX = require('xlsx');
+    const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' });
+    if (!rows.length) return res.status(400).json({ error: 'El archivo no tiene filas' });
+    const headers = Object.keys(rows[0]);
+    const hPoliza = headers.find(h => /p[oó]liza|policy|contrato/i.test(h));
+    const hMonto = headers.find(h => /comisi[oó]n|monto|importe|pago/i.test(h));
+    if (!hPoliza || !hMonto) return res.status(400).json({ error: `No encontré columnas de póliza y monto. Encabezados: ${headers.join(', ')}` });
+
+    const db = getDB();
+    const { data: pols } = await db.from('crm_policies').select('*, crm_clients(nombre), crm_agents(nombre)');
+    const decrypted = decryptRows(pols || [], 'crm_policies');
+    const byPoliza = {};
+    for (const p of decrypted) if (p.poliza) byPoliza[normPoliza(p.poliza)] = p;
+
+    const matches = [], sinMatch = [];
+    for (const row of rows) {
+      const num = normPoliza(row[hPoliza]);
+      const monto = Number(String(row[hMonto]).replace(/[$,\s]/g, '')) || 0;
+      if (!num) continue;
+      const p = byPoliza[num];
+      if (p) matches.push({
+        policy_id: p.id, poliza: p.poliza, plan: p.plan,
+        cliente: decryptFields(p.crm_clients || {}, 'crm_clients')?.nombre || p.crm_clients?.nombre || '—',
+        asesor: p.crm_agents?.nombre || '—',
+        monto_gnp: monto, comision_actual: Number(p.comision_monto) || 0, estatus_actual: p.comision_estatus || 'pendiente',
+      });
+      else sinMatch.push({ poliza: row[hPoliza], monto });
+    }
+    res.json({ matches, sinMatch, columnas: { poliza: hPoliza, monto: hMonto }, filas: rows.length });
+  } catch (e) { res.status(500).json({ error: 'No pude leer el archivo: ' + e.message }); }
+});
+
+router.post('/commissions/reconcile-confirm', async (req, res) => {
+  if (!isAgency(req.user.role)) return res.status(403).json({ error: 'Solo administración' });
+  const items = Array.isArray(req.body.items) ? req.body.items : [];
+  if (!items.length) return res.status(400).json({ error: 'items vacío' });
+  const db = getDB();
+  const hoy = new Date().toISOString().slice(0, 10);
+  let okCount = 0;
+  for (const it of items) {
+    const { error } = await db.from('crm_policies').update({
+      comision_monto: Number(it.monto) || 0, comision_estatus: 'conciliada', comision_fecha: hoy, updated_at: new Date().toISOString(),
+    }).eq('id', it.policy_id);
+    if (!error) okCount++;
+  }
+  logActivity(req, 'conciliar', 'comisiones', null, `${okCount} pólizas desde Excel GNP`);
+  res.json({ ok: true, conciliadas: okCount });
+});
+
+/* ═══════════════ COHORTES de conservación ═══════════════ */
+
+router.get('/cohorts', async (req, res) => {
+  const scope = await resolveScope(req, res);
+  if (!scope) return;
+  const db = getDB();
+  let q = db.from('crm_policies').select('*');
+  if (scope.restricted) q = q.eq('agent_id', scope.agentId);
+  const { data, error } = await q;
+  if (error) return res.status(500).json({ error: error.message });
+  const pols = decryptRows(data || [], 'crm_policies').filter(p => p.fecha_emision);
+  const hoy = new Date();
+  const cohortes = {};
+  for (const p of pols) {
+    const d = new Date(`${String(p.fecha_emision).slice(0, 10)}T12:00:00`);
+    const key = `${d.getFullYear()}-Q${Math.floor(d.getMonth() / 3) + 1}`;
+    const c = (cohortes[key] ||= { cohorte: key, emitidas: 0, prima: 0, canceladas: 0, meses: Math.round((hoy - d) / 2629800000) });
+    c.emitidas++; c.prima += Number(p.prima) || 0;
+    if (p.estatus === 'cancelada') c.canceladas++;
+    c.meses = Math.max(c.meses, Math.round((hoy - d) / 2629800000));
+  }
+  const out = Object.values(cohortes).sort((a, b) => a.cohorte.localeCompare(b.cohorte)).map(c => ({
+    ...c,
+    vigentes: c.emitidas - c.canceladas,
+    pctVigente: c.emitidas ? (c.emitidas - c.canceladas) / c.emitidas : 0,
+    p13: c.meses >= 13 ? (c.emitidas ? (c.emitidas - c.canceladas) / c.emitidas : 0) : null,
+    p25: c.meses >= 25 ? (c.emitidas ? (c.emitidas - c.canceladas) / c.emitidas : 0) : null,
+  }));
+  res.json({ cohortes: out });
 });
 
 /* ═══════════════ ACTIVIDAD (bitácora, solo administración) ═══════════════ */
