@@ -2,27 +2,32 @@
    Admin Constants — Finance SCool
    ══════════════════════════════════════════════════════ */
 
-/* ── Prudential Blue Palette ── */
+/* ── Paleta "Banca Privada" — Prudential blue + champagne ── */
 export const C = {
   primary: '#003DA5',
   primaryLight: '#0056D6',
   primaryDark: '#002B75',
   accent: '#0088E0',
   white: '#FFFFFF',
-  bg: '#F0F4F8',
+  bg: '#F2F4F8',
   card: '#FFFFFF',
-  border: '#E2E8F0',
-  text: '#1E293B',
-  textMuted: '#64748B',
-  textLight: '#94A3B8',
-  green: '#059669',
-  greenBg: '#ECFDF5',
-  amber: '#D97706',
-  amberBg: '#FFFBEB',
-  red: '#DC2626',
-  redBg: '#FEF2F2',
-  blue: '#0066CC',
-  blueBg: '#EFF6FF',
+  border: '#E4E8F0',
+  text: '#16233B',
+  textMuted: '#5B6B84',
+  textLight: '#8D9AB1',
+  green: '#0E8A63',
+  greenBg: '#EBF7F1',
+  amber: '#B97F1E',
+  amberBg: '#FBF4E6',
+  red: '#C93A3A',
+  redBg: '#FBEFEF',
+  blue: '#0A5BC4',
+  blueBg: '#EEF4FC',
+  /* Acentos patrimoniales */
+  gold: '#C1975B',
+  goldBg: '#F9F3E9',
+  ink: '#0A1730',
+  navy: '#051636',
 };
 
 /* ── Role Helpers ── */
