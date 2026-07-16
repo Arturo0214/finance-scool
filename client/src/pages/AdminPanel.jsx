@@ -97,12 +97,10 @@ export default function AdminPanel() {
   const userSeesAllCrm  = canManageTeam;
 
   /* ── Navegación del sidebar ──
-     Sofía Bot (conversaciones de Meta) es solo para agencia/admins. */
+     Solo el CRM Incubadora S-COOL + gestión de usuarios. Las vistas
+     antiguas (leads, calendario, WhatsApp, Sofía Bot, etc.) siguen
+     accesibles por URL directa pero ya no aparecen en el menú. */
   const navItems = [
-    { id: 'agency-dashboard', label: SPANISH_LABELS.agencyDashboard, icon: Activity   },
-    { id: 'funnel',           label: SPANISH_LABELS.funnel,           icon: Filter     },
-    { id: 'sources',          label: SPANISH_LABELS.sources,          icon: PieChart   },
-    { id: 'campaigns',        label: SPANISH_LABELS.campaigns,        icon: Megaphone  },
     { id: 'divider-crm',      label: '── CRM Asesores ──',            icon: null       },
     { id: 'crm',              label: 'Tableros CRM',                  icon: LayoutDashboard },
     { id: 'crm-pipeline',     label: 'Pipeline',                      icon: KanbanSquare },
@@ -111,25 +109,16 @@ export default function AdminPanel() {
     { id: 'crm-comisiones',   label: 'Comisiones',                    icon: HandCoins  },
     { id: 'crm-metas',        label: 'Metas & Forecast',              icon: Target     },
     { id: 'crm-recordatorios', label: 'Recordatorios',                icon: Bell       },
-    { id: 'divider-1',        label: '── Operativo ──',               icon: null       },
-    { id: 'dashboard',        label: SPANISH_LABELS.dashboard,        icon: BarChart3  },
-    { id: 'leads',            label: SPANISH_LABELS.leads,            icon: Users      },
-    { id: 'calendar',         label: SPANISH_LABELS.calendar,         icon: Calendar   },
-    { id: 'visitas',          label: SPANISH_LABELS.visitas,          icon: Eye        },
-    { id: 'chat',             label: SPANISH_LABELS.chat,             icon: MessageSquare },
-    { id: 'whatsapp',         label: SPANISH_LABELS.whatsapp,         icon: MessageCircle },
-    { id: 'sofia-bot',        label: 'Sofía Bot',                    icon: Bot        },
-    { id: 'divider-2',        label: '── Config ──',                  icon: null       },
+    { id: 'divider-2',        label: '── Administración ──',          icon: null       },
     { id: 'team',             label: SPANISH_LABELS.team,             icon: Settings   },
-    { id: 'workflow',         label: SPANISH_LABELS.workflow,         icon: Zap        },
-  ].filter(item => item.id !== 'sofia-bot' || userIsAgency);
+  ].filter(item => (item.id !== 'team' && item.id !== 'divider-2') || canManageTeam);
 
   /* ── Carga inicial de datos ── */
   useEffect(() => {
     if (authLoading) return; // Wait for auth check to finish before deciding
-    if (!user) { navigate('/admin/login'); return; }
-    // Redirect to proper default if on generic /admin/dashboard and user is agency
-    if (userIsAgency && activeView === 'dashboard') navigate('/admin/agency-dashboard', { replace: true });
+    if (!user) { navigate('/login'); return; }
+    // El CRM es ahora la vista principal para todos
+    if (activeView === 'dashboard') navigate('/admin/crm', { replace: true });
     loadData();
   }, [user, authLoading, navigate]); // eslint-disable-line
 
@@ -153,7 +142,7 @@ export default function AdminPanel() {
     finally { setLoading(false); }
   };
 
-  const handleLogout = async () => { await logout(); navigate('/admin/login'); };
+  const handleLogout = async () => { await logout(); navigate('/login'); };
 
   const handleLeadStatusChange = async (lead, newStatus) => {
     try {
@@ -322,7 +311,7 @@ export default function AdminPanel() {
               {activeView === 'whatsapp' &&
                 <WhatsAppView onOpenMenu={() => setMobileMenuOpen(o => !o)} />}
               {!loading && activeView === 'team' && canManageTeam &&
-                <TeamView userRole={user?.role} />}
+                <TeamView userRole={user?.role} currentUserId={user?.id} />}
               {!loading && activeView === 'hubspot' &&
                 <HubSpotView hubspotPortal={hubspotPortal} setHubspotPortal={setHubspotPortal} />}
               {!loading && activeView === 'workflow' &&

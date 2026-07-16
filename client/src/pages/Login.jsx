@@ -15,7 +15,7 @@ export default function Login() {
 
   // If already logged in, redirect
   if (user) {
-    navigate('/admin/dashboard');
+    navigate('/admin/crm');
     return null;
   }
 
@@ -34,7 +34,7 @@ export default function Login() {
     setIsLoading(true);
     try {
       await login(email, password);
-      navigate('/admin/dashboard');
+      navigate('/admin/crm');
     } catch (err) {
       setError(err.message || 'Email o contraseña incorrectos');
     } finally {

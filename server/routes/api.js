@@ -276,6 +276,76 @@ router.get('/users', verifyToken, async (req, res) => {
   }
 });
 
+/* Reglas compartidas de gestión de usuarios:
+   - agencia/superadmin gestionan a cualquiera (solo superadmin toca a superadmin)
+   - admin solo gestiona asesores */
+async function canManageUser(reqUser, targetId) {
+  if (!['superadmin', 'agencia', 'admin'].includes(reqUser.role)) return { error: 'No autorizado', code: 403 };
+  const target = await queryOne('SELECT id,name,email,role FROM users WHERE id=?', [targetId]);
+  if (!target) return { error: 'Usuario no encontrado', code: 404 };
+  const isAgencyReq = ['superadmin', 'agencia'].includes(reqUser.role);
+  if (!isAgencyReq && target.role !== 'asesor') return { error: 'Solo puedes gestionar asesores', code: 403 };
+  if (target.role === 'superadmin' && reqUser.role !== 'superadmin') return { error: 'Solo un superadmin puede modificar a otro superadmin', code: 403 };
+  return { target };
+}
+
+function logUserActivity(reqUser, action, target, detail) {
+  const { getDB } = require('../models/database');
+  getDB().from('crm_activity').insert([{ user_id: reqUser.id, user_name: reqUser.name, user_role: reqUser.role, action, entity: 'usuario', entity_id: String(target.id), detail: detail || target.email }])
+    .then(({ error: e }) => { if (e) console.error('activity log:', e.message); });
+}
+
+// Editar usuario (nombre, email, rol)
+router.put('/users/:id', verifyToken, async (req, res) => {
+  try {
+    const { target, error, code } = await canManageUser(req.user, req.params.id);
+    if (error) return res.status(code).json({ error });
+    const isAgencyReq = ['superadmin', 'agencia'].includes(req.user.role);
+    const patch = {};
+    if (req.body.name) patch.name = req.body.name;
+    if (req.body.email && req.body.email !== target.email) {
+      const dup = await queryOne('SELECT id FROM users WHERE email=?', [req.body.email]);
+      if (dup) return res.status(400).json({ error: 'Ese email ya está registrado' });
+      patch.email = req.body.email;
+    }
+    if (req.body.role && req.body.role !== target.role) {
+      const assignable = isAgencyReq ? ['asesor', 'admin', 'agencia'] : ['asesor'];
+      if (!assignable.includes(req.body.role)) return res.status(403).json({ error: 'No puedes asignar ese rol' });
+      if (target.role === 'superadmin') return res.status(403).json({ error: 'No se puede cambiar el rol de un superadmin' });
+      patch.role = req.body.role;
+    }
+    if (!Object.keys(patch).length) return res.status(400).json({ error: 'Nada que actualizar' });
+    const { getDB } = require('../models/database');
+    const { data, error: dbErr } = await getDB().from('users').update(patch).eq('id', target.id).select('id,name,email,role,created_at');
+    if (dbErr) return res.status(500).json({ error: dbErr.message });
+    logUserActivity(req.user, 'editar', target, `${target.email} → ${Object.keys(patch).join(', ')}`);
+    res.json({ ok: true, user: data[0] });
+  } catch (err) {
+    console.error('Update user error:', err);
+    res.status(500).json({ error: 'Error al actualizar usuario' });
+  }
+});
+
+// Eliminar usuario (no puedes eliminarte a ti mismo)
+router.delete('/users/:id', verifyToken, async (req, res) => {
+  try {
+    if (String(req.user.id) === String(req.params.id)) return res.status(400).json({ error: 'No puedes eliminar tu propia cuenta' });
+    const { target, error, code } = await canManageUser(req.user, req.params.id);
+    if (error) return res.status(code).json({ error });
+    const { getDB } = require('../models/database');
+    const db = getDB();
+    // Desvincular perfil de asesor del CRM (el agente y su cartera se conservan)
+    await db.from('crm_agents').update({ user_id: null }).eq('user_id', target.id);
+    const { error: dbErr } = await db.from('users').delete().eq('id', target.id);
+    if (dbErr) return res.status(500).json({ error: dbErr.message });
+    logUserActivity(req.user, 'eliminar', target);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Delete user error:', err);
+    res.status(500).json({ error: 'Error al eliminar usuario' });
+  }
+});
+
 // Reset de contraseña por administración: agencia/superadmin a cualquiera; admin solo a asesores
 router.post('/users/:id/reset-password', verifyToken, async (req, res) => {
   try {

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { C } from '../constants';
-import { Users, UserCheck, Settings, Plus, AlertCircle, X, Mail, Calendar, KeyRound, Activity, Contact, FileText, DollarSign } from 'lucide-react';
+import { Users, UserCheck, Settings, Plus, AlertCircle, X, Mail, Calendar, KeyRound, Activity, Contact, FileText, DollarSign, Pencil, Trash2 } from 'lucide-react';
 import { api } from '../../../utils/api';
 
 const isAgencyRole = (role) => ['superadmin', 'agencia'].includes(role);
@@ -107,6 +107,52 @@ function AddUserModal({ onClose, onSubmit, isAgency }) {
   );
 }
 
+function EditUserModal({ user, onClose, onSubmit, isAgency }) {
+  const [form, setForm]   = useState({ name: user.name || '', email: user.email || '', role: user.role });
+  const [error, setError] = useState('');
+
+  const handleSubmit = () => {
+    if (!form.name || !form.email) { setError('Nombre y email son obligatorios'); return; }
+    onSubmit(user, form);
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-head">
+          <h2>Editar Usuario</h2>
+          <button className="close-btn" onClick={onClose}><X size={22} /></button>
+        </div>
+        <div className="modal-body">
+          {error && (
+            <div className="info-box" style={{ background: C.redBg, borderColor: `${C.red}40`, color: C.red, marginBottom: 16 }}>
+              <AlertCircle size={16} /><p>{error}</p>
+            </div>
+          )}
+          <div className="field"><label>Nombre completo</label><input type="text" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
+          <div className="field"><label>Email</label><input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
+          <div className="field">
+            <label>Rol</label>
+            {user.role === 'superadmin' ? (
+              <input type="text" value="Superadmin (no se puede cambiar)" disabled />
+            ) : (
+              <select value={form.role} onChange={e => setForm({ ...form, role: e.target.value })}>
+                <option value="asesor">Asesor / Consultor</option>
+                {isAgency && <option value="admin">Admin Finance SCool</option>}
+                {isAgency && <option value="agencia">Agencia</option>}
+              </select>
+            )}
+          </div>
+        </div>
+        <div className="modal-foot">
+          <button className="btn-primary" onClick={handleSubmit}><Pencil size={16} /> Guardar Cambios</button>
+          <button className="btn-secondary" onClick={onClose}>Cancelar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── Feed de actividad en vivo (se actualiza cada 10 s) ── */
 function ActivityFeed({ activity }) {
   return (
@@ -141,15 +187,19 @@ function ActivityFeed({ activity }) {
   );
 }
 
-export default function TeamView({ userRole }) {
+export default function TeamView({ userRole, currentUserId }) {
   const [users, setUsers]               = useState([]);
   const [activity, setActivity]         = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editingUser, setEditingUser]   = useState(null);
   const [feedback, setFeedback]         = useState(null);
   const [resetting, setResetting]       = useState(null);
   const pollRef = useRef(null);
   const isAgency = isAgencyRole(userRole);
+
+  // Un admin solo gestiona asesores; solo un superadmin toca a otro superadmin
+  const canManage = (u) => (isAgency || u.role === 'asesor') && (u.role !== 'superadmin' || userRole === 'superadmin');
 
   useEffect(() => {
     loadUsers();
@@ -182,6 +232,32 @@ export default function TeamView({ userRole }) {
       loadUsers();
     } catch (err) {
       setFeedback({ type: 'error', msg: err.message || 'Error al crear usuario' });
+      setTimeout(() => setFeedback(null), 6000);
+    }
+  };
+
+  const handleEditUser = async (u, form) => {
+    try {
+      await api.updateUser(u.id, form);
+      setFeedback({ type: 'success', msg: `Usuario "${form.name}" actualizado` });
+      setEditingUser(null);
+      loadUsers(); loadActivity();
+      setTimeout(() => setFeedback(null), 5000);
+    } catch (err) {
+      setFeedback({ type: 'error', msg: err.message || 'Error al actualizar usuario' });
+      setTimeout(() => setFeedback(null), 6000);
+    }
+  };
+
+  const handleDeleteUser = async (u) => {
+    if (!window.confirm(`¿Eliminar la cuenta de ${u.name} (${u.email})? Perderá el acceso al sistema. Su cartera del CRM se conserva.`)) return;
+    try {
+      await api.deleteUser(u.id);
+      setFeedback({ type: 'success', msg: `Usuario "${u.name}" eliminado` });
+      loadUsers(); loadActivity();
+      setTimeout(() => setFeedback(null), 5000);
+    } catch (err) {
+      setFeedback({ type: 'error', msg: err.message || 'Error al eliminar usuario' });
       setTimeout(() => setFeedback(null), 6000);
     }
   };
@@ -261,10 +337,20 @@ export default function TeamView({ userRole }) {
                         </td>
                         <td>{new Date(u.created_at || Date.now()).toLocaleDateString('es-MX')}</td>
                         <td>
-                          {(isAgency || u.role === 'asesor') && (
-                            <button className="btn-secondary" disabled={resetting === u.id} onClick={() => handleResetPassword(u)} title="Generar nueva contraseña" style={{ padding: '4px 8px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                              <KeyRound size={12} /> {resetting === u.id ? '...' : 'Reset'}
-                            </button>
+                          {canManage(u) && (
+                            <div style={{ display: 'inline-flex', gap: 4 }}>
+                              <button className="btn-secondary" onClick={() => setEditingUser(u)} title="Editar usuario" style={{ padding: '4px 8px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                <Pencil size={12} />
+                              </button>
+                              <button className="btn-secondary" disabled={resetting === u.id} onClick={() => handleResetPassword(u)} title="Generar nueva contraseña" style={{ padding: '4px 8px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                <KeyRound size={12} /> {resetting === u.id ? '...' : ''}
+                              </button>
+                              {u.id !== currentUserId && (
+                                <button className="btn-secondary" onClick={() => handleDeleteUser(u)} title="Eliminar usuario" style={{ padding: '4px 8px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4, color: C.red }}>
+                                  <Trash2 size={12} />
+                                </button>
+                              )}
+                            </div>
                           )}
                         </td>
                       </tr>
@@ -300,10 +386,20 @@ export default function TeamView({ userRole }) {
                           <Calendar size={12} color={C.textLight} />
                           {new Date(u.created_at || Date.now()).toLocaleDateString('es-MX')}
                         </span>
-                        {(isAgency || u.role === 'asesor') && (
-                          <button className="btn-secondary" disabled={resetting === u.id} onClick={() => handleResetPassword(u)} style={{ padding: '4px 8px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                            <KeyRound size={12} /> Reset
-                          </button>
+                        {canManage(u) && (
+                          <div style={{ display: 'inline-flex', gap: 4 }}>
+                            <button className="btn-secondary" onClick={() => setEditingUser(u)} style={{ padding: '4px 8px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                              <Pencil size={12} /> Editar
+                            </button>
+                            <button className="btn-secondary" disabled={resetting === u.id} onClick={() => handleResetPassword(u)} style={{ padding: '4px 8px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                              <KeyRound size={12} /> Reset
+                            </button>
+                            {u.id !== currentUserId && (
+                              <button className="btn-secondary" onClick={() => handleDeleteUser(u)} style={{ padding: '4px 8px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4, color: C.red }}>
+                                <Trash2 size={12} />
+                              </button>
+                            )}
+                          </div>
                         )}
                       </div>
                     </div>
@@ -318,6 +414,7 @@ export default function TeamView({ userRole }) {
       <ActivityFeed activity={activity} />
 
       {showAddModal && <AddUserModal onClose={() => setShowAddModal(false)} onSubmit={handleAddUser} isAgency={isAgency} />}
+      {editingUser && <EditUserModal user={editingUser} onClose={() => setEditingUser(null)} onSubmit={handleEditUser} isAgency={isAgency} />}
     </div>
   );
 }

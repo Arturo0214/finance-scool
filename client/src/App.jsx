@@ -11,9 +11,11 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/privacy-policy" element={<PrivacyPolicy />} />
-        <Route path="/admin/login" element={<Login />} />
-        <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/admin/login" element={<Navigate to="/login" replace />} />
+        <Route path="/admin" element={<Navigate to="/admin/crm" replace />} />
         <Route path="/admin/:view" element={<AdminPanel />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AuthProvider>
   )

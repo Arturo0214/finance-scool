@@ -110,6 +110,8 @@ export const api = {
     return request(`/crm/activity${q ? `?${q}` : ''}`);
   },
   resetUserPassword: (id, password) => request(`/users/${id}/reset-password`, { method: 'POST', body: JSON.stringify({ password }) }),
+  updateUser: (id, data) => request(`/users/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteUser: (id) => request(`/users/${id}`, { method: 'DELETE' }),
   crmGetDashboard: (anio) => request(`/crm/dashboard${anio ? `?anio=${anio}` : ''}`),
   crmGetAgentSummary: (id, anio) => request(`/crm/agents/${id}/summary${anio ? `?anio=${anio}` : ''}`),
   crmGetAgents: () => request('/crm/agents'),
