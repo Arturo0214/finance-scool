@@ -220,7 +220,7 @@ function HeatMatrix({ agentes }) {
   );
 }
 
-function PerformanceTab({ data, anio }) {
+function PerformanceTab({ data, anio, personal = false }) {
   const [periodo, setPeriodo] = useState('mensual');
   const [cohorts, setCohorts] = useState(null);
   useEffect(() => { api.crmGetCohorts().then(d => setCohorts(d.cohortes)).catch(() => setCohorts([])); }, []);
@@ -271,8 +271,8 @@ function PerformanceTab({ data, anio }) {
       <div className="crm-chart-card">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
           <div>
-            <h3>Rendimiento de la empresa</h3>
-            <p className="sub" style={{ marginBottom: 10 }}>Prima pagada por periodo vs meta y proyección</p>
+            <h3>{personal ? 'Mis ventas' : 'Rendimiento de la empresa'}</h3>
+            <p className="sub" style={{ marginBottom: 10 }}>{personal ? 'Tu prima pagada por periodo vs tu meta y proyección' : 'Prima pagada por periodo vs meta y proyección'}</p>
           </div>
           <div className="filter-tabs">
             {[['mensual', 'Mensual'], ['trimestral', 'Trimestral'], ['anual', 'Acumulado anual']].map(([id, l]) => (
@@ -335,6 +335,7 @@ function PerformanceTab({ data, anio }) {
       </div>
 
       {/* ═══ Podio de asesores ═══ */}
+      {!personal && (
       <div className="crm-kpi-detail" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))' }}>
         <div className="crm-kpi-box" style={{ borderTop: `3px solid ${C.gold}` }}>
           <div className="k-label" style={{ display: 'flex', alignItems: 'center', gap: 5 }}><Trophy size={13} color={C.gold} /> Mayor prima pagada</div>
@@ -352,8 +353,10 @@ function PerformanceTab({ data, anio }) {
           <div className="k-sub">{fmtPct(topCons?.kpis.conservacion.indiceProyectado || 0, 1)} proyectado</div>
         </div>
       </div>
+      )}
 
       {/* ═══ Ranking + participación ═══ */}
+      {!personal && (
       <div className="two-col">
         <div className="crm-chart-card" style={{ marginBottom: 0 }}>
           <h3>Ranking de asesores</h3>
@@ -397,10 +400,11 @@ function PerformanceTab({ data, anio }) {
           )}
         </div>
       </div>
+      )}
 
       {/* ═══ Matriz de calor ═══ */}
       <div className="crm-chart-card" style={{ marginTop: 20 }}>
-        <h3>Matriz de producción — asesor × mes</h3>
+        <h3>{personal ? 'Mi producción mes a mes' : 'Matriz de producción — asesor × mes'}</h3>
         <p className="sub">Intensidad = prima pagada del mes (estilo matrix de Power BI)</p>
         <HeatMatrix agentes={data.porAgente} />
       </div>
@@ -531,9 +535,17 @@ export default function CrmDashboardView() {
         )}
       </div>
 
-      {/* ── Asesor: tablero directo. Admin: tabs Resumen | Rendimiento ── */}
+      {/* ── Asesor: tabs Resumen | Mis Ventas. Admin: tabs Resumen | Rendimiento ── */}
       {single ? (
-        <AgentBoard summary={{ ...data.porAgente[0], anio }} />
+        <>
+          <div className="crm-detail-tabs">
+            <button className={`crm-dtab${tab === 'resumen' ? ' active' : ''}`} onClick={() => setTab('resumen')}>Resumen</button>
+            <button className={`crm-dtab${tab === 'rendimiento' ? ' active' : ''}`} onClick={() => setTab('rendimiento')}>📊 Mis Ventas</button>
+          </div>
+          {tab === 'rendimiento'
+            ? <PerformanceTab data={data} anio={anio} personal />
+            : <AgentBoard summary={{ ...data.porAgente[0], anio }} />}
+        </>
       ) : (
         <>
           <div className="crm-detail-tabs">

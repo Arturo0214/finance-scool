@@ -56,10 +56,10 @@ export const getCrmCSS = () => `
   .crm-toolbar-right { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
   .crm-select { padding:9px 13px; border:1px solid rgba(11,27,51,.14); border-radius:10px; font-size:13.5px; font-family:inherit; background:${C.white}; color:${C.text}; outline:none; cursor:pointer; box-shadow:0 1px 2px rgba(11,27,51,.04); transition:border-color .2s, box-shadow .2s; }
   .crm-select:focus { border-color:${C.primary}; box-shadow:0 0 0 3.5px rgba(0,61,165,.1); }
-  .crm-search { padding:9px 13px 9px 36px; border:1px solid rgba(11,27,51,.14); border-radius:10px; font-size:13.5px; font-family:inherit; background:${C.white}; color:${C.text}; outline:none; min-width:220px; box-shadow:0 1px 2px rgba(11,27,51,.04); transition:border-color .2s, box-shadow .2s; }
+  .crm-search { padding:9px 13px !important; padding-left:38px !important; border:1px solid rgba(11,27,51,.14); border-radius:10px; font-size:13.5px; font-family:inherit; background:${C.white}; color:${C.text}; outline:none; min-width:220px; box-shadow:0 1px 2px rgba(11,27,51,.04); transition:border-color .2s, box-shadow .2s; }
   .crm-search:focus { border-color:${C.primary}; box-shadow:0 0 0 3.5px rgba(0,61,165,.1); }
   .crm-search-wrap { position:relative; display:flex; align-items:center; }
-  .crm-search-wrap svg { position:absolute; left:11px; color:${C.textLight}; pointer-events:none; }
+  .crm-search-wrap svg { position:absolute; left:12px; top:50%; transform:translateY(-50%); color:${C.textLight}; pointer-events:none; z-index:1; }
 
   .crm-progress { height:8px; background:rgba(11,27,51,.07); border-radius:6px; overflow:hidden; min-width:70px; box-shadow:inset 0 1px 2px rgba(11,27,51,.06); }
   .crm-progress-fill { height:100%; border-radius:6px; transition:width .5s ease; background-image:linear-gradient(180deg, rgba(255,255,255,.25), transparent); }

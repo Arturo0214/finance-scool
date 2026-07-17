@@ -107,6 +107,14 @@ export default function CrmGoalsView({ isAgency }) {
 
       {msg && <div className="info-box" style={{ marginBottom: 16 }}><p>{msg}</p></div>}
 
+      {totMeta === 0 && (
+        <div className="info-box" style={{ marginBottom: 16, background: C.goldBg, borderColor: `${C.gold}50`, color: '#8A6A34' }}>
+          <p>🎯 {isAgency
+            ? `Aún no hay metas capturadas para ${anio}. Edita el grid de abajo (o usa "⚡ Meta anual") para activar el forecast y el cumplimiento.`
+            : `Tu administrador aún no captura tus metas de ${anio}. En cuanto las registre, aquí verás tu forecast y tu avance de cumplimiento.`}</p>
+        </div>
+      )}
+
       {/* ── Forecast global ── */}
       <div className="crm-chart-card">
         <h3>Forecast anual acumulado</h3>

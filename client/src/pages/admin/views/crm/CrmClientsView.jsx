@@ -253,7 +253,22 @@ export default function CrmClientsView({ isAgency }) {
         ))}
       </div>
 
+      {/* Estado vacío para cartera nueva */}
+      {clients.length === 0 && (
+        <div className="crm-chart-card" style={{ textAlign: 'center', padding: '48px 24px' }}>
+          <div style={{ fontSize: 40, marginBottom: 10 }}>🌱</div>
+          <h3 style={{ marginBottom: 6 }}>Tu cartera empieza aquí</h3>
+          <p className="sub" style={{ maxWidth: 420, margin: '0 auto 18px' }}>
+            Registra a tu primer prospecto y el CRM te acompaña con su expediente, pipeline, recordatorios y cotizaciones.
+          </p>
+          <button className="btn-primary" onClick={() => { setNewForm({ ...EMPTY_CLIENT, agent_id: agents[0]?.id || '' }); setShowNew(true); }}>
+            <Plus size={16} /> Crear mi primer cliente
+          </button>
+        </div>
+      )}
+
       {/* Desktop table */}
+      {clients.length > 0 && (
       <div className="tbl-wrap desktop-only-table">
         <table>
           <thead>
@@ -277,8 +292,10 @@ export default function CrmClientsView({ isAgency }) {
           </tbody>
         </table>
       </div>
+      )}
 
       {/* Mobile cards */}
+      {clients.length > 0 && (
       <div className="mobile-only-cards" style={{ flexDirection: 'column' }}>
         {filtered.length === 0 && <p className="empty">Sin clientes con estos filtros</p>}
         {filtered.map(c => {
@@ -295,6 +312,7 @@ export default function CrmClientsView({ isAgency }) {
           );
         })}
       </div>
+      )}
 
       {/* ══ Modal alta de cliente ══ */}
       {showNew && (

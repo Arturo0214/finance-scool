@@ -190,6 +190,17 @@ export default function CrmCommissionsView({ isAgency }) {
         </div>
       )}
 
+      {policies.length === 0 && (
+        <div className="crm-chart-card" style={{ textAlign: 'center', padding: '44px 24px', marginBottom: 20 }}>
+          <div style={{ fontSize: 38, marginBottom: 10 }}>💼</div>
+          <h3 style={{ marginBottom: 6 }}>Aquí vivirán tus comisiones</h3>
+          <p className="sub" style={{ maxWidth: 460, margin: '0 auto' }}>
+            Cuando una póliza pase a estatus <b>Pagada</b>, aparecerá en esta sección para calcular tu comisión
+            (monto o % de la prima) y conciliarla contra los pagos reales de GNP.
+          </p>
+        </div>
+      )}
+
       <div className="stats-grid">
         <div className="stat-card">
           <div className="stat-icon" style={{ background: C.blueBg, color: C.primary }}><DollarSign size={20} /></div>

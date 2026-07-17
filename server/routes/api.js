@@ -318,6 +318,12 @@ router.put('/users/:id', verifyToken, async (req, res) => {
     const { getDB } = require('../models/database');
     const { data, error: dbErr } = await getDB().from('users').update(patch).eq('id', target.id).select('id,name,email,role,created_at');
     if (dbErr) return res.status(500).json({ error: dbErr.message });
+    // Si se convirtió en asesor, asegurar su perfil de CRM
+    if (patch.role === 'asesor') {
+      const db2 = getDB();
+      const { data: ag } = await db2.from('crm_agents').select('id').eq('user_id', target.id).maybeSingle();
+      if (!ag) await db2.from('crm_agents').insert([{ nombre: patch.name || target.name, email: patch.email || target.email, user_id: target.id, clave: `A${String(target.id).padStart(4, '0')}`, cuaderno: 'NOVEL', fecha_inicio_calculos: new Date().toISOString().slice(0, 10) }]);
+    }
     logUserActivity(req.user, 'editar', target, `${target.email} → ${Object.keys(patch).join(', ')}`);
     res.json({ ok: true, user: data[0] });
   } catch (err) {

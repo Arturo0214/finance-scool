@@ -34,17 +34,26 @@ export default function CrmQuoteView() {
     const costoReal = (f.aportMensual || 0) - devolucion / 12;
 
     const rm = (f.rendimiento || 0) / 100 / 12;
+    const proyecta = (years) => {
+      let s = 0;
+      for (let y = 0; y < years * 12; y++) s = s * (1 + rm) + (f.aportMensual || 0);
+      return s;
+    };
     let saldo = 0, aportado = 0;
     const serie = [];
     for (let y = 1; y <= anios; y++) {
       for (let m = 0; m < 12; m++) { saldo = saldo * (1 + rm) + (f.aportMensual || 0); aportado += (f.aportMensual || 0); }
       serie.push({ edad: (f.edad || 30) + y, 'Total aportado': Math.round(aportado), 'Saldo proyectado': Math.round(saldo) });
     }
+    const saldoSiEspera5 = anios > 5 ? proyecta(anios - 5) : 0;
     return {
       anios, aportAnual, tope, topeUMA, topeIngreso, deducible, devolucion, costoReal,
       saldoFinal: saldo, aportado, rendimientoGenerado: saldo - aportado,
       devolucionesAcum: devolucion * anios,
       pensionMensual: (saldo * 0.04) / 12, // regla del 4% anual
+      multiplo: aportado > 0 ? saldo / aportado : 0,
+      costoDeEsperar: anios > 5 ? saldo - saldoSiEspera5 : 0,
+      aniosDeIngreso: (f.ingresoAnual || 0) > 0 ? saldo / f.ingresoAnual : 0,
       serie,
     };
   }, [f]);
@@ -138,14 +147,29 @@ export default function CrmQuoteView() {
         </div>
 
         {/* ── Propuesta ── */}
-        <div id="ppr-proposal" className="crm-chart-card" style={{ marginBottom: 0 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 6 }}>
-            <div>
-              <div style={{ fontSize: 10, letterSpacing: 3, textTransform: 'uppercase', color: C.gold, fontWeight: 700 }}>Finance SCool · Plan Personal de Retiro</div>
-              <h3 style={{ fontSize: 21, marginTop: 4 }}>{f.nombre ? `Propuesta para ${f.nombre}` : 'Tu propuesta de retiro'}</h3>
+        <div id="ppr-proposal" className="crm-chart-card" style={{ marginBottom: 0, overflow: 'hidden', paddingTop: 0, paddingLeft: 0, paddingRight: 0 }}>
+          {/* Hero emocional */}
+          <div style={{ background: 'radial-gradient(600px 300px at 90% -20%, rgba(0,136,224,.25), transparent 60%), linear-gradient(160deg,#051636,#06255C)', color: '#fff', padding: '26px 26px 24px', marginBottom: 18 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+              <div style={{ fontSize: 10, letterSpacing: 3, textTransform: 'uppercase', color: '#E8CFA6', fontWeight: 700 }}>Finance SCool · Plan Personal de Retiro</div>
+              <span style={{ fontSize: 11, color: 'rgba(255,255,255,.55)' }}>{new Date().toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
             </div>
-            <span style={{ fontSize: 11.5, color: C.textMuted }}>{new Date().toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
+            <h3 style={{ fontFamily: "'Fraunces',Georgia,serif", fontSize: 24, fontWeight: 600, margin: '14px 0 6px', color: '#fff', letterSpacing: '-.3px' }}>
+              {f.nombre ? `${f.nombre.split(' ')[0]}, imagina tu vida a los ${f.edadRetiro}` : `Imagina tu vida a los ${f.edadRetiro}`}
+            </h3>
+            <p style={{ margin: 0, fontSize: 14, color: 'rgba(255,255,255,.85)', lineHeight: 1.6, maxWidth: 560 }}>
+              Despertar sin despertador. Viajar cuando quieras. Ayudar a tu familia sin pedirle nada a nadie.
+              Con {fmt(f.aportMensual)} al mes — menos de lo que parece, porque el SAT te devuelve una parte —
+              ese futuro tiene un número: <b style={{ color: '#E8CFA6', fontFamily: "'Fraunces',Georgia,serif", fontSize: 17 }}>{fmt(r.saldoFinal)}</b>.
+            </p>
+            <div style={{ display: 'flex', gap: 22, flexWrap: 'wrap', marginTop: 14, fontSize: 12.5 }}>
+              <span>💰 Cada peso aportado se convierte en <b style={{ color: '#E8CFA6' }}>${r.multiplo.toFixed(2)}</b></span>
+              {r.aniosDeIngreso >= 1 && <span>🧭 Equivale a <b style={{ color: '#E8CFA6' }}>{r.aniosDeIngreso.toFixed(1)} años</b> de tu ingreso actual</span>}
+              <span>🕊️ {fmt(r.pensionMensual)}/mes de por vida sin trabajar</span>
+            </div>
           </div>
+
+          <div style={{ padding: '0 24px 22px' }}>
           <p className="sub">Aportando {fmt(f.aportMensual)} al mes durante {r.anios} años (retiro a los {f.edadRetiro})</p>
 
           <div className="crm-kpi-detail" style={{ marginTop: 6 }}>
@@ -188,9 +212,33 @@ export default function CrmQuoteView() {
             <span>Rendimiento generado: <b style={{ color: C.green }}>{fmt(r.rendimientoGenerado)}</b></span>
             <span>Devoluciones ISR acumuladas: <b style={{ color: C.green }}>{fmt(r.devolucionesAcum)}</b></span>
           </div>
+
+          {/* El costo de esperar */}
+          {r.costoDeEsperar > 0 && (
+            <div style={{ marginTop: 16, border: `1px solid ${C.red}30`, background: 'linear-gradient(180deg,#FFF9F9,#FDF3F3)', borderRadius: 14, padding: '16px 18px' }}>
+              <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: 1.5, fontWeight: 700, color: C.red, marginBottom: 4 }}>⏳ El costo de esperar</div>
+              <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.55, color: C.text }}>
+                Empezar dentro de 5 años en lugar de hoy te costaría{' '}
+                <b style={{ fontFamily: "'Fraunces',Georgia,serif", fontSize: 17, color: C.red }}>{fmt(r.costoDeEsperar)}</b> de tu retiro
+                — la misma aportación, pero sin los años en que el interés compuesto trabaja más fuerte.
+                <b> El mejor día para empezar era ayer; el segundo mejor es hoy.</b>
+              </p>
+            </div>
+          )}
+
+          {/* Cierre emocional */}
+          <div style={{ marginTop: 16, textAlign: 'center', padding: '14px 18px', borderTop: `2px solid ${C.gold}40` }}>
+            <p style={{ fontFamily: "'Fraunces',Georgia,serif", fontSize: 15.5, color: C.ink, fontStyle: 'italic', margin: 0, lineHeight: 1.55 }}>
+              "No se trata de dejar de vivir hoy — se trata de que el {f.nombre ? f.nombre.split(' ')[0] : 'tú'} del futuro
+              te dé las gracias todos los días."
+            </p>
+            <p style={{ fontSize: 11.5, color: C.textMuted, margin: '8px 0 0' }}>Tu asesor Finance SCool te acompaña en cada paso · respaldo GNP · beneficio fiscal Art. 151 LISR</p>
+          </div>
+
           <p style={{ fontSize: 10, color: C.textLight, marginTop: 12 }}>
             Proyección ilustrativa con rendimiento constante; no constituye garantía. Deducibilidad conforme al Art. 151 fracc. V de la LISR vigente. La devolución depende de la situación fiscal de cada contribuyente.
           </p>
+          </div>
         </div>
       </div>
     </div>

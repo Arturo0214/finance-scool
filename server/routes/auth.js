@@ -49,6 +49,14 @@ router.post('/register', verifyToken, async (req, res) => {
     const hash = bcrypt.hashSync(password, 10);
     const r = await runQuery('INSERT INTO users (name,email,password,role) VALUES (?,?,?,?)', [name, email, hash, userRole]);
     const user = await queryOne('SELECT id,name,email,role FROM users WHERE id=?', [r.lastInsertRowid]);
+    // Un asesor necesita su perfil en el CRM para tener cartera propia
+    if (userRole === 'asesor') {
+      const db = getDB();
+      const { data: existing2 } = await db.from('crm_agents').select('id').eq('user_id', user.id).maybeSingle();
+      if (!existing2) {
+        await db.from('crm_agents').insert([{ nombre: name, email, user_id: user.id, clave: `A${String(user.id).padStart(4, '0')}`, cuaderno: 'NOVEL', fecha_inicio_calculos: new Date().toISOString().slice(0, 10) }]);
+      }
+    }
     res.json({ success: true, user });
   } catch (err) {
     console.error('Register error:', err);
