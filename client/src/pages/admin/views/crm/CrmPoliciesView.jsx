@@ -18,6 +18,12 @@ export default function CrmPoliciesView({ isAgency }) {
   const [statusFilter, setStatusFilter] = useState('todas');
   const [agentFilter, setAgentFilter] = useState('');
   const [search, setSearch] = useState(() => { const s = sessionStorage.getItem('crm_polizas_search') || ''; sessionStorage.removeItem('crm_polizas_search'); return s; });
+  /* Filtros por columna (fila bajo los encabezados) */
+  const [fPlan, setFPlan] = useState('');
+  const [fCliente, setFCliente] = useState('');
+  const [fTipo, setFTipo] = useState('');
+  const [fPrimaMin, setFPrimaMin] = useState('');
+  const [fFecha, setFFecha] = useState('');
   const [sort, setSort] = useState({ key: '', dir: 'desc' });
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -68,6 +74,13 @@ export default function CrmPoliciesView({ isAgency }) {
       const hay = [p.plan, p.poliza, p.crm_clients?.nombre, p.crm_agents?.nombre].filter(Boolean).join(' ').toLowerCase();
       if (!hay.includes(q)) return false;
     }
+    if (fPlan && p.plan !== fPlan) return false;
+    if (fCliente && !(p.crm_clients?.nombre || '').toLowerCase().includes(fCliente.toLowerCase())) return false;
+    if (fTipo && (p.tipo || 'nueva') !== fTipo) return false;
+    if (fPrimaMin && (Number(p.prima) || 0) < Number(fPrimaMin)) return false;
+    if (fFecha === 'pagada' && !p.fecha_pago) return false;
+    if (fFecha === 'renueva' && !(p.fecha_renovacion && !p.fecha_pago)) return false;
+    if (fFecha === 'sin_fecha' && (p.fecha_pago || p.fecha_renovacion || p.fecha_emision)) return false;
     return true;
   });
 
@@ -124,6 +137,45 @@ export default function CrmPoliciesView({ isAgency }) {
         <table>
           <thead>
             <tr><SortTh k="plan">Póliza / Plan</SortTh><SortTh k="cliente">Cliente</SortTh>{isAgency && <th>Asesor</th>}<SortTh k="tipo">Tipo</SortTh><SortTh k="prima">Prima</SortTh><SortTh k="fecha">Pago / Renovación</SortTh><SortTh k="estatus">Estatus</SortTh></tr>
+            {(() => {
+              const fs = { width: '100%', minWidth: 0, padding: '4px 6px', fontSize: 11.5, border: '1px solid rgba(11,27,51,.12)', borderRadius: 7, fontFamily: 'inherit', background: '#fff', color: C.text, outline: 'none' };
+              return (
+                <tr style={{ background: '#FAFBFC' }}>
+                  <th style={{ padding: '6px 10px' }}>
+                    <select style={fs} value={fPlan} onChange={e => setFPlan(e.target.value)}>
+                      <option value="">Todos los planes</option>
+                      {PLANES.map(pl => <option key={pl}>{pl}</option>)}
+                    </select>
+                  </th>
+                  <th style={{ padding: '6px 10px' }}><input style={fs} placeholder="Filtrar cliente..." value={fCliente} onChange={e => setFCliente(e.target.value)} /></th>
+                  {isAgency && (
+                    <th style={{ padding: '6px 10px' }}>
+                      <select style={fs} value={agentFilter} onChange={e => setAgentFilter(e.target.value)}>
+                        <option value="">Todos</option>
+                        {agents.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
+                      </select>
+                    </th>
+                  )}
+                  <th style={{ padding: '6px 10px' }}>
+                    <select style={fs} value={fTipo} onChange={e => setFTipo(e.target.value)}>
+                      <option value="">Todos</option><option value="nueva">Nueva</option><option value="renovacion">Renovación</option>
+                    </select>
+                  </th>
+                  <th style={{ padding: '6px 10px' }}><input style={fs} type="number" placeholder="Prima ≥" value={fPrimaMin} onChange={e => setFPrimaMin(e.target.value)} /></th>
+                  <th style={{ padding: '6px 10px' }}>
+                    <select style={fs} value={fFecha} onChange={e => setFFecha(e.target.value)}>
+                      <option value="">Todas</option><option value="pagada">Con pago</option><option value="renueva">Por renovar</option><option value="sin_fecha">Sin fechas</option>
+                    </select>
+                  </th>
+                  <th style={{ padding: '6px 10px' }}>
+                    <select style={fs} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+                      <option value="todas">Todas</option>
+                      {ESTATUS_POLIZA.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+                    </select>
+                  </th>
+                </tr>
+              );
+            })()}
           </thead>
           <tbody>
             {sorted.length === 0 && <tr><td colSpan={7} className="empty">Sin pólizas con estos filtros</td></tr>}
