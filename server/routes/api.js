@@ -395,6 +395,22 @@ router.get('/health-status', verifyToken, async (req, res) => {
       const convs = await cnt('fsc_conversations');
       return { txt: 'credenciales presentes', datos: { 'Phone ID': String(process.env.WA_PHONE_ID).slice(0, 6) + '···', 'Conversaciones': convs, 'Crons': 'reminders 15m · no-show 30m · post-cita 6h' } };
     }),
+    t('Vigilancia de seguridad', async () => {
+      const db = getDB();
+      const h24 = new Date(Date.now() - 864e5).toISOString();
+      const d7 = new Date(Date.now() - 7 * 864e5).toISOString();
+      const { data: fallidos } = await db.from('crm_activity').select('user_name,detail').eq('action', 'login_fallido').gt('created_at', h24);
+      const { count: exitosos } = await db.from('crm_activity').select('id', { count: 'exact', head: true }).eq('action', 'login').gt('created_at', h24);
+      const { count: resets } = await db.from('crm_activity').select('id', { count: 'exact', head: true }).eq('action', 'reset_password').gt('created_at', d7);
+      const { count: borrados } = await db.from('crm_activity').select('id', { count: 'exact', head: true }).eq('action', 'eliminar').eq('entity', 'usuario').gt('created_at', d7);
+      const n = (fallidos || []).length;
+      const porCuenta = {};
+      (fallidos || []).forEach(f => { porCuenta[f.user_name] = (porCuenta[f.user_name] || 0) + 1; });
+      const top = Object.entries(porCuenta).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([e, c]) => `${e} (${c}×)`).join(' · ') || 'ninguna';
+      const datos = { 'Logins fallidos (24h)': n, 'Cuentas objetivo': top, 'Logins exitosos (24h)': exitosos || 0, 'Resets de contraseña (7d)': resets || 0, 'Usuarios eliminados (7d)': borrados || 0, 'Umbral de alerta': '>20 fallidos/24h', 'Rate limit activo': '200 req / 15 min por IP' };
+      if (n > 20) throw new Error(`⚠️ ${n} intentos fallidos en 24h — posible fuerza bruta sobre: ${top}`);
+      return { txt: n === 0 ? 'sin intentos fallidos en 24h' : `${n} intento(s) fallido(s) en 24h`, datos };
+    }),
     t('Cifrado CRM', async () => {
       if (!process.env.CRM_ENCRYPTION_KEY) throw new Error('CRM_ENCRYPTION_KEY falta');
       return { txt: 'AES-256-GCM activo', datos: { 'Algoritmo': 'AES-256-GCM (prefijo enc:v1:)', 'Tablas cifradas': 'crm_clients, crm_policies, crm_reminders', 'Llave': `${String(process.env.CRM_ENCRYPTION_KEY).length} hex chars`, 'RLS': '17 tablas deny-all anon' } };

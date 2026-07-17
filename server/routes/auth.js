@@ -8,8 +8,12 @@ router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
     const user = await queryOne('SELECT * FROM users WHERE email=?', [email]);
-    if (!user || !bcrypt.compareSync(password, user.password))
+    if (!user || !bcrypt.compareSync(password, user.password)) {
+      // Señal de seguridad: intentos fallidos quedan en la bitácora (fuerza bruta)
+      getDB().from('crm_activity').insert([{ user_name: String(email || '?').slice(0, 80), user_role: 'desconocido', action: 'login_fallido', entity: 'seguridad', detail: `IP ${req.ip || '?'}` }])
+        .then(({ error: e }) => { if (e) console.error('activity log:', e.message); });
       return res.status(401).json({ error: 'Credenciales incorrectas' });
+    }
     const token = generateToken(user);
     // sameSite lax: requests go through Netlify proxy (same domain), no need for 'none'
     // 'none' causes Safari ITP to restrict/delete the cookie on mobile
