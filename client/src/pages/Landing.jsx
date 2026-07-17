@@ -334,21 +334,21 @@ export default function Landing() {
   // Hero carousel slides with videos
   const heroSlides = [
     {
-      video: 'https://res.cloudinary.com/dbowaer8j/video/upload/Hero_raises_shield_202603302047_cakk6l.mp4',
+      video: 'https://res.cloudinary.com/dihxi7zgv/video/upload/Hero_raises_shield_202603302047_cakk6l.mp4',
       title: 'Tu dinero puede hacer más por ti',
       subtitle: 'cuando entiendes cómo moverlo con estrategia',
       stat: '$1,250,000+ MXN',
       statLabel: 'Proyección estimada a 25 años',
     },
     {
-      video: 'https://res.cloudinary.com/dbowaer8j/video/upload/Man_points_at_202603302047_ifuc9e.mp4',
+      video: 'https://res.cloudinary.com/dihxi7zgv/video/upload/Man_points_at_202603302047_ifuc9e.mp4',
       title: 'Menos impuestos, más patrimonio',
       subtitle: 'Conecta ahorro, retiro y deducción fiscal de forma inteligente',
       stat: 'Hasta 30%',
       statLabel: 'Devolución estimada de impuestos',
     },
     {
-      video: 'https://res.cloudinary.com/dbowaer8j/video/upload/Flow_202603302047_bp5gbq.mp4',
+      video: 'https://res.cloudinary.com/dihxi7zgv/video/upload/Flow_202603302047_bp5gbq.mp4',
       title: 'Planea hoy, vive tranquilo mañana',
       subtitle: 'Cada año que esperas, necesitas ahorrar más para llegar al mismo objetivo',
       stat: '25+ años',
@@ -2316,7 +2316,7 @@ export default function Landing() {
           </div>
           <div className={`brand-grid ${visibleSections.brand ? 'revealed' : ''}`}>
             <div className="brand-left" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <img className="brand-img-card" src="https://res.cloudinary.com/dbowaer8j/image/upload/descarga_unbgiy" alt="Plan Personal de Retiro - Ahorra e Invierte a Largo Plazo" />
+              <img className="brand-img-card" src="https://res.cloudinary.com/dihxi7zgv/image/upload/descarga_unbgiy" alt="Plan Personal de Retiro - Ahorra e Invierte a Largo Plazo" />
             </div>
             <div className="brand-right">
               <p className="brand-text" style={{ textAlign: 'justify' }}>
@@ -2364,7 +2364,7 @@ export default function Landing() {
                 <span className="emotion-badge">retiro</span>
               </div>
             </div>
-            <LazyVideo src="https://res.cloudinary.com/dbowaer8j/video/upload/Man_points_at_202603302047_ifuc9e.mp4" className="brand-video-wrapper" globalMuted={isMuted} />
+            <LazyVideo src="https://res.cloudinary.com/dihxi7zgv/video/upload/Man_points_at_202603302047_ifuc9e.mp4" className="brand-video-wrapper" globalMuted={isMuted} />
           </div>
           <div className="emotion-cta-wrapper">
             <p className="emotion-cta">Menos confusión. Más claridad. Más control sobre tu futuro.</p>
@@ -2456,7 +2456,7 @@ export default function Landing() {
           </div>
           <div className="sat-grid">
             <div className="sat-video-col">
-              <LazyVideo src="https://res.cloudinary.com/dbowaer8j/video/upload/Hero_raises_shield_202603302047_cakk6l.mp4" className="sat-video-wrapper" globalMuted={isMuted} />
+              <LazyVideo src="https://res.cloudinary.com/dihxi7zgv/video/upload/Hero_raises_shield_202603302047_cakk6l.mp4" className="sat-video-wrapper" globalMuted={isMuted} />
             </div>
             <div className="sat-text-col">
               <p style={{ color: 'rgba(255,255,255,0.95)', fontSize: '1.1rem', lineHeight: '1.8', marginBottom: '1.25rem' }}>
