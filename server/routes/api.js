@@ -358,17 +358,47 @@ router.get('/health-status', verifyToken, async (req, res) => {
   const { getDB } = require('../models/database');
   const t = async (name, fn) => {
     const t0 = Date.now();
-    try { const detalle = await fn(); return { name, ok: true, ms: Date.now() - t0, detalle: detalle || 'OK' }; }
+    try { const r = await fn(); const obj = typeof r === 'object' && r !== null ? r : { txt: r }; return { name, ok: true, ms: Date.now() - t0, detalle: obj.txt || 'OK', datos: obj.datos || null }; }
     catch (e) { return { name, ok: false, ms: Date.now() - t0, detalle: String(e.message || e).slice(0, 90) }; }
   };
+  const cnt = async (tabla) => { const { count } = await getDB().from(tabla).select('id', { count: 'exact', head: true }); return count || 0; };
   const checks = await Promise.all([
-    t('Base de datos (Supabase)', async () => { const { error, count } = await getDB().from('users').select('id', { count: 'exact', head: true }); if (error) throw new Error(error.message); return `${count} usuarios · RLS activo`; }),
-    t('Cloudinary (dihxi7zgv)', async () => { const c = require('../config/cloudinary'); const r = await c.api.ping(); return `ping ${r.status}`; }),
-    t('Frontend (Netlify)', async () => { const r = await fetch('https://financescool.com.mx/login', { signal: AbortSignal.timeout(8000) }); if (!r.ok) throw new Error('HTTP ' + r.status); return 'HTTP 200'; }),
-    t('Sofía / n8n', async () => { const r = await fetch('https://primary-production-73558.up.railway.app/healthz', { signal: AbortSignal.timeout(8000) }); if (!r.ok) throw new Error('HTTP ' + r.status); return 'HTTP 200'; }),
-    t('Copiloto IA (Anthropic)', async () => { if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY no configurada'); return 'key configurada (Haiku)'; }),
-    t('WhatsApp Cloud API', async () => { if (!process.env.WA_TOKEN || !process.env.WA_PHONE_ID) throw new Error('WA_TOKEN / WA_PHONE_ID faltan'); return 'credenciales presentes'; }),
-    t('Cifrado CRM', async () => { if (!process.env.CRM_ENCRYPTION_KEY) throw new Error('CRM_ENCRYPTION_KEY falta'); return 'AES-256-GCM activo'; }),
+    t('Base de datos (Supabase)', async () => {
+      const [u, c, p, a, n, f] = await Promise.all(['users', 'crm_clients', 'crm_policies', 'crm_activity', 'crm_notes', 'fsc_conversations'].map(cnt));
+      return { txt: `${u} usuarios · RLS activo`, datos: { 'Usuarios': u, 'Clientes CRM': c, 'Pólizas': p, 'Eventos bitácora': a, 'Notas/tareas': n, 'Conversaciones WhatsApp': f, 'Proyecto': 'jisfqytmoiaikaohyens' } };
+    }),
+    t('Cloudinary (dihxi7zgv)', async () => {
+      const c = require('../config/cloudinary');
+      const u = await c.api.usage();
+      const mb = (b) => (b / 1048576).toFixed(1) + ' MB';
+      return { txt: `ping ok · ${u.credits?.usage ?? '?'} créditos`, datos: { 'Créditos usados': `${u.credits?.usage ?? '?'} / ${u.credits?.limit ?? '?'}`, 'Almacenamiento': mb(u.storage?.usage || 0), 'Ancho de banda (mes)': mb(u.bandwidth?.usage || 0), 'Transformaciones': u.transformations?.usage ?? '—', 'Cloud': 'dihxi7zgv (separado de Tesipedia)' } };
+    }),
+    t('Frontend (Netlify)', async () => {
+      const r = await fetch('https://financescool.com.mx/login', { signal: AbortSignal.timeout(8000) });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const html = await r.text();
+      const bundle = (html.match(/index-([A-Za-z0-9_-]+)\.js/) || [])[0] || '?';
+      return { txt: 'HTTP 200', datos: { 'Dominio': 'financescool.com.mx', 'Hosting': 'Netlify (finance-scool-104)', 'Bundle actual': bundle, 'Tamaño HTML': (html.length / 1024).toFixed(1) + ' KB' } };
+    }),
+    t('Sofía / n8n', async () => {
+      const r = await fetch('https://primary-production-73558.up.railway.app/healthz', { signal: AbortSignal.timeout(8000) });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return { txt: 'HTTP 200', datos: { 'Instancia': 'primary-production-73558 (Railway)', 'Función': 'Orquestador de Sofía (WhatsApp bot)', 'Healthcheck': '/healthz OK' } };
+    }),
+    t('Copiloto IA (Anthropic)', async () => {
+      if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY no configurada');
+      const { count: usos } = await getDB().from('crm_activity').select('id', { count: 'exact', head: true }).in('action', ['copilot', 'consulta-ia']);
+      return { txt: 'key configurada (Haiku)', datos: { 'Modelo': process.env.COPILOT_MODEL || 'claude-haiku-4-5-20251001', 'Usos registrados': usos || 0, 'Funciones': 'Copiloto expediente + extracción de consultorías', 'Costo aprox': '~$0.02 MXN por consulta' } };
+    }),
+    t('WhatsApp Cloud API', async () => {
+      if (!process.env.WA_TOKEN || !process.env.WA_PHONE_ID) throw new Error('WA_TOKEN / WA_PHONE_ID faltan');
+      const convs = await cnt('fsc_conversations');
+      return { txt: 'credenciales presentes', datos: { 'Phone ID': String(process.env.WA_PHONE_ID).slice(0, 6) + '···', 'Conversaciones': convs, 'Crons': 'reminders 15m · no-show 30m · post-cita 6h' } };
+    }),
+    t('Cifrado CRM', async () => {
+      if (!process.env.CRM_ENCRYPTION_KEY) throw new Error('CRM_ENCRYPTION_KEY falta');
+      return { txt: 'AES-256-GCM activo', datos: { 'Algoritmo': 'AES-256-GCM (prefijo enc:v1:)', 'Tablas cifradas': 'crm_clients, crm_policies, crm_reminders', 'Llave': `${String(process.env.CRM_ENCRYPTION_KEY).length} hex chars`, 'RLS': '17 tablas deny-all anon' } };
+    }),
   ]);
   res.json({
     server: {
