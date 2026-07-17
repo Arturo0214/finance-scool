@@ -47,6 +47,7 @@ const CrmGoalsView        = lazy(() => import('./admin/views/crm/CrmGoalsView'))
 const CrmRemindersView    = lazy(() => import('./admin/views/crm/CrmRemindersView'));
 const CrmCommissionsView  = lazy(() => import('./admin/views/crm/CrmCommissionsView'));
 const CrmQuoteView        = lazy(() => import('./admin/views/crm/CrmQuoteView'));
+const HealthView          = lazy(() => import('./admin/views/HealthView'));
 
 /* ── Spinner de suspense ── */
 function ViewSpinner() {
@@ -116,7 +117,11 @@ export default function AdminPanel() {
     { id: 'crm-cotizador',    label: 'Cotizador PPR',                 icon: BarChart3  },
     { id: 'divider-2',        label: '── Administración ──',          icon: null       },
     { id: 'team',             label: SPANISH_LABELS.team,             icon: Settings   },
-  ].filter(item => (item.id !== 'team' && item.id !== 'divider-2') || canManageTeam);
+    { id: 'health',           label: 'Salud del sistema',             icon: Activity   },
+  ].filter(item => {
+    if (item.id === 'health') return user?.role === 'superadmin';
+    return (item.id !== 'team' && item.id !== 'divider-2') || canManageTeam;
+  });
 
   /* ── Carga inicial de datos ── */
   useEffect(() => {
@@ -335,6 +340,7 @@ export default function AdminPanel() {
               {!loading && activeView === 'crm-metas' && <CrmGoalsView isAgency={userSeesAllCrm} />}
               {!loading && activeView === 'crm-recordatorios' && <CrmRemindersView isAgency={userSeesAllCrm} />}
               {!loading && activeView === 'crm-cotizador' && <CrmQuoteView />}
+              {!loading && activeView === 'health' && user?.role === 'superadmin' && <HealthView />}
             </Suspense>
           </main>
         </div>

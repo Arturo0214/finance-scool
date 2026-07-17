@@ -352,6 +352,36 @@ router.delete('/users/:id', verifyToken, async (req, res) => {
   }
 });
 
+// Salud del sistema — SOLO superadmin
+router.get('/health-status', verifyToken, async (req, res) => {
+  if (req.user.role !== 'superadmin') return res.status(403).json({ error: 'Solo superadmin' });
+  const { getDB } = require('../models/database');
+  const t = async (name, fn) => {
+    const t0 = Date.now();
+    try { const detalle = await fn(); return { name, ok: true, ms: Date.now() - t0, detalle: detalle || 'OK' }; }
+    catch (e) { return { name, ok: false, ms: Date.now() - t0, detalle: String(e.message || e).slice(0, 90) }; }
+  };
+  const checks = await Promise.all([
+    t('Base de datos (Supabase)', async () => { const { error, count } = await getDB().from('users').select('id', { count: 'exact', head: true }); if (error) throw new Error(error.message); return `${count} usuarios · RLS activo`; }),
+    t('Cloudinary (dihxi7zgv)', async () => { const c = require('../config/cloudinary'); const r = await c.api.ping(); return `ping ${r.status}`; }),
+    t('Frontend (Netlify)', async () => { const r = await fetch('https://financescool.com.mx/login', { signal: AbortSignal.timeout(8000) }); if (!r.ok) throw new Error('HTTP ' + r.status); return 'HTTP 200'; }),
+    t('Sofía / n8n', async () => { const r = await fetch('https://primary-production-73558.up.railway.app/healthz', { signal: AbortSignal.timeout(8000) }); if (!r.ok) throw new Error('HTTP ' + r.status); return 'HTTP 200'; }),
+    t('Copiloto IA (Anthropic)', async () => { if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY no configurada'); return 'key configurada (Haiku)'; }),
+    t('WhatsApp Cloud API', async () => { if (!process.env.WA_TOKEN || !process.env.WA_PHONE_ID) throw new Error('WA_TOKEN / WA_PHONE_ID faltan'); return 'credenciales presentes'; }),
+    t('Cifrado CRM', async () => { if (!process.env.CRM_ENCRYPTION_KEY) throw new Error('CRM_ENCRYPTION_KEY falta'); return 'AES-256-GCM activo'; }),
+  ]);
+  res.json({
+    server: {
+      uptime_min: Math.round(process.uptime() / 60),
+      memoria_mb: Math.round(process.memoryUsage().rss / 1048576),
+      node: process.version,
+      entorno: process.env.RAILWAY_ENVIRONMENT_NAME ? `Railway (${process.env.RAILWAY_ENVIRONMENT_NAME})` : 'local',
+    },
+    checks,
+    ts: new Date().toISOString(),
+  });
+});
+
 // Reset de contraseña por administración: agencia/superadmin a cualquiera; admin solo a asesores
 router.post('/users/:id/reset-password', verifyToken, async (req, res) => {
   try {
