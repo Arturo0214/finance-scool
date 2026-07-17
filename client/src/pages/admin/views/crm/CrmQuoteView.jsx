@@ -8,7 +8,8 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { api } from '../../../../utils/api';
 import { C } from '../../constants';
 import { ResponsiveContainer, ComposedChart, Area, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
-import { Calculator, Printer, Save, Sunrise, Gem, Crown } from 'lucide-react';
+import { Calculator, Printer, Save, Sunrise, Gem, Crown, Coins, Landmark, TrendingUp, Hourglass } from 'lucide-react';
+import Logo from '../../../../components/Logo';
 import { getCrmCSS } from './crmShared';
 
 const fmt = (n) => '$' + Math.round(Number(n) || 0).toLocaleString('es-MX');
@@ -62,14 +63,22 @@ const QUOTE_CSS = `
     font-variant-numeric:tabular-nums;
   }
   .qp-gem {
-    position:relative; overflow:hidden; background:rgba(255,255,255,.055); border:1px solid rgba(255,255,255,.12);
+    position:relative; overflow:hidden; border:1px solid rgba(255,255,255,.12);
     border-radius:14px; padding:14px 16px; backdrop-filter:blur(6px); animation:riseSoft .6s ease backwards;
+    border-top:2.5px solid var(--gc, #E8CFA6);
+    background:radial-gradient(160px 90px at 18% -10%, var(--gtint, rgba(232,207,166,.16)), transparent 70%), rgba(255,255,255,.055);
+    transition:transform .2s ease, box-shadow .2s ease;
   }
+  .qp-gem:hover { transform:translateY(-3px); box-shadow:0 16px 30px -16px var(--gtint, rgba(232,207,166,.4)); }
   .qp-gem::after { content:''; position:absolute; top:0; bottom:0; width:38%; background:linear-gradient(90deg,transparent,rgba(255,255,255,.09),transparent); transform:translateX(-120%) skewX(-18deg); }
   .qp-gem:hover::after { animation:shineSweep .9s ease; }
-  .qp-gem .g-label { font-size:9.5px; text-transform:uppercase; letter-spacing:2px; color:rgba(232,207,166,.85); font-weight:700; margin-bottom:5px; }
-  .qp-gem .g-value { font-family:'Fraunces',Georgia,serif; font-size:23px; font-weight:600; color:#fff; letter-spacing:-.4px; font-variant-numeric:tabular-nums; }
+  .qp-gem .g-head { display:flex; align-items:center; gap:6px; margin-bottom:6px; }
+  .qp-gem .g-ico { width:24px; height:24px; border-radius:8px; display:flex; align-items:center; justify-content:center; background:var(--gtint, rgba(232,207,166,.16)); color:var(--gc, #E8CFA6); flex-shrink:0; }
+  .qp-gem .g-label { font-size:9.5px; text-transform:uppercase; letter-spacing:1.8px; color:var(--gc, rgba(232,207,166,.85)); font-weight:700; }
+  .qp-gem .g-value { font-family:'Fraunces',Georgia,serif; font-size:23px; font-weight:600; color:#fff; letter-spacing:-.4px; font-variant-numeric:tabular-nums; text-shadow:0 0 24px var(--gtint, transparent); }
+  .qp-gem .g-value .hl { color:var(--gc); }
   .qp-gem .g-sub { font-size:11px; color:rgba(255,255,255,.55); margin-top:3px; line-height:1.45; }
+  .qp-gem .g-sub b { color:var(--gc); font-weight:700; }
 
   .qp-milestone { display:flex; align-items:flex-start; gap:12px; animation:riseSoft .6s ease backwards; }
   .qp-mile-dot { width:34px; height:34px; border-radius:50%; flex-shrink:0; display:flex; align-items:center; justify-content:center;
@@ -228,9 +237,12 @@ export default function CrmQuoteView() {
           {STARS.map((s, i) => <span key={i} className="qp-star" style={{ top: s.top, left: s.left, width: s.s, height: s.s, animationDelay: s.d }} />)}
 
           <div style={{ padding: '30px 34px 26px', position: 'relative' }}>
-            {/* Encabezado */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-              <span className="qp-eyebrow">Finance SCool · La carta de tu futuro</span>
+            {/* Encabezado con logo */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                <Logo height={34} variant="light" layout="inline" />
+                <span className="qp-eyebrow" style={{ borderLeft: '1px solid rgba(232,207,166,.35)', paddingLeft: 14 }}>La carta de tu futuro</span>
+              </div>
               <span style={{ fontSize: 11, color: 'rgba(255,255,255,.45)' }}>{new Date().toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
             </div>
 
@@ -281,28 +293,29 @@ export default function CrmQuoteView() {
 
             <hr className="qp-divider" />
 
-            {/* Gemas */}
+            {/* Gemas — psicología del color: oro=riqueza, verde=dinero que
+                regresa, azul=crecimiento/confianza, violeta=aspiración */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(170px,1fr))', gap: 12 }}>
-              <div className="qp-gem" style={{ animationDelay: '.1s' }}>
-                <div className="g-label">Cada peso se convierte en</div>
-                <div className="g-value">${r.multiplo.toFixed(2)}</div>
-                <div className="g-sub">aportas {fmt(r.aportado)}, cosechas {fmt(r.saldoFinal)}</div>
+              <div className="qp-gem" style={{ animationDelay: '.1s', '--gc': '#F2D9A7', '--gtint': 'rgba(232,207,166,.22)' }}>
+                <div className="g-head"><span className="g-ico"><Coins size={13} /></span><span className="g-label">Cada peso se convierte en</span></div>
+                <div className="g-value"><span className="hl">${r.multiplo.toFixed(2)}</span></div>
+                <div className="g-sub">aportas {fmt(r.aportado)}, cosechas <b>{fmt(r.saldoFinal)}</b></div>
               </div>
-              <div className="qp-gem" style={{ animationDelay: '.2s' }}>
-                <div className="g-label">El SAT te devuelve</div>
-                <div className="g-value">{fmt(r.devolucion)}<span style={{ fontSize: 13, color: 'rgba(255,255,255,.6)' }}>/año</span></div>
-                <div className="g-sub">deducible {fmt(r.deducible)} × {f.tasaISR}% — {fmt(r.devolucionesAcum)} en todo el plan</div>
+              <div className="qp-gem" style={{ animationDelay: '.2s', '--gc': '#6EE7B7', '--gtint': 'rgba(52,211,153,.2)' }}>
+                <div className="g-head"><span className="g-ico"><Landmark size={13} /></span><span className="g-label">El SAT te devuelve</span></div>
+                <div className="g-value"><span className="hl">{fmt(r.devolucion)}</span><span style={{ fontSize: 13, color: 'rgba(255,255,255,.6)' }}>/año</span></div>
+                <div className="g-sub">deducible {fmt(r.deducible)} × {f.tasaISR}% — <b>{fmt(r.devolucionesAcum)}</b> en todo el plan</div>
               </div>
-              <div className="qp-gem" style={{ animationDelay: '.3s' }}>
-                <div className="g-label">Rendimiento generado</div>
-                <div className="g-value">{fmt(r.rendimientoGenerado)}</div>
-                <div className="g-sub">el interés compuesto hace {Math.max(r.multiplo - 1, 0).toFixed(1)}× tu esfuerzo</div>
+              <div className="qp-gem" style={{ animationDelay: '.3s', '--gc': '#7CC4FF', '--gtint': 'rgba(90,169,255,.22)' }}>
+                <div className="g-head"><span className="g-ico"><TrendingUp size={13} /></span><span className="g-label">Rendimiento generado</span></div>
+                <div className="g-value"><span className="hl">{fmt(r.rendimientoGenerado)}</span></div>
+                <div className="g-sub">el interés compuesto hace <b>{Math.max(r.multiplo - 1, 0).toFixed(1)}×</b> tu esfuerzo</div>
               </div>
               {r.aniosDeIngreso >= 1 && (
-                <div className="qp-gem" style={{ animationDelay: '.4s' }}>
-                  <div className="g-label">Equivale a</div>
-                  <div className="g-value">{r.aniosDeIngreso.toFixed(1)} años</div>
-                  <div className="g-sub">de tu ingreso actual, trabajando cero horas</div>
+                <div className="qp-gem" style={{ animationDelay: '.4s', '--gc': '#C4B5FD', '--gtint': 'rgba(167,139,250,.22)' }}>
+                  <div className="g-head"><span className="g-ico"><Hourglass size={13} /></span><span className="g-label">Equivale a</span></div>
+                  <div className="g-value"><span className="hl">{r.aniosDeIngreso.toFixed(1)} años</span></div>
+                  <div className="g-sub">de tu ingreso actual, <b>trabajando cero horas</b></div>
                 </div>
               )}
             </div>
