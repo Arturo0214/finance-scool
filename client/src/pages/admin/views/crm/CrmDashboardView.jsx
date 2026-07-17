@@ -137,7 +137,7 @@ function AgentBoard({ summary }) {
         <div className="crm-kpi-box">
           <div className="k-label">Clientes</div>
           <div className="k-value">{clientes.total}</div>
-          <div className="k-sub">{clientes.funnel.cliente || 0} activos · {clientes.funnel.prospecto || 0} prospectos</div>
+          <div className="k-sub">{clientes.funnel.postventa || 0} en post venta · {clientes.funnel.prospecto || 0} prospectos</div>
         </div>
       </div>
 

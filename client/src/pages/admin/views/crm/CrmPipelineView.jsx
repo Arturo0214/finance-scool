@@ -7,7 +7,74 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { api } from '../../../../utils/api';
 import { C } from '../../constants';
 import { Phone, GripVertical, RefreshCw, Search } from 'lucide-react';
-import { getCrmCSS, ETAPAS, fmtMoney } from './crmShared';
+import { getCrmCSS, ETAPAS, BENCHMARK_SEMANAL, fmtMoney } from './crmShared';
+
+/* ── Reporte de ritmo: tasas de transición de industria + forecast ──
+   Modelo: cada semana un cliente avanza una etapa con la tasa de
+   transición de industria (15→10→8→4→2→1). Con el stock actual se
+   estima en cuántos días llega el próximo cierre. */
+function RitmoReport({ clients, titulo }) {
+  const pre = BENCHMARK_SEMANAL.slice(0, 5); // etapas antes de "emitida"
+  const rates = pre.map((b, i) => BENCHMARK_SEMANAL[i + 1].meta / b.meta); // [.67,.8,.5,.5,.5]
+  const stock = pre.map(b => clients.filter(c => c.etapa === b.id).length);
+  const probCierre = pre.map((_, i) => rates.slice(i).reduce((a, r) => a * r, 1));
+  const esperados = stock.reduce((s, n, i) => s + n * probCierre[i], 0);
+
+  // semana en que el acumulado de cierres esperados llega a 1
+  let dias = null, acum = 0;
+  for (let w = 1; w <= 5 && dias === null; w++) {
+    for (let i = 0; i < 5; i++) if (5 - i === w) acum += stock[i] * probCierre[i];
+    if (acum >= 1) dias = w * 7;
+  }
+  const porProspecto = probCierre[0]; // ≈ 1/15
+  const faltan = esperados >= 1 ? 0 : Math.ceil((1 - esperados) / porProspecto);
+
+  return (
+    <div className="crm-chart-card" style={{ marginBottom: 20 }}>
+      <h3>📈 Reporte de ritmo — {titulo}</h3>
+      <p className="sub">Proceso de 8 pasos vs benchmark semanal de la industria (15 → 10 → 8 → 4 → 2 → 1)</p>
+      <div className="crm-kpi-detail">
+        <div className="crm-kpi-box">
+          <div className="k-label">Próximo cierre estimado</div>
+          <div className="k-value" style={{ color: dias ? C.green : C.amber }}>{dias ? `~${dias} días` : '—'}</div>
+          <div className="k-sub">{dias ? 'a tu ritmo actual, con tasas de industria' : 'el pipeline actual no alcanza para 1 cierre'}</div>
+        </div>
+        <div className="crm-kpi-box">
+          <div className="k-label">Cierres en tu pipeline</div>
+          <div className="k-value">{esperados.toFixed(1)}</div>
+          <div className="k-sub">pólizas esperadas del stock actual</div>
+        </div>
+        <div className="crm-kpi-box">
+          <div className="k-label">{faltan > 0 ? 'Prospectos faltantes' : 'Ritmo saludable'}</div>
+          <div className="k-value" style={{ color: faltan > 0 ? C.red : C.green }}>{faltan > 0 ? `+${faltan}` : '✓'}</div>
+          <div className="k-sub">{faltan > 0 ? 'para asegurar tu próximo cierre' : 'mantén 15 prospectos nuevos por semana'}</div>
+        </div>
+      </div>
+      <div className="tbl-wrap">
+        <table>
+          <thead><tr><th>Etapa</th><th>En tu tablero</th><th>Benchmark semanal</th><th>Tasa de transición</th></tr></thead>
+          <tbody>
+            {pre.map((b, i) => {
+              const e = ETAPAS.find(x => x.id === b.id);
+              const ok = stock[i] >= b.meta;
+              return (
+                <tr key={b.id}>
+                  <td><span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}><span style={{ width: 9, height: 9, borderRadius: '50%', background: e.color }} />{e.label}</span></td>
+                  <td><b style={{ color: ok ? C.green : C.amber }}>{stock[i]}</b></td>
+                  <td style={{ color: C.textMuted }}>{b.meta}</td>
+                  <td style={{ fontVariantNumeric: 'tabular-nums' }}>→ {(rates[i] * 100).toFixed(0)}% pasa a {ETAPAS.find(x => x.id === BENCHMARK_SEMANAL[i + 1].id)?.label}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p style={{ fontSize: 11, color: C.textLight, margin: '10px 0 0' }}>
+        Con el histórico de cambios de etapa (bitácora) las tasas se irán personalizando por asesor; hoy se usan las de industria.
+      </p>
+    </div>
+  );
+}
 
 const KANBAN_CSS = `
   .kb-board { display:flex; gap:14px; overflow-x:auto; padding-bottom:16px; align-items:flex-start; -webkit-overflow-scrolling:touch; }
@@ -109,6 +176,8 @@ export default function CrmPipelineView({ isAgency }) {
           <button className="btn-secondary" onClick={load}><RefreshCw size={15} /></button>
         </div>
       </div>
+
+      <RitmoReport clients={visible} titulo={isAgency && !agentFilter ? 'Promotoría' : (currentAgent?.nombre || 'Mi pipeline')} />
 
       <div className="kb-board">
         {ETAPAS.map(etapa => {

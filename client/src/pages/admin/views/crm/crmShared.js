@@ -19,15 +19,28 @@ export const fmtDate = (d) => {
   return dt.toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' });
 };
 
+/* Los 8 pasos del proceso de venta de la promotoría */
 export const ETAPAS = [
-  { id: 'prospecto',  label: 'Prospecto',  color: '#94A3B8' },
-  { id: 'contactado', label: 'Contactado', color: '#3B82F6' },
-  { id: 'cita',       label: 'Cita',       color: '#8B5CF6' },
-  { id: 'propuesta',  label: 'Propuesta',  color: '#F59E0B' },
-  { id: 'cliente',    label: 'Cliente',    color: '#10B981' },
-  { id: 'inactivo',   label: 'Inactivo',   color: '#EF4444' },
+  { id: 'prospecto',      label: 'Por llamar',          color: '#94A3B8' },
+  { id: 'cita_agendada',  label: 'Cita agendada',       color: '#3B82F6' },
+  { id: 'cita_realizada', label: 'Cita realizada',      color: '#0891B2' },
+  { id: 'presentacion',   label: 'Presentación/Cierre', color: '#8B5CF6' },
+  { id: 'solicitud',      label: 'Solicitud',           color: '#F59E0B' },
+  { id: 'emitida',        label: 'Emitida y pagada',    color: '#10B981' },
+  { id: 'postventa',      label: 'Post venta',          color: '#C1975B' },
+  { id: 'inactivo',       label: 'Inactivo',            color: '#EF4444' },
 ];
 export const etapaInfo = (id) => ETAPAS.find(e => e.id === id) || ETAPAS[0];
+
+/* Benchmark semanal de la industria por etapa (los "15/10/8/4/2/1") */
+export const BENCHMARK_SEMANAL = [
+  { id: 'prospecto',      meta: 15 },
+  { id: 'cita_agendada',  meta: 10 },
+  { id: 'cita_realizada', meta: 8 },
+  { id: 'presentacion',   meta: 4 },
+  { id: 'solicitud',      meta: 2 },
+  { id: 'emitida',        meta: 1 },
+];
 
 export const ESTATUS_POLIZA = [
   { id: 'en_tramite',     label: 'En trámite',     bg: '#EDE9FE', text: '#6D28D9' },
