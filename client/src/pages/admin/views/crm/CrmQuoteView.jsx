@@ -93,9 +93,10 @@ const QUOTE_CSS = `
 
   @media print {
     @page { size:letter; margin:0; }
+    html, body { background:#030F28 !important; } /* sin franjas blancas por redondeo de página */
     body * { visibility:hidden; }
     #ppr-proposal, #ppr-proposal * { visibility:visible; }
-    #ppr-proposal { position:absolute; left:0; top:0; width:100%; border-radius:0 !important; border:none !important; box-shadow:none !important; background:none !important; }
+    #ppr-proposal { position:absolute; left:0; top:0; width:100vw; max-width:100vw !important; border-radius:0 !important; border:none !important; box-shadow:none !important; background:none !important; }
     #ppr-proposal .qp-star { display:none; }
     /* Dos páginas completas, cada una con su lienzo navy a sangre */
     .qp-page {
@@ -428,7 +429,7 @@ export default function CrmQuoteView() {
             {/* Cierre */}
             <div style={{ textAlign: 'center', marginTop: 24 }}>
               <p style={{ fontFamily: "'Fraunces',Georgia,serif", fontSize: 16.5, fontStyle: 'italic', color: 'rgba(255,255,255,.9)', margin: 0, lineHeight: 1.6 }}>
-                "No se trata de dejar de vivir hoy — se trata de que {nombre ? `la ${nombre} del futuro` : 'tu yo del futuro'} te dé las gracias todos los días."
+                "No se trata de dejar de vivir hoy — se trata de que {nombre ? `${/[aá]$/i.test(nombre) ? 'la' : 'el'} ${nombre} del futuro` : 'tu yo del futuro'} te dé las gracias todos los días."
               </p>
               <div style={{ marginTop: 14, fontSize: 10.5, letterSpacing: 2, textTransform: 'uppercase', color: 'rgba(232,207,166,.7)', fontWeight: 700 }}>
                 Tu asesor Finance SCool · Respaldo Prudential · Beneficio fiscal Art. 151 LISR
