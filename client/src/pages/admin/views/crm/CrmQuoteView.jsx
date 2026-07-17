@@ -384,10 +384,19 @@ export default function CrmQuoteView() {
           </div>
 
           <div className="qp-page qp-page2" style={{ padding: '10px 34px 26px', position: 'relative' }}>
-            {/* Mini-encabezado (visible sobre todo en la página 2 impresa) */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-              <span className="qp-eyebrow" style={{ fontSize: 9 }}>Finance SCool · La carta de tu futuro</span>
-              <span style={{ fontSize: 10, color: 'rgba(232,207,166,.6)', fontWeight: 700 }}>{f.nombre ? f.nombre : ''}</span>
+            {/* Encabezado profesional de la página 2, espejo del de portada */}
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                  <Logo height={30} variant="light" layout="inline" />
+                  <span className="qp-eyebrow" style={{ borderLeft: '1px solid rgba(232,207,166,.35)', paddingLeft: 14, fontSize: 9.5 }}>La carta de tu futuro</span>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  {f.nombre && <div style={{ fontFamily: "'Fraunces',Georgia,serif", fontSize: 14, color: '#fff', fontWeight: 600 }}>{f.nombre}</div>}
+                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,.45)' }}>{new Date().toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })} · página 2 de 2</div>
+                </div>
+              </div>
+              <hr className="qp-divider" style={{ margin: '14px 0 4px' }} />
             </div>
 
             {/* Gráfica luminosa */}
