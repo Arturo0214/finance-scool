@@ -47,6 +47,19 @@ app.use(cookieParser());
 // Rate limiting for API
 app.use('/api/', rateLimit({ windowMs: 15 * 60 * 1000, max: isProd ? 200 : 5000 }));
 
+/* ── Limitadores quirúrgicos anti-exploit (los intentos legítimos no cuentan) ── */
+const jsonLimit = (msg) => ({ standardHeaders: true, legacyHeaders: false, handler: (req, res) => res.status(429).json({ error: msg }) });
+// Fuerza bruta de contraseñas: 20 intentos FALLIDOS por IP cada 15 min
+// (margen amplio porque una oficina comparte IP pública vía NAT; los
+// logins exitosos NO cuentan, así que solo los fallos acumulan)
+app.use('/api/auth/login', rateLimit({ windowMs: 15 * 60 * 1000, max: isProd ? 20 : 200, skipSuccessfulRequests: true, ...jsonLimit('Demasiados intentos fallidos. Espera 15 minutos.') }));
+// Adivinanza de tokens del portal público: 30 por IP cada 15 min
+app.use('/api/crm/portal', rateLimit({ windowMs: 15 * 60 * 1000, max: 30, ...jsonLimit('Demasiadas solicitudes al portal. Intenta más tarde.') }));
+// Abuso de costo en IA (copiloto / extracción): 40 por IP por hora
+app.use(['/api/crm/clients/:id/copilot', '/api/crm/clients/:id/consulta-extract'], rateLimit({ windowMs: 60 * 60 * 1000, max: 40, ...jsonLimit('Límite de consultas de IA alcanzado. Intenta en una hora.') }));
+// Resets de contraseña: 10 por IP cada 15 min
+app.use('/api/users/:id/reset-password', rateLimit({ windowMs: 15 * 60 * 1000, max: 10, ...jsonLimit('Demasiados resets. Espera 15 minutos.') }));
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', service: 'finance-scool', timestamp: new Date().toISOString() });
