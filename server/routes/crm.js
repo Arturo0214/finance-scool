@@ -240,7 +240,7 @@ router.post('/agents', async (req, res) => {
 
 router.put('/agents/:id', async (req, res) => {
   if (!isAgency(req.user.role)) return res.status(403).json({ error: 'Solo administración puede editar asesores' });
-  const allowed = ['clave', 'nombre', 'cuaderno', 'fecha_inicio_calculos', 'estatus', 'telefono', 'email', 'user_id'];
+  const allowed = ['clave', 'nombre', 'cuaderno', 'fecha_inicio_calculos', 'estatus', 'telefono', 'email', 'user_id', 'fireflies_api_key'];
   const patch = {};
   for (const k of allowed) if (k in req.body) patch[k] = req.body[k];
   patch.updated_at = new Date().toISOString();
@@ -301,6 +301,8 @@ router.post('/clients', async (req, res) => {
     agent_id, nombre: b.nombre, email: b.email, telefono: b.telefono, rfc: b.rfc,
     fecha_nacimiento: b.fecha_nacimiento || null, ocupacion: b.ocupacion, empresa: b.empresa,
     direccion: b.direccion, etapa: b.etapa || 'prospecto', origen: b.origen || 'referido', notas: b.notas,
+    ingreso_mensual: b.ingreso_mensual || null, gasto_mensual: b.gasto_mensual || null,
+    saldo_afore: b.saldo_afore || null, retiro_deseado: b.retiro_deseado || null, edad_retiro_deseada: b.edad_retiro_deseada || null,
   }, 'crm_clients')]).select();
   if (error) return res.status(500).json({ error: error.message });
   logActivity(req, 'crear', 'cliente', data[0].id, b.etapa || 'prospecto');
@@ -314,7 +316,8 @@ router.put('/clients/:id', async (req, res) => {
   const { data: existing } = await db.from('crm_clients').select('agent_id').eq('id', req.params.id).maybeSingle();
   if (!existing) return res.status(404).json({ error: 'Cliente no encontrado' });
   if (scope.restricted && existing.agent_id !== scope.agentId) return res.status(403).json({ error: 'Sin acceso a este cliente' });
-  const allowed = ['nombre', 'email', 'telefono', 'rfc', 'fecha_nacimiento', 'ocupacion', 'empresa', 'direccion', 'etapa', 'origen', 'notas', 'agent_id'];
+  const allowed = ['nombre', 'email', 'telefono', 'rfc', 'fecha_nacimiento', 'ocupacion', 'empresa', 'direccion', 'etapa', 'origen', 'notas', 'agent_id',
+    'ingreso_mensual', 'gasto_mensual', 'saldo_afore', 'retiro_deseado', 'edad_retiro_deseada'];
   const patch = {};
   for (const k of allowed) if (k in req.body) patch[k] = req.body[k] === '' ? null : req.body[k];
   if (scope.restricted) delete patch.agent_id;
@@ -1007,6 +1010,35 @@ router.post('/clients/:id/copilot', async (req, res) => {
     logActivity(req, 'copilot', 'cliente', cid, null);
     res.json({ respuesta: data.content?.[0]?.text || 'Sin respuesta' });
   } catch (e) { res.status(500).json({ error: 'Copiloto: ' + e.message }); }
+});
+
+/* ═══ Consultoría: extraer datos del prospecto desde una transcripción ═══ */
+
+router.post('/clients/:id/consulta-extract', async (req, res) => {
+  const ok = await assertClientScope(req, res, req.params.id);
+  if (!ok) return;
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (!key) return res.status(503).json({ error: 'Configura ANTHROPIC_API_KEY en el servidor para la extracción con IA.' });
+  const transcript = String(req.body.transcript || '').slice(0, 24000);
+  if (transcript.length < 40) return res.status(400).json({ error: 'Pega la transcripción de la consultoría (mínimo unas líneas).' });
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: process.env.COPILOT_MODEL || 'claude-haiku-4-5-20251001',
+        max_tokens: 500,
+        system: 'Extraes datos de una consultoría financiera (PPR/retiro, México). Responde SOLO un JSON válido con las claves: fecha_nacimiento (YYYY-MM-DD o null), ingreso_mensual (número o null), gasto_mensual (número o null), saldo_afore (número o null), retiro_deseado (número mensual deseado o null), edad_retiro_deseada (entero o null), ocupacion (string o null), notas_gastos (resumen breve de en qué gasta, string o null). Si un dato no aparece, usa null. Sin texto extra.',
+        messages: [{ role: 'user', content: transcript }],
+      }),
+    });
+    const data = await r.json();
+    if (data.error) return res.status(502).json({ error: data.error.message });
+    const txt = (data.content?.[0]?.text || '{}').replace(/```json|```/g, '').trim();
+    const extract = JSON.parse(txt.slice(txt.indexOf('{'), txt.lastIndexOf('}') + 1));
+    logActivity(req, 'consulta-ia', 'cliente', req.params.id, null);
+    res.json({ extract });
+  } catch (e) { res.status(500).json({ error: 'Extracción: ' + e.message }); }
 });
 
 /* ═══════════════ CONCILIACIÓN GNP desde Excel/CSV ═══════════════ */

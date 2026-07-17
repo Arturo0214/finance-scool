@@ -154,9 +154,13 @@ const STARS = [
 ];
 
 export default function CrmQuoteView() {
-  const [f, setF] = useState({
-    nombre: '', edad: 35, edadRetiro: 65, aportMensual: 5000,
-    rendimiento: 8, ingresoAnual: 600000, tasaISR: 30, uma: 113.14,
+  const [f, setF] = useState(() => {
+    const base = { nombre: '', edad: 35, edadRetiro: 65, aportMensual: 5000, rendimiento: 8, ingresoAnual: 600000, tasaISR: 30, uma: 113.14 };
+    try {
+      const pre = JSON.parse(sessionStorage.getItem('ppr_prefill') || 'null');
+      sessionStorage.removeItem('ppr_prefill');
+      return pre ? { ...base, ...pre } : base;
+    } catch { return base; }
   });
   const [clients, setClients] = useState(null);
   const [saveClient, setSaveClient] = useState('');

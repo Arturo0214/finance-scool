@@ -159,6 +159,7 @@ export const api = {
   crmPortalLink: (clientId) => request(`/crm/clients/${clientId}/portal-link`, { method: 'POST' }),
   crmCopilot: (clientId, pregunta) => request(`/crm/clients/${clientId}/copilot`, { method: 'POST', body: JSON.stringify({ pregunta }) }),
   crmGetCohorts: () => request('/crm/cohorts'),
+  crmConsultaExtract: (clientId, transcript) => request(`/crm/clients/${clientId}/consulta-extract`, { method: 'POST', body: JSON.stringify({ transcript }) }),
   crmReconcilePreview: async (file) => {
     const fd = new FormData();
     fd.append('file', file);

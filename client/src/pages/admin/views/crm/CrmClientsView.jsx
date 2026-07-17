@@ -7,6 +7,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../../../../utils/api';
 import { C } from '../../constants';
 import { Search, Plus, X, Trash2, Upload, FileText, ExternalLink, Phone, Mail, Pencil, Link2, Sparkles, StickyNote, CheckSquare, History } from 'lucide-react';
+import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip as ReTooltip } from 'recharts';
 import {
   getCrmCSS, ETAPAS, etapaInfo, estatusPoliza, ESTATUS_POLIZA, PLANES,
   TIPOS_RECORDATORIO, tipoRecordatorio, fmtMoney, fmtDate,
@@ -54,6 +55,9 @@ export default function CrmClientsView({ isAgency }) {
   const [copilotBusy, setCopilotBusy] = useState(false);
   const [copilotQ, setCopilotQ] = useState('');
   const [copilotR, setCopilotR] = useState('');
+  const [consultaTxt, setConsultaTxt] = useState('');
+  const [extractBusy, setExtractBusy] = useState(false);
+  const [ffKey, setFfKey] = useState('');
 
   const loadTimeline = async (cid) => { try { const d = await api.crmGetTimeline(cid); setTimeline(d.timeline); } catch (e) { console.error(e); } };
   const loadNotes = async (cid) => { try { const d = await api.crmGetNotes(cid); setNotes(d.notes); } catch (e) { console.error(e); } };
@@ -384,7 +388,7 @@ export default function CrmClientsView({ isAgency }) {
               )}
 
               <div className="crm-detail-tabs">
-                {[['info', 'Información'], ['timeline', 'Timeline'], ['notas', 'Notas & Tareas'], ['polizas', `Pólizas (${detail.policies.length})`], ['archivos', `Archivos (${detail.files.length})`], ['recordatorios', `Recordatorios (${detail.reminders.length})`]].map(([id, label]) => (
+                {[['info', 'Información'], ['consulta', '🎯 Consultoría'], ['timeline', 'Timeline'], ['notas', 'Notas & Tareas'], ['polizas', `Pólizas (${detail.policies.length})`], ['archivos', `Archivos (${detail.files.length})`], ['recordatorios', `Recordatorios (${detail.reminders.length})`]].map(([id, label]) => (
                   <button key={id} className={`crm-dtab${tab === id ? ' active' : ''}`}
                     onClick={() => {
                       setTab(id);
@@ -393,6 +397,97 @@ export default function CrmClientsView({ isAgency }) {
                     }}>{label}</button>
                 ))}
               </div>
+
+              {/* ── Tab: Consultoría ── */}
+              {tab === 'consulta' && editForm && (() => {
+                const n = (v) => Number(v) || 0;
+                const ingreso = n(editForm.ingreso_mensual), gasto = n(editForm.gasto_mensual);
+                const ahorro = Math.max(ingreso - gasto, 0);
+                const edad = editForm.fecha_nacimiento ? Math.floor((Date.now() - new Date(editForm.fecha_nacimiento)) / 31557600000) : null;
+                const pieData = ingreso > 0 ? [
+                  { name: 'Gasto mensual', value: Math.min(gasto, ingreso), color: C.amber },
+                  { name: 'Capacidad de ahorro', value: ahorro, color: C.green },
+                ] : [];
+                const numField = (k, label) => (
+                  <div className="field" style={{ marginBottom: 12 }}>
+                    <label>{label}</label>
+                    <input type="number" value={editForm[k] ?? ''} onChange={e => setEditForm({ ...editForm, [k]: e.target.value === '' ? null : Number(e.target.value) })} />
+                  </div>
+                );
+                return (
+                  <>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: '0 14px' }}>
+                      {numField('ingreso_mensual', 'Ingreso mensual (MXN)')}
+                      {numField('gasto_mensual', 'Gasto mensual (MXN)')}
+                      {numField('saldo_afore', 'Saldo en Afore')}
+                      {numField('retiro_deseado', 'Retiro mensual deseado')}
+                      {numField('edad_retiro_deseada', 'Edad de retiro deseada')}
+                      <div className="field" style={{ marginBottom: 12 }}>
+                        <label>Edad actual</label>
+                        <input value={edad != null ? `${edad} años (nació ${fmtDate(editForm.fecha_nacimiento)})` : 'Captura fecha de nacimiento en Información'} disabled />
+                      </div>
+                    </div>
+
+                    {ingreso > 0 && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', background: '#FBFCFD', border: `1px solid ${C.border}`, borderRadius: 12, padding: 14, marginBottom: 14 }}>
+                        <ResponsiveContainer width={130} height={130}>
+                          <PieChart>
+                            <Pie data={pieData} dataKey="value" innerRadius={38} outerRadius={60} paddingAngle={3} strokeWidth={0}>
+                              {pieData.map(d => <Cell key={d.name} fill={d.color} />)}
+                            </Pie>
+                            <ReTooltip formatter={(v, nm) => [fmtMoney(v), nm]} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                        <div style={{ flex: 1, minWidth: 180, fontSize: 13 }}>
+                          <div style={{ padding: '3px 0' }}>💰 Capacidad de ahorro: <b style={{ color: C.green }}>{fmtMoney(ahorro)}/mes</b> ({ingreso > 0 ? Math.round(ahorro / ingreso * 100) : 0}% del ingreso)</div>
+                          {n(editForm.retiro_deseado) > 0 && <div style={{ padding: '3px 0' }}>🎯 Desea retirarse con <b>{fmtMoney(editForm.retiro_deseado)}/mes</b>{n(editForm.edad_retiro_deseada) ? ` a los ${editForm.edad_retiro_deseada}` : ''}</div>}
+                          {n(editForm.saldo_afore) > 0 && <div style={{ padding: '3px 0' }}>🏦 Afore actual: <b>{fmtMoney(editForm.saldo_afore)}</b></div>}
+                          <button className="btn-primary" style={{ marginTop: 8 }} onClick={() => {
+                            sessionStorage.setItem('ppr_prefill', JSON.stringify({
+                              nombre: detail.client.nombre, edad: edad || 35,
+                              edadRetiro: n(editForm.edad_retiro_deseada) || 65,
+                              aportMensual: ahorro > 0 ? Math.round(ahorro / 2 / 100) * 100 : 5000,
+                              ingresoAnual: ingreso * 12,
+                            }));
+                            window.location.href = '/admin/crm-cotizador';
+                          }}>📊 Cotizar PPR con estos datos</button>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="config-panel" style={{ marginBottom: 14 }}>
+                      <label style={{ fontSize: 12.5, fontWeight: 700, display: 'block', marginBottom: 6 }}>🎙 Transcripción de la consultoría</label>
+                      <p style={{ fontSize: 11.5, color: C.textMuted, margin: '0 0 8px' }}>Pega la transcripción (Fireflies u otra) y la IA llena los campos. Revisa y guarda.</p>
+                      <textarea rows={3} style={{ width: '100%', padding: '9px 12px', border: '1px solid rgba(11,27,51,.14)', borderRadius: 10, fontSize: 13, fontFamily: 'inherit' }}
+                        placeholder="Pega aquí la conversación transcrita..." value={consultaTxt} onChange={e => setConsultaTxt(e.target.value)} />
+                      <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+                        <button className="btn-primary" disabled={extractBusy || consultaTxt.length < 40} onClick={async () => {
+                          setExtractBusy(true);
+                          try {
+                            const { extract } = await api.crmConsultaExtract(detail.client.id, consultaTxt);
+                            const patch = {};
+                            for (const k of ['fecha_nacimiento', 'ingreso_mensual', 'gasto_mensual', 'saldo_afore', 'retiro_deseado', 'edad_retiro_deseada', 'ocupacion']) if (extract[k] != null) patch[k] = extract[k];
+                            if (extract.notas_gastos) patch.notas = `${editForm.notas ? editForm.notas + '\n' : ''}💬 Gastos: ${extract.notas_gastos}`;
+                            setEditForm(f => ({ ...f, ...patch }));
+                            flash('✓ Datos extraídos — revísalos y pulsa Guardar');
+                          } catch (e) { alert(e.message); }
+                          setExtractBusy(false);
+                        }}><Sparkles size={14} /> {extractBusy ? 'Extrayendo...' : 'Extraer con IA'}</button>
+                        <input className="crm-search" style={{ flex: 1, minWidth: 160, paddingLeft: 13 }} type="password" placeholder="Fireflies API key del asesor (opcional)"
+                          value={ffKey} onChange={e => setFfKey(e.target.value)} />
+                        <button className="btn-secondary" disabled={!ffKey || !detail.client.agent_id} onClick={async () => {
+                          try { await api.crmUpdateAgent(detail.client.agent_id, { fireflies_api_key: ffKey }); setFfKey(''); flash('✓ Fireflies key guardada para el asesor'); }
+                          catch (e) { alert(e.message); }
+                        }}>Guardar key</button>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                      <button className="btn-primary" disabled={saving} onClick={saveClient}>{saving ? 'Guardando...' : 'Guardar consultoría'}</button>
+                    </div>
+                  </>
+                );
+              })()}
 
               {/* ── Tab: Timeline ── */}
               {tab === 'timeline' && (
