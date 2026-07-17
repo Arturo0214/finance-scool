@@ -92,13 +92,59 @@ const QUOTE_CSS = `
   .qp-divider { height:1px; background:linear-gradient(90deg, transparent, rgba(232,207,166,.5), transparent); margin:20px 0; border:none; }
 
   @media print {
+    @page { size:letter; margin:0; }
     body * { visibility:hidden; }
     #ppr-proposal, #ppr-proposal * { visibility:visible; }
-    #ppr-proposal { position:absolute; left:0; top:0; width:100%; }
-    .qp-canvas { -webkit-print-color-adjust:exact; print-color-adjust:exact; border-radius:0; }
+    #ppr-proposal { position:absolute; left:0; top:0; width:100%; border-radius:0 !important; border:none !important; box-shadow:none !important; background:none !important; }
+    #ppr-proposal .qp-star { display:none; }
+    /* Dos páginas completas, cada una con su lienzo navy a sangre */
+    .qp-page {
+      height:100vh; box-sizing:border-box; display:flex; flex-direction:column; justify-content:space-evenly;
+      padding:1.5cm 1.7cm !important; position:relative;
+      background:
+        radial-gradient(700px 340px at 88% -12%, rgba(0,136,224,.28), transparent 60%),
+        radial-gradient(520px 420px at -8% 108%, rgba(193,151,91,.16), transparent 55%),
+        linear-gradient(163deg, #030F28 0%, #051C47 52%, #062254 100%) !important;
+      -webkit-print-color-adjust:exact; print-color-adjust:exact;
+    }
+    .qp-page1 { break-after:page; page-break-after:always; }
+    .qp-page .qp-divider { margin:10px 0; }
+    .qp-hero-number { font-size:64px !important; -webkit-text-fill-color:#EBD3A8 !important; background:none !important; animation:none !important; }
+    #ppr-proposal * { animation:none !important; }
+    #ppr-proposal .qp-star { display:none !important; }
+    /* la regla visibility:visible forzaba a mostrarse el tooltip vacío de recharts */
+    #ppr-proposal .recharts-tooltip-wrapper { display:none !important; }
+    .qp-mile-dot.final { box-shadow:none !important; }
+    .qp-screen-chart { display:none !important; }
+    .qp-print-chart { display:block !important; }
   }
+  .qp-print-chart { display:none; }
   @media(max-width:900px){ .ppr-grid { grid-template-columns:1fr !important; } }
 `;
+
+/* La gráfica "El ascenso" — con dims fijas para impresión o fluida en pantalla */
+function ascensoChart(serie, dims) {
+  return (
+    <ComposedChart data={serie} margin={{ top: 10, right: 12, left: 0, bottom: 0 }} {...(dims || {})}>
+      <defs>
+        <linearGradient id={dims ? 'qpSaldoP' : 'qpSaldo'} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#5AA9FF" stopOpacity={0.55} />
+          <stop offset="100%" stopColor="#5AA9FF" stopOpacity={0.03} />
+        </linearGradient>
+      </defs>
+      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,.08)" vertical={false} />
+      <XAxis dataKey="edad" tick={{ fontSize: 10.5, fill: 'rgba(255,255,255,.55)' }} axisLine={false} tickLine={false} />
+      <YAxis tickFormatter={v => '$' + (v >= 1000000 ? (v / 1000000).toFixed(1) + 'M' : Math.round(v / 1000) + 'k')} tick={{ fontSize: 10.5, fill: 'rgba(255,255,255,.55)' }} axisLine={false} tickLine={false} width={54} />
+      <Tooltip
+        formatter={(v, n) => [fmt(v), n]} labelFormatter={v => `A los ${v} años`}
+        contentStyle={{ background: '#0A1E44', border: '1px solid rgba(232,207,166,.35)', borderRadius: 10, fontSize: 12.5, color: '#fff' }}
+        labelStyle={{ color: '#E8CFA6', fontWeight: 700 }} itemStyle={{ color: '#fff' }}
+      />
+      <Area type="monotone" dataKey="Saldo proyectado" stroke="#5AA9FF" strokeWidth={2.5} fill={dims ? 'url(#qpSaldoP)' : 'url(#qpSaldo)'} dot={false} activeDot={{ r: 5, fill: '#E8CFA6', stroke: '#fff' }} />
+      <Line type="monotone" dataKey="Total aportado" stroke="#E8CFA6" strokeWidth={2} strokeDasharray="6 4" dot={false} />
+    </ComposedChart>
+  );
+}
 
 const STARS = [
   { top: '12%', left: '8%', s: 3, d: '0s' }, { top: '22%', left: '78%', s: 2, d: '1.2s' },
@@ -233,10 +279,10 @@ export default function CrmQuoteView() {
         </div>
 
         {/* ══════════ LA CARTA DE TU FUTURO ══════════ */}
-        <div id="ppr-proposal" className="qp-canvas">
+        <div id="ppr-proposal" className="qp-canvas" style={{ maxWidth: 780 }}>
           {STARS.map((s, i) => <span key={i} className="qp-star" style={{ top: s.top, left: s.left, width: s.s, height: s.s, animationDelay: s.d }} />)}
 
-          <div style={{ padding: '30px 34px 26px', position: 'relative' }}>
+          <div className="qp-page qp-page1" style={{ padding: '30px 34px 10px', position: 'relative' }}>
             {/* Encabezado con logo */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
@@ -320,32 +366,31 @@ export default function CrmQuoteView() {
               )}
             </div>
 
+          </div>
+
+          <div className="qp-page qp-page2" style={{ padding: '10px 34px 26px', position: 'relative' }}>
+            {/* Mini-encabezado (visible sobre todo en la página 2 impresa) */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+              <span className="qp-eyebrow" style={{ fontSize: 9 }}>Finance SCool · La carta de tu futuro</span>
+              <span style={{ fontSize: 10, color: 'rgba(232,207,166,.6)', fontWeight: 700 }}>{f.nombre ? f.nombre : ''}</span>
+            </div>
+
             {/* Gráfica luminosa */}
-            <div style={{ marginTop: 22 }}>
+            <div style={{ marginTop: 10 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
                 <span style={{ fontFamily: "'Fraunces',Georgia,serif", fontSize: 15.5, color: '#fff' }}>El ascenso</span>
                 <span style={{ fontSize: 11, color: 'rgba(255,255,255,.5)' }}>— dorado: lo que pones · azul: en lo que se convierte</span>
               </div>
-              <ResponsiveContainer width="100%" height={250}>
-                <ComposedChart data={r.serie} margin={{ top: 10, right: 12, left: 0, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="qpSaldo" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#5AA9FF" stopOpacity={0.55} />
-                      <stop offset="100%" stopColor="#5AA9FF" stopOpacity={0.03} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,.08)" vertical={false} />
-                  <XAxis dataKey="edad" tick={{ fontSize: 10.5, fill: 'rgba(255,255,255,.55)' }} axisLine={false} tickLine={false} tickFormatter={v => `${v}`} />
-                  <YAxis tickFormatter={v => '$' + (v >= 1000000 ? (v / 1000000).toFixed(1) + 'M' : Math.round(v / 1000) + 'k')} tick={{ fontSize: 10.5, fill: 'rgba(255,255,255,.55)' }} axisLine={false} tickLine={false} width={54} />
-                  <Tooltip
-                    formatter={(v, n) => [fmt(v), n]} labelFormatter={v => `A los ${v} años`}
-                    contentStyle={{ background: '#0A1E44', border: '1px solid rgba(232,207,166,.35)', borderRadius: 10, fontSize: 12.5, color: '#fff' }}
-                    labelStyle={{ color: '#E8CFA6', fontWeight: 700 }} itemStyle={{ color: '#fff' }}
-                  />
-                  <Area type="monotone" dataKey="Saldo proyectado" stroke="#5AA9FF" strokeWidth={2.5} fill="url(#qpSaldo)" dot={false} activeDot={{ r: 5, fill: '#E8CFA6', stroke: '#fff' }} />
-                  <Line type="monotone" dataKey="Total aportado" stroke="#E8CFA6" strokeWidth={2} strokeDasharray="6 4" dot={false} />
-                </ComposedChart>
-              </ResponsiveContainer>
+              {/* Pantalla: responsiva. Impresión: gemela de tamaño fijo (el
+                  contenedor responsivo no sobrevive al render de impresión). */}
+              <div className="qp-screen-chart">
+                <ResponsiveContainer width="100%" height={250}>
+                  {ascensoChart(r.serie, null)}
+                </ResponsiveContainer>
+              </div>
+              <div className="qp-print-chart">
+                {ascensoChart(r.serie, { width: 640, height: 290 })}
+              </div>
             </div>
 
             {/* El costo de esperar */}
@@ -372,7 +417,7 @@ export default function CrmQuoteView() {
                 "No se trata de dejar de vivir hoy — se trata de que {nombre ? `la ${nombre} del futuro` : 'tu yo del futuro'} te dé las gracias todos los días."
               </p>
               <div style={{ marginTop: 14, fontSize: 10.5, letterSpacing: 2, textTransform: 'uppercase', color: 'rgba(232,207,166,.7)', fontWeight: 700 }}>
-                Tu asesor Finance SCool · Respaldo GNP · Beneficio fiscal Art. 151 LISR
+                Tu asesor Finance SCool · Respaldo Prudential · Beneficio fiscal Art. 151 LISR
               </div>
               <p style={{ fontSize: 9, color: 'rgba(255,255,255,.35)', marginTop: 12, lineHeight: 1.5 }}>
                 Proyección ilustrativa con rendimiento constante del {f.rendimiento}% anual; no constituye garantía. Deducibilidad conforme al Art. 151 fracc. V de la LISR vigente. La devolución depende de la situación fiscal de cada contribuyente. Pensión estimada con regla del 4% anual.
