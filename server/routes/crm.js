@@ -1001,7 +1001,7 @@ router.post('/clients/:id/copilot', async (req, res) => {
       body: JSON.stringify({
         model: process.env.COPILOT_MODEL || 'claude-haiku-4-5-20251001',
         max_tokens: 800,
-        system: 'Eres el copiloto de un asesor de seguros y Plan Personal de Retiro (PPR) de Finance SCool (GNP/Prudential, México). Con los datos del cliente responde en español, conciso y accionable, con viñetas. Incluye: resumen del cliente en 2 líneas, pendientes/riesgos (renovaciones, pagos, tareas), y 2-3 siguientes mejores acciones concretas. No inventes datos que no estén en el contexto.',
+        system: 'Eres el copiloto de un asesor de seguros y Plan Personal de Retiro (PPR) de Finance SCool (Prudential, México). Con los datos del cliente responde en español, conciso y accionable, con viñetas. Incluye: resumen del cliente en 2 líneas, pendientes/riesgos (renovaciones, pagos, tareas), y 2-3 siguientes mejores acciones concretas. No inventes datos que no estén en el contexto.',
         messages: [{ role: 'user', content: `${contexto}\n\nPETICIÓN DEL ASESOR: ${pregunta}` }],
       }),
     });
@@ -1041,7 +1041,7 @@ router.post('/clients/:id/consulta-extract', async (req, res) => {
   } catch (e) { res.status(500).json({ error: 'Extracción: ' + e.message }); }
 });
 
-/* ═══════════════ CONCILIACIÓN GNP desde Excel/CSV ═══════════════ */
+/* ═══════════════ CONCILIACIÓN Prudential desde Excel/CSV ═══════════════ */
 
 const normPoliza = (s) => String(s || '').replace(/[\s\-.]/g, '').toUpperCase();
 
@@ -1095,7 +1095,7 @@ router.post('/commissions/reconcile-confirm', async (req, res) => {
     }).eq('id', it.policy_id);
     if (!error) okCount++;
   }
-  logActivity(req, 'conciliar', 'comisiones', null, `${okCount} pólizas desde Excel GNP`);
+  logActivity(req, 'conciliar', 'comisiones', null, `${okCount} pólizas desde Excel Prudential`);
   res.json({ ok: true, conciliadas: okCount });
 });
 

@@ -412,7 +412,7 @@ function PerformanceTab({ data, anio, personal = false }) {
       {/* ═══ Cohortes de conservación ═══ */}
       <div className="crm-chart-card">
         <h3>Conservación por cohorte de emisión</h3>
-        <p className="sub">Persistencia de las pólizas agrupadas por trimestre en que se emitieron — la métrica que mide GNP a 13 y 25 meses</p>
+        <p className="sub">Persistencia de las pólizas agrupadas por trimestre en que se emitieron — la métrica que mide Prudential a 13 y 25 meses</p>
         {!cohorts ? <div className="loading-wrap" style={{ minHeight: 80 }}><div className="spinner" /></div> :
           cohorts.length === 0 ? <p className="empty">Sin pólizas con fecha de emisión registrada</p> : (
             <div className="tbl-wrap">

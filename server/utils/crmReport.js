@@ -93,7 +93,7 @@ function buildAgentReportPDF(summary, { anio, mes, renovaciones = [], comisiones
     doc.fill('#1E293B').font('Helvetica-Bold').fontSize(12).text('Comisiones', 46, y);
     y += 18;
     doc.fill(GRIS).font('Helvetica').fontSize(9.5)
-      .text(`Estimadas: ${money(comisiones.estimada)}    Pagadas por GNP: ${money(comisiones.pagada)}    Conciliadas: ${money(comisiones.conciliada)}    Por conciliar: ${money(comisiones.porConciliar)}`, 52, y);
+      .text(`Estimadas: ${money(comisiones.estimada)}    Pagadas por Prudential: ${money(comisiones.pagada)}    Conciliadas: ${money(comisiones.conciliada)}    Por conciliar: ${money(comisiones.porConciliar)}`, 52, y);
     y += 22;
   }
 

@@ -1,6 +1,6 @@
 /**
- * CrmCommissionsView — Comisiones y conciliación contra pagos de GNP
- * Comisión = monto manual o prima × %. Flujo: pendiente → pagada por GNP → conciliada.
+ * CrmCommissionsView — Comisiones y conciliación contra pagos de Prudential
+ * Comisión = monto manual o prima × %. Flujo: pendiente → pagada por Prudential → conciliada.
  */
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { api } from '../../../../utils/api';
@@ -11,7 +11,7 @@ import { getCrmCSS, fmtMoney, fmtMoneyFull, fmtDate, MESES } from './crmShared';
 
 const COM_ESTATUS = [
   { id: 'pendiente',  label: 'Pendiente',      bg: C.amberBg, text: C.amber },
-  { id: 'pagada_gnp', label: 'Pagada por GNP', bg: C.blueBg,  text: C.blue  },
+  { id: 'pagada_gnp', label: 'Pagada por Prudential', bg: C.blueBg,  text: C.blue  },
   { id: 'conciliada', label: 'Conciliada',     bg: C.greenBg, text: C.green },
 ];
 const comInfo = (id) => COM_ESTATUS.find(e => e.id === id) || COM_ESTATUS[0];
@@ -71,7 +71,7 @@ export default function CrmCommissionsView({ isAgency }) {
     finally { setSaving(false); }
   };
 
-  /* ── Conciliación desde Excel/CSV de GNP ── */
+  /* ── Conciliación desde Excel/CSV de Prudential ── */
   const fileRef = useRef(null);
   const [preview, setPreview] = useState(null);   // { matches, sinMatch }
   const [selected, setSelected] = useState({});   // policy_id → bool
@@ -119,7 +119,7 @@ export default function CrmCommissionsView({ isAgency }) {
       <div className="crm-toolbar">
         <div>
           <h1 className="view-title">Comisiones</h1>
-          <p className="view-subtitle" style={{ marginBottom: 0 }}>Conciliación contra pagos reales de GNP — {filtered.length} pólizas pagadas</p>
+          <p className="view-subtitle" style={{ marginBottom: 0 }}>Conciliación contra pagos reales de Prudential — {filtered.length} pólizas pagadas</p>
         </div>
         <div className="crm-toolbar-right">
           {isAgency && (
@@ -132,7 +132,7 @@ export default function CrmCommissionsView({ isAgency }) {
             <>
               <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" hidden onChange={e => onReconFile(e.target.files[0])} />
               <button className="btn-primary" disabled={reconBusy} onClick={() => fileRef.current?.click()}>
-                <FileSpreadsheet size={15} /> {reconBusy ? 'Leyendo...' : 'Conciliar Excel GNP'}
+                <FileSpreadsheet size={15} /> {reconBusy ? 'Leyendo...' : 'Conciliar Excel Prudential'}
               </button>
             </>
           )}
@@ -145,14 +145,14 @@ export default function CrmCommissionsView({ isAgency }) {
         <div className="modal-overlay" onClick={() => setPreview(null)}>
           <div className="modal crm-modal-xl" onClick={e => e.stopPropagation()}>
             <div className="modal-head">
-              <h2>Conciliación GNP <span style={{ fontSize: 13, color: C.textMuted, fontWeight: 500 }}>({preview.filas} filas · columnas: {preview.columnas.poliza} / {preview.columnas.monto})</span></h2>
+              <h2>Conciliación Prudential <span style={{ fontSize: 13, color: C.textMuted, fontWeight: 500 }}>({preview.filas} filas · columnas: {preview.columnas.poliza} / {preview.columnas.monto})</span></h2>
               <button className="close-btn" onClick={() => setPreview(null)}><X size={20} /></button>
             </div>
             <div className="modal-body">
               {preview.matches.length === 0 ? <p className="empty">Ninguna póliza del archivo coincide con el CRM</p> : (
                 <div className="tbl-wrap" style={{ marginBottom: 14 }}>
                   <table>
-                    <thead><tr><th></th><th>Póliza</th><th>Cliente</th><th>Asesor</th><th>Monto GNP</th><th>Comisión actual</th><th>Estatus</th></tr></thead>
+                    <thead><tr><th></th><th>Póliza</th><th>Cliente</th><th>Asesor</th><th>Monto Prudential</th><th>Comisión actual</th><th>Estatus</th></tr></thead>
                     <tbody>
                       {preview.matches.map(m => (
                         <tr key={m.policy_id} style={{ opacity: selected[m.policy_id] ? 1 : 0.45 }}>
@@ -196,7 +196,7 @@ export default function CrmCommissionsView({ isAgency }) {
           <h3 style={{ marginBottom: 6 }}>Aquí vivirán tus comisiones</h3>
           <p className="sub" style={{ maxWidth: 460, margin: '0 auto' }}>
             Cuando una póliza pase a estatus <b>Pagada</b>, aparecerá en esta sección para calcular tu comisión
-            (monto o % de la prima) y conciliarla contra los pagos reales de GNP.
+            (monto o % de la prima) y conciliarla contra los pagos reales de Prudential.
           </p>
         </div>
       )}
@@ -208,7 +208,7 @@ export default function CrmCommissionsView({ isAgency }) {
         </div>
         <div className="stat-card">
           <div className="stat-icon" style={{ background: C.greenBg, color: C.green }}><HandCoins size={20} /></div>
-          <div><p className="stat-label">Pagada por GNP</p><p className="stat-value">{fmtMoney(totals.pagada)}</p></div>
+          <div><p className="stat-label">Pagada por Prudential</p><p className="stat-value">{fmtMoney(totals.pagada)}</p></div>
         </div>
         <div className="stat-card">
           <div className="stat-icon" style={{ background: C.amberBg, color: C.amber }}><Scale size={20} /></div>
@@ -253,7 +253,7 @@ export default function CrmCommissionsView({ isAgency }) {
                     {(p.comision_estatus || 'pendiente') !== 'conciliada' && m > 0 && (
                       <button className="btn-secondary" style={{ padding: '5px 10px', fontSize: 12 }}
                         onClick={e => { e.stopPropagation(); quickAdvance(p); }}>
-                        {(p.comision_estatus || 'pendiente') === 'pendiente' ? '→ Pagada GNP' : '→ Conciliar'}
+                        {(p.comision_estatus || 'pendiente') === 'pendiente' ? '→ Pagada Prudential' : '→ Conciliar'}
                       </button>
                     )}
                   </td>
@@ -314,7 +314,7 @@ export default function CrmCommissionsView({ isAgency }) {
                   </select>
                 </div>
                 <div className="field">
-                  <label>Fecha pago GNP / conciliación</label>
+                  <label>Fecha pago Prudential / conciliación</label>
                   <input type="date" value={form.comision_fecha} onChange={e => setForm({ ...form, comision_fecha: e.target.value })} />
                 </div>
               </div>
