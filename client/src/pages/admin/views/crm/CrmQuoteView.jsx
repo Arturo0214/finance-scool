@@ -1,16 +1,102 @@
 /**
- * CrmQuoteView — Cotizador PPR (Art. 151 LISR)
- * Calculadora de deducción fiscal + proyección de retiro con propuesta
- * imprimible para el prospecto. Puede guardarse en el expediente.
+ * CrmQuoteView — Cotizador PPR "La carta de tu futuro"
+ * Calculadora Art. 151 LISR + proyección de retiro presentada como una
+ * pieza de banca privada: hero cinematográfico, número con conteo
+ * animado, hitos del viaje y gráfica luminosa. Imprimible a PDF.
  */
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { api } from '../../../../utils/api';
 import { C } from '../../constants';
-import { ResponsiveContainer, ComposedChart, Area, Line, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from 'recharts';
-import { Calculator, Printer, Save } from 'lucide-react';
-import { getCrmCSS, fmtMoneyFull } from './crmShared';
+import { ResponsiveContainer, ComposedChart, Area, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
+import { Calculator, Printer, Save, Sunrise, Gem, Crown } from 'lucide-react';
+import { getCrmCSS } from './crmShared';
 
 const fmt = (n) => '$' + Math.round(Number(n) || 0).toLocaleString('es-MX');
+
+/* Conteo animado con easing — el número "crece" hacia su destino */
+function useCountUp(value, dur = 900) {
+  const [v, setV] = useState(value);
+  const prev = useRef(value);
+  useEffect(() => {
+    const from = prev.current, to = value;
+    prev.current = value;
+    if (from === to) return;
+    const t0 = performance.now();
+    let raf;
+    const tick = (t) => {
+      const p = Math.min((t - t0) / dur, 1);
+      const e = 1 - Math.pow(1 - p, 3);
+      setV(from + (to - from) * e);
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [value, dur]);
+  return v;
+}
+
+const QUOTE_CSS = `
+  @keyframes twinkle { 0%,100% { opacity:.15; transform:translateY(0) scale(1); } 50% { opacity:.9; transform:translateY(-14px) scale(1.25); } }
+  @keyframes shineSweep { 0% { transform:translateX(-120%) skewX(-18deg); } 100% { transform:translateX(280%) skewX(-18deg); } }
+  @keyframes pulseHalo { 0%,100% { box-shadow:0 0 0 0 rgba(232,207,166,.5); } 50% { box-shadow:0 0 0 14px rgba(232,207,166,0); } }
+  @keyframes riseSoft { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } }
+  @keyframes goldFlow { 0% { background-position:0% 50%; } 100% { background-position:200% 50%; } }
+
+  .qp-canvas {
+    position:relative; border-radius:20px; overflow:hidden; color:#fff;
+    background:
+      radial-gradient(700px 340px at 88% -12%, rgba(0,136,224,.28), transparent 60%),
+      radial-gradient(520px 420px at -8% 108%, rgba(193,151,91,.16), transparent 55%),
+      linear-gradient(163deg, #030F28 0%, #051C47 52%, #062254 100%);
+    box-shadow:0 30px 60px -25px rgba(3,15,40,.6), inset 0 1px 0 rgba(255,255,255,.07);
+    border:1px solid rgba(232,207,166,.18);
+  }
+  .qp-star { position:absolute; border-radius:50%; background:#E8CFA6; pointer-events:none; animation:twinkle 5s ease-in-out infinite; }
+  .qp-eyebrow { font-size:10.5px; letter-spacing:4.5px; text-transform:uppercase; color:#E8CFA6; font-weight:700; }
+  .qp-hero-number {
+    font-family:'Fraunces',Georgia,serif; font-weight:600; letter-spacing:-1.5px; line-height:1;
+    font-size:clamp(44px, 6vw, 68px);
+    background:linear-gradient(90deg,#F6E6C8,#E8CFA6 30%,#fff 50%,#E8CFA6 70%,#F6E6C8); background-size:200% auto;
+    -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+    animation:goldFlow 6s linear infinite;
+    font-variant-numeric:tabular-nums;
+  }
+  .qp-gem {
+    position:relative; overflow:hidden; background:rgba(255,255,255,.055); border:1px solid rgba(255,255,255,.12);
+    border-radius:14px; padding:14px 16px; backdrop-filter:blur(6px); animation:riseSoft .6s ease backwards;
+  }
+  .qp-gem::after { content:''; position:absolute; top:0; bottom:0; width:38%; background:linear-gradient(90deg,transparent,rgba(255,255,255,.09),transparent); transform:translateX(-120%) skewX(-18deg); }
+  .qp-gem:hover::after { animation:shineSweep .9s ease; }
+  .qp-gem .g-label { font-size:9.5px; text-transform:uppercase; letter-spacing:2px; color:rgba(232,207,166,.85); font-weight:700; margin-bottom:5px; }
+  .qp-gem .g-value { font-family:'Fraunces',Georgia,serif; font-size:23px; font-weight:600; color:#fff; letter-spacing:-.4px; font-variant-numeric:tabular-nums; }
+  .qp-gem .g-sub { font-size:11px; color:rgba(255,255,255,.55); margin-top:3px; line-height:1.45; }
+
+  .qp-milestone { display:flex; align-items:flex-start; gap:12px; animation:riseSoft .6s ease backwards; }
+  .qp-mile-dot { width:34px; height:34px; border-radius:50%; flex-shrink:0; display:flex; align-items:center; justify-content:center;
+    background:linear-gradient(140deg, rgba(232,207,166,.3), rgba(232,207,166,.08)); border:1px solid rgba(232,207,166,.5); color:#E8CFA6; }
+  .qp-mile-dot.final { animation:pulseHalo 2.6s ease-in-out infinite; background:linear-gradient(140deg,#E8CFA6,#C1975B); color:#051636; }
+
+  .qp-wait {
+    border-radius:14px; padding:16px 18px; border:1px solid rgba(255,120,90,.35);
+    background:linear-gradient(120deg, rgba(180,45,45,.28), rgba(120,25,25,.14)); animation:riseSoft .7s ease backwards;
+  }
+  .qp-divider { height:1px; background:linear-gradient(90deg, transparent, rgba(232,207,166,.5), transparent); margin:20px 0; border:none; }
+
+  @media print {
+    body * { visibility:hidden; }
+    #ppr-proposal, #ppr-proposal * { visibility:visible; }
+    #ppr-proposal { position:absolute; left:0; top:0; width:100%; }
+    .qp-canvas { -webkit-print-color-adjust:exact; print-color-adjust:exact; border-radius:0; }
+  }
+  @media(max-width:900px){ .ppr-grid { grid-template-columns:1fr !important; } }
+`;
+
+const STARS = [
+  { top: '12%', left: '8%', s: 3, d: '0s' }, { top: '22%', left: '78%', s: 2, d: '1.2s' },
+  { top: '55%', left: '90%', s: 3, d: '2.1s' }, { top: '70%', left: '12%', s: 2, d: '.7s' },
+  { top: '38%', left: '45%', s: 2, d: '3s' }, { top: '85%', left: '60%', s: 3, d: '1.8s' },
+  { top: '8%', left: '55%', s: 2, d: '2.6s' }, { top: '62%', left: '30%', s: 2, d: '3.6s' },
+];
 
 export default function CrmQuoteView() {
   const [f, setF] = useState({
@@ -34,45 +120,45 @@ export default function CrmQuoteView() {
     const costoReal = (f.aportMensual || 0) - devolucion / 12;
 
     const rm = (f.rendimiento || 0) / 100 / 12;
-    const proyecta = (years) => {
-      let s = 0;
-      for (let y = 0; y < years * 12; y++) s = s * (1 + rm) + (f.aportMensual || 0);
-      return s;
-    };
+    const proyecta = (years) => { let s = 0; for (let m = 0; m < years * 12; m++) s = s * (1 + rm) + (f.aportMensual || 0); return s; };
     let saldo = 0, aportado = 0;
     const serie = [];
     for (let y = 1; y <= anios; y++) {
       for (let m = 0; m < 12; m++) { saldo = saldo * (1 + rm) + (f.aportMensual || 0); aportado += (f.aportMensual || 0); }
       serie.push({ edad: (f.edad || 30) + y, 'Total aportado': Math.round(aportado), 'Saldo proyectado': Math.round(saldo) });
     }
-    const saldoSiEspera5 = anios > 5 ? proyecta(anios - 5) : 0;
+    const rAnual = (f.rendimiento || 0) / 100;
     return {
       anios, aportAnual, tope, topeUMA, topeIngreso, deducible, devolucion, costoReal,
       saldoFinal: saldo, aportado, rendimientoGenerado: saldo - aportado,
       devolucionesAcum: devolucion * anios,
-      pensionMensual: (saldo * 0.04) / 12, // regla del 4% anual
+      pensionMensual: (saldo * 0.04) / 12,
       multiplo: aportado > 0 ? saldo / aportado : 0,
-      costoDeEsperar: anios > 5 ? saldo - saldoSiEspera5 : 0,
+      costoDeEsperar: anios > 5 ? saldo - proyecta(anios - 5) : 0,
       aniosDeIngreso: (f.ingresoAnual || 0) > 0 ? saldo / f.ingresoAnual : 0,
+      hitoMillon: serie.find(s => s['Saldo proyectado'] >= 1000000)?.edad || null,
+      hitoInteres: serie.find(s => s['Saldo proyectado'] * rAnual >= aportAnual)?.edad || null,
       serie,
     };
   }, [f]);
+
+  const saldoAnimado = useCountUp(r.saldoFinal);
+  const nombre = f.nombre.trim().split(' ')[0] || '';
 
   const guardarEnExpediente = async () => {
     if (!saveClient) return;
     setSaving(true);
     try {
-      const texto = `📊 Cotización PPR — aportación ${fmt(f.aportMensual)}/mes, retiro a los ${f.edadRetiro} años (${r.anios} años de plan). ` +
-        `Deducible anual: ${fmt(r.deducible)} → devolución ISR est. ${fmt(r.devolucion)}/año (costo real ${fmt(r.costoReal)}/mes). ` +
-        `Saldo proyectado al retiro: ${fmt(r.saldoFinal)} (aportado ${fmt(r.aportado)} + rendimiento ${fmt(r.rendimientoGenerado)} al ${f.rendimiento}%). ` +
-        `Pensión mensual estimada (regla 4%): ${fmt(r.pensionMensual)}.`;
+      const texto = `📊 Cotización PPR — aportación ${fmt(f.aportMensual)}/mes, retiro a los ${f.edadRetiro} años (${r.anios} años). ` +
+        `Deducible anual ${fmt(r.deducible)} → devolución ISR est. ${fmt(r.devolucion)}/año (costo real ${fmt(r.costoReal)}/mes). ` +
+        `Saldo proyectado ${fmt(r.saldoFinal)} (aportado ${fmt(r.aportado)} + rendimiento ${fmt(r.rendimientoGenerado)} al ${f.rendimiento}%). ` +
+        `Pensión mensual est. ${fmt(r.pensionMensual)}.`;
       await api.crmCreateNote({ client_id: Number(saveClient), tipo: 'nota', texto });
       setMsg('✓ Cotización guardada en el expediente del cliente');
       setTimeout(() => setMsg(''), 3500);
     } catch (e) { alert(e.message); }
     finally { setSaving(false); }
   };
-
   const loadClients = async () => { if (!clients) { const d = await api.crmGetClients().catch(() => ({})); setClients(d.clients || []); } };
 
   const num = (k, label, props = {}) => (
@@ -84,18 +170,12 @@ export default function CrmQuoteView() {
 
   return (
     <div className="view">
-      <style>{getCrmCSS()}{`
-        @media print {
-          body * { visibility: hidden; }
-          #ppr-proposal, #ppr-proposal * { visibility: visible; }
-          #ppr-proposal { position: absolute; left: 0; top: 0; width: 100%; box-shadow: none !important; border: none !important; }
-        }
-      `}</style>
+      <style>{getCrmCSS()}{QUOTE_CSS}</style>
 
       <div className="crm-toolbar">
         <div>
           <h1 className="view-title">Cotizador PPR</h1>
-          <p className="view-subtitle" style={{ marginBottom: 0 }}>Deducción Art. 151 LISR + proyección de retiro — genera la propuesta en segundos</p>
+          <p className="view-subtitle" style={{ marginBottom: 0 }}>La carta de tu futuro — deducción Art. 151 + proyección de retiro en una pieza que enamora</p>
         </div>
         <div className="crm-toolbar-right">
           <button className="btn-primary" onClick={() => window.print()}><Printer size={15} /> Imprimir / PDF</button>
@@ -104,13 +184,12 @@ export default function CrmQuoteView() {
 
       {msg && <div className="info-box" style={{ marginBottom: 14 }}><p>{msg}</p></div>}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 340px) 1fr', gap: 20, alignItems: 'start' }} className="ppr-grid">
-        <style>{`@media(max-width:900px){ .ppr-grid { grid-template-columns:1fr !important; } }`}</style>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 330px) 1fr', gap: 20, alignItems: 'start' }} className="ppr-grid">
 
         {/* ── Parámetros ── */}
         <div className="crm-chart-card" style={{ marginBottom: 0 }}>
           <h3 style={{ display: 'flex', alignItems: 'center', gap: 7 }}><Calculator size={16} color={C.gold} /> Datos del prospecto</h3>
-          <p className="sub">Ajusta y la propuesta se recalcula al instante</p>
+          <p className="sub">Ajusta y la carta se reescribe al instante</p>
           <div className="field" style={{ marginBottom: 12 }}>
             <label>Nombre (para la propuesta)</label>
             <input value={f.nombre} onChange={set('nombre')} placeholder="Ej. María Fernanda Ríos" />
@@ -130,10 +209,8 @@ export default function CrmQuoteView() {
           </div>
           {num('uma', 'UMA diaria vigente', { step: 0.01 })}
           <p style={{ fontSize: 11, color: C.textLight, margin: '4px 0 0' }}>
-            Tope deducible Art. 151: el menor entre 10% del ingreso ({fmt(r.topeIngreso)}) y 5 UMAs anuales ({fmt(r.topeUMA)}).
+            Tope Art. 151: el menor entre 10% del ingreso ({fmt(r.topeIngreso)}) y 5 UMAs anuales ({fmt(r.topeUMA)}).
           </p>
-
-          {/* Guardar en expediente */}
           <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${C.border}` }}>
             <label style={{ fontSize: 12, fontWeight: 700, color: C.text, display: 'block', marginBottom: 6 }}>Guardar en expediente</label>
             <div style={{ display: 'flex', gap: 8 }}>
@@ -146,98 +223,148 @@ export default function CrmQuoteView() {
           </div>
         </div>
 
-        {/* ── Propuesta ── */}
-        <div id="ppr-proposal" className="crm-chart-card" style={{ marginBottom: 0, overflow: 'hidden', paddingTop: 0, paddingLeft: 0, paddingRight: 0 }}>
-          {/* Hero emocional */}
-          <div style={{ background: 'radial-gradient(600px 300px at 90% -20%, rgba(0,136,224,.25), transparent 60%), linear-gradient(160deg,#051636,#06255C)', color: '#fff', padding: '26px 26px 24px', marginBottom: 18 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-              <div style={{ fontSize: 10, letterSpacing: 3, textTransform: 'uppercase', color: '#E8CFA6', fontWeight: 700 }}>Finance SCool · Plan Personal de Retiro</div>
-              <span style={{ fontSize: 11, color: 'rgba(255,255,255,.55)' }}>{new Date().toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
-            </div>
-            <h3 style={{ fontFamily: "'Fraunces',Georgia,serif", fontSize: 24, fontWeight: 600, margin: '14px 0 6px', color: '#fff', letterSpacing: '-.3px' }}>
-              {f.nombre ? `${f.nombre.split(' ')[0]}, imagina tu vida a los ${f.edadRetiro}` : `Imagina tu vida a los ${f.edadRetiro}`}
-            </h3>
-            <p style={{ margin: 0, fontSize: 14, color: 'rgba(255,255,255,.85)', lineHeight: 1.6, maxWidth: 560 }}>
-              Despertar sin despertador. Viajar cuando quieras. Ayudar a tu familia sin pedirle nada a nadie.
-              Con {fmt(f.aportMensual)} al mes — menos de lo que parece, porque el SAT te devuelve una parte —
-              ese futuro tiene un número: <b style={{ color: '#E8CFA6', fontFamily: "'Fraunces',Georgia,serif", fontSize: 17 }}>{fmt(r.saldoFinal)}</b>.
-            </p>
-            <div style={{ display: 'flex', gap: 22, flexWrap: 'wrap', marginTop: 14, fontSize: 12.5 }}>
-              <span>💰 Cada peso aportado se convierte en <b style={{ color: '#E8CFA6' }}>${r.multiplo.toFixed(2)}</b></span>
-              {r.aniosDeIngreso >= 1 && <span>🧭 Equivale a <b style={{ color: '#E8CFA6' }}>{r.aniosDeIngreso.toFixed(1)} años</b> de tu ingreso actual</span>}
-              <span>🕊️ {fmt(r.pensionMensual)}/mes de por vida sin trabajar</span>
-            </div>
-          </div>
+        {/* ══════════ LA CARTA DE TU FUTURO ══════════ */}
+        <div id="ppr-proposal" className="qp-canvas">
+          {STARS.map((s, i) => <span key={i} className="qp-star" style={{ top: s.top, left: s.left, width: s.s, height: s.s, animationDelay: s.d }} />)}
 
-          <div style={{ padding: '0 24px 22px' }}>
-          <p className="sub">Aportando {fmt(f.aportMensual)} al mes durante {r.anios} años (retiro a los {f.edadRetiro})</p>
-
-          <div className="crm-kpi-detail" style={{ marginTop: 6 }}>
-            <div className="crm-kpi-box">
-              <div className="k-label">Saldo al retiro</div>
-              <div className="k-value" style={{ color: C.primary }}>{fmt(r.saldoFinal)}</div>
-              <div className="k-sub">al {f.rendimiento}% anual compuesto</div>
+          <div style={{ padding: '30px 34px 26px', position: 'relative' }}>
+            {/* Encabezado */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+              <span className="qp-eyebrow">Finance SCool · La carta de tu futuro</span>
+              <span style={{ fontSize: 11, color: 'rgba(255,255,255,.45)' }}>{new Date().toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
             </div>
-            <div className="crm-kpi-box">
-              <div className="k-label">Devolución ISR anual</div>
-              <div className="k-value" style={{ color: C.green }}>{fmt(r.devolucion)}</div>
-              <div className="k-sub">deducible {fmt(r.deducible)} × {f.tasaISR}%</div>
-            </div>
-            <div className="crm-kpi-box">
-              <div className="k-label">Costo real mensual</div>
-              <div className="k-value">{fmt(r.costoReal)}</div>
-              <div className="k-sub">aportas {fmt(f.aportMensual)}, el SAT te regresa {fmt(r.devolucion / 12)}/mes</div>
-            </div>
-            <div className="crm-kpi-box">
-              <div className="k-label">Pensión mensual est.</div>
-              <div className="k-value" style={{ color: C.gold }}>{fmt(r.pensionMensual)}</div>
-              <div className="k-sub">retirando 4% anual del saldo</div>
-            </div>
-          </div>
 
-          <ResponsiveContainer width="100%" height={280}>
-            <ComposedChart data={r.serie} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false} />
-              <XAxis dataKey="edad" tick={{ fontSize: 11, fill: C.textMuted }} axisLine={false} tickLine={false} tickFormatter={v => `${v} años`} />
-              <YAxis tickFormatter={v => '$' + (v >= 1000000 ? (v / 1000000).toFixed(1) + 'M' : Math.round(v / 1000) + 'k')} tick={{ fontSize: 11, fill: C.textMuted }} axisLine={false} tickLine={false} width={58} />
-              <Tooltip formatter={(v, n) => [fmtMoneyFull(v), n]} labelFormatter={v => `A los ${v} años`} />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Area type="monotone" dataKey="Saldo proyectado" stroke={C.primary} strokeWidth={2.5} fill={`${C.primary}20`} />
-              <Line type="monotone" dataKey="Total aportado" stroke={C.gold} strokeWidth={2} strokeDasharray="6 4" dot={false} />
-            </ComposedChart>
-          </ResponsiveContainer>
-
-          <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginTop: 12, fontSize: 12.5, color: C.textMuted, borderTop: `1px solid ${C.border}`, paddingTop: 12 }}>
-            <span>Total aportado: <b style={{ color: C.text }}>{fmt(r.aportado)}</b></span>
-            <span>Rendimiento generado: <b style={{ color: C.green }}>{fmt(r.rendimientoGenerado)}</b></span>
-            <span>Devoluciones ISR acumuladas: <b style={{ color: C.green }}>{fmt(r.devolucionesAcum)}</b></span>
-          </div>
-
-          {/* El costo de esperar */}
-          {r.costoDeEsperar > 0 && (
-            <div style={{ marginTop: 16, border: `1px solid ${C.red}30`, background: 'linear-gradient(180deg,#FFF9F9,#FDF3F3)', borderRadius: 14, padding: '16px 18px' }}>
-              <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: 1.5, fontWeight: 700, color: C.red, marginBottom: 4 }}>⏳ El costo de esperar</div>
-              <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.55, color: C.text }}>
-                Empezar dentro de 5 años en lugar de hoy te costaría{' '}
-                <b style={{ fontFamily: "'Fraunces',Georgia,serif", fontSize: 17, color: C.red }}>{fmt(r.costoDeEsperar)}</b> de tu retiro
-                — la misma aportación, pero sin los años en que el interés compuesto trabaja más fuerte.
-                <b> El mejor día para empezar era ayer; el segundo mejor es hoy.</b>
+            {/* Hero */}
+            <div style={{ textAlign: 'center', padding: '28px 0 8px', animation: 'riseSoft .5s ease backwards' }}>
+              <p style={{ fontFamily: "'Fraunces',Georgia,serif", fontSize: 21, color: 'rgba(255,255,255,.88)', margin: '0 0 6px', fontWeight: 500 }}>
+                {nombre ? `${nombre}, el día que cumplas ${f.edadRetiro} años` : `El día que cumplas ${f.edadRetiro} años`}
+              </p>
+              <p style={{ fontSize: 12.5, letterSpacing: 2.5, textTransform: 'uppercase', color: 'rgba(232,207,166,.75)', margin: '0 0 14px', fontWeight: 600 }}>tu libertad tendrá este número</p>
+              <div className="qp-hero-number">{fmt(saldoAnimado)}</div>
+              <p style={{ fontSize: 13.5, color: 'rgba(255,255,255,.7)', margin: '16px auto 0', maxWidth: 520, lineHeight: 1.65 }}>
+                Despertar sin despertador. Decir <i>sí</i> al viaje. Cuidar de los tuyos sin pedir permiso.
+                Todo empieza con <b style={{ color: '#E8CFA6' }}>{fmt(f.aportMensual)} al mes</b> — que en realidad te cuestan{' '}
+                <b style={{ color: '#E8CFA6' }}>{fmt(r.costoReal)}</b>, porque el SAT financia el resto.
               </p>
             </div>
-          )}
 
-          {/* Cierre emocional */}
-          <div style={{ marginTop: 16, textAlign: 'center', padding: '14px 18px', borderTop: `2px solid ${C.gold}40` }}>
-            <p style={{ fontFamily: "'Fraunces',Georgia,serif", fontSize: 15.5, color: C.ink, fontStyle: 'italic', margin: 0, lineHeight: 1.55 }}>
-              "No se trata de dejar de vivir hoy — se trata de que el {f.nombre ? f.nombre.split(' ')[0] : 'tú'} del futuro
-              te dé las gracias todos los días."
-            </p>
-            <p style={{ fontSize: 11.5, color: C.textMuted, margin: '8px 0 0' }}>Tu asesor Finance SCool te acompaña en cada paso · respaldo GNP · beneficio fiscal Art. 151 LISR</p>
-          </div>
+            <hr className="qp-divider" />
 
-          <p style={{ fontSize: 10, color: C.textLight, marginTop: 12 }}>
-            Proyección ilustrativa con rendimiento constante; no constituye garantía. Deducibilidad conforme al Art. 151 fracc. V de la LISR vigente. La devolución depende de la situación fiscal de cada contribuyente.
-          </p>
+            {/* Hitos del viaje */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 16, marginBottom: 4 }}>
+              {r.hitoMillon && (
+                <div className="qp-milestone" style={{ animationDelay: '.1s' }}>
+                  <div className="qp-mile-dot"><Gem size={15} /></div>
+                  <div>
+                    <div style={{ fontSize: 13.5, fontWeight: 700, color: '#fff' }}>Tu primer millón</div>
+                    <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,.55)', lineHeight: 1.5 }}>a los <b style={{ color: '#E8CFA6' }}>{r.hitoMillon} años</b> — y de ahí, cuesta abajo</div>
+                  </div>
+                </div>
+              )}
+              {r.hitoInteres && (
+                <div className="qp-milestone" style={{ animationDelay: '.22s' }}>
+                  <div className="qp-mile-dot"><Sunrise size={15} /></div>
+                  <div>
+                    <div style={{ fontSize: 13.5, fontWeight: 700, color: '#fff' }}>Tu dinero te alcanza</div>
+                    <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,.55)', lineHeight: 1.5 }}>a los <b style={{ color: '#E8CFA6' }}>{r.hitoInteres} años</b> el interés aporta más que tú</div>
+                  </div>
+                </div>
+              )}
+              <div className="qp-milestone" style={{ animationDelay: '.34s' }}>
+                <div className="qp-mile-dot final"><Crown size={15} /></div>
+                <div>
+                  <div style={{ fontSize: 13.5, fontWeight: 700, color: '#fff' }}>Libertad a los {f.edadRetiro}</div>
+                  <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,.55)', lineHeight: 1.5 }}><b style={{ color: '#E8CFA6' }}>{fmt(r.pensionMensual)}/mes</b> de por vida, sin trabajar</div>
+                </div>
+              </div>
+            </div>
+
+            <hr className="qp-divider" />
+
+            {/* Gemas */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(170px,1fr))', gap: 12 }}>
+              <div className="qp-gem" style={{ animationDelay: '.1s' }}>
+                <div className="g-label">Cada peso se convierte en</div>
+                <div className="g-value">${r.multiplo.toFixed(2)}</div>
+                <div className="g-sub">aportas {fmt(r.aportado)}, cosechas {fmt(r.saldoFinal)}</div>
+              </div>
+              <div className="qp-gem" style={{ animationDelay: '.2s' }}>
+                <div className="g-label">El SAT te devuelve</div>
+                <div className="g-value">{fmt(r.devolucion)}<span style={{ fontSize: 13, color: 'rgba(255,255,255,.6)' }}>/año</span></div>
+                <div className="g-sub">deducible {fmt(r.deducible)} × {f.tasaISR}% — {fmt(r.devolucionesAcum)} en todo el plan</div>
+              </div>
+              <div className="qp-gem" style={{ animationDelay: '.3s' }}>
+                <div className="g-label">Rendimiento generado</div>
+                <div className="g-value">{fmt(r.rendimientoGenerado)}</div>
+                <div className="g-sub">el interés compuesto hace {Math.max(r.multiplo - 1, 0).toFixed(1)}× tu esfuerzo</div>
+              </div>
+              {r.aniosDeIngreso >= 1 && (
+                <div className="qp-gem" style={{ animationDelay: '.4s' }}>
+                  <div className="g-label">Equivale a</div>
+                  <div className="g-value">{r.aniosDeIngreso.toFixed(1)} años</div>
+                  <div className="g-sub">de tu ingreso actual, trabajando cero horas</div>
+                </div>
+              )}
+            </div>
+
+            {/* Gráfica luminosa */}
+            <div style={{ marginTop: 22 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+                <span style={{ fontFamily: "'Fraunces',Georgia,serif", fontSize: 15.5, color: '#fff' }}>El ascenso</span>
+                <span style={{ fontSize: 11, color: 'rgba(255,255,255,.5)' }}>— dorado: lo que pones · azul: en lo que se convierte</span>
+              </div>
+              <ResponsiveContainer width="100%" height={250}>
+                <ComposedChart data={r.serie} margin={{ top: 10, right: 12, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="qpSaldo" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#5AA9FF" stopOpacity={0.55} />
+                      <stop offset="100%" stopColor="#5AA9FF" stopOpacity={0.03} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,.08)" vertical={false} />
+                  <XAxis dataKey="edad" tick={{ fontSize: 10.5, fill: 'rgba(255,255,255,.55)' }} axisLine={false} tickLine={false} tickFormatter={v => `${v}`} />
+                  <YAxis tickFormatter={v => '$' + (v >= 1000000 ? (v / 1000000).toFixed(1) + 'M' : Math.round(v / 1000) + 'k')} tick={{ fontSize: 10.5, fill: 'rgba(255,255,255,.55)' }} axisLine={false} tickLine={false} width={54} />
+                  <Tooltip
+                    formatter={(v, n) => [fmt(v), n]} labelFormatter={v => `A los ${v} años`}
+                    contentStyle={{ background: '#0A1E44', border: '1px solid rgba(232,207,166,.35)', borderRadius: 10, fontSize: 12.5, color: '#fff' }}
+                    labelStyle={{ color: '#E8CFA6', fontWeight: 700 }} itemStyle={{ color: '#fff' }}
+                  />
+                  <Area type="monotone" dataKey="Saldo proyectado" stroke="#5AA9FF" strokeWidth={2.5} fill="url(#qpSaldo)" dot={false} activeDot={{ r: 5, fill: '#E8CFA6', stroke: '#fff' }} />
+                  <Line type="monotone" dataKey="Total aportado" stroke="#E8CFA6" strokeWidth={2} strokeDasharray="6 4" dot={false} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* El costo de esperar */}
+            {r.costoDeEsperar > 0 && (
+              <div className="qp-wait" style={{ marginTop: 18, animationDelay: '.2s' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+                  <div>
+                    <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: 2.5, fontWeight: 700, color: '#FFB4A0', marginBottom: 4 }}>⏳ El costo de esperar</div>
+                    <p style={{ margin: 0, fontSize: 13, color: 'rgba(255,255,255,.85)', lineHeight: 1.55, maxWidth: 420 }}>
+                      Si esta decisión se pospone 5 años, la misma aportación llega a mucho menos.
+                      <b> El mejor día para empezar era ayer; el segundo mejor es hoy.</b>
+                    </p>
+                  </div>
+                  <div style={{ fontFamily: "'Fraunces',Georgia,serif", fontSize: 30, fontWeight: 600, color: '#FF9B85', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                    −{fmt(r.costoDeEsperar)}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Cierre */}
+            <div style={{ textAlign: 'center', marginTop: 24 }}>
+              <p style={{ fontFamily: "'Fraunces',Georgia,serif", fontSize: 16.5, fontStyle: 'italic', color: 'rgba(255,255,255,.9)', margin: 0, lineHeight: 1.6 }}>
+                "No se trata de dejar de vivir hoy — se trata de que {nombre ? `la ${nombre} del futuro` : 'tu yo del futuro'} te dé las gracias todos los días."
+              </p>
+              <div style={{ marginTop: 14, fontSize: 10.5, letterSpacing: 2, textTransform: 'uppercase', color: 'rgba(232,207,166,.7)', fontWeight: 700 }}>
+                Tu asesor Finance SCool · Respaldo GNP · Beneficio fiscal Art. 151 LISR
+              </div>
+              <p style={{ fontSize: 9, color: 'rgba(255,255,255,.35)', marginTop: 12, lineHeight: 1.5 }}>
+                Proyección ilustrativa con rendimiento constante del {f.rendimiento}% anual; no constituye garantía. Deducibilidad conforme al Art. 151 fracc. V de la LISR vigente. La devolución depende de la situación fiscal de cada contribuyente. Pensión estimada con regla del 4% anual.
+              </p>
+            </div>
           </div>
         </div>
       </div>
