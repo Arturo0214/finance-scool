@@ -413,8 +413,58 @@ export default function CrmQuoteView() {
                 </ResponsiveContainer>
               </div>
               <div className="qp-print-chart">
-                {ascensoChart(r.serie, { width: 640, height: 290 })}
+                {ascensoChart(r.serie, { width: 640, height: 185 })}
               </div>
+            </div>
+
+            {/* Década a década — la tabla que llena la mirada */}
+            {(() => {
+              const hitos = r.serie.filter((s, i) => (i + 1) % 5 === 0 || i === r.serie.length - 1);
+              return (
+                <div style={{ margin: '18px 0 4px' }}>
+                  <div style={{ fontFamily: "'Fraunces',Georgia,serif", fontSize: 15.5, color: '#fff', marginBottom: 8 }}>Tu patrimonio, lustro a lustro</div>
+                  <div style={{ border: '1px solid rgba(232,207,166,.22)', borderRadius: 12, overflow: 'hidden' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                      <thead>
+                        <tr style={{ background: 'rgba(232,207,166,.1)' }}>
+                          {['Edad', 'Habrás aportado', 'Tu saldo', 'El interés te regaló'].map(h => (
+                            <th key={h} style={{ padding: '8px 12px', textAlign: h === 'Edad' ? 'left' : 'right', fontSize: 9.5, letterSpacing: 1.5, textTransform: 'uppercase', color: '#E8CFA6', fontWeight: 700 }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {hitos.map((s, i) => {
+                          const ult = i === hitos.length - 1;
+                          return (
+                            <tr key={s.edad} style={{ borderTop: '1px solid rgba(255,255,255,.07)', background: ult ? 'rgba(232,207,166,.13)' : 'transparent' }}>
+                              <td style={{ padding: '7px 12px', color: '#fff', fontWeight: ult ? 700 : 500 }}>{s.edad} años{ult ? ' 👑' : ''}</td>
+                              <td style={{ padding: '7px 12px', textAlign: 'right', color: 'rgba(232,207,166,.9)', fontVariantNumeric: 'tabular-nums' }}>{fmt(s['Total aportado'])}</td>
+                              <td style={{ padding: '7px 12px', textAlign: 'right', color: ult ? '#F2D9A7' : '#7CC4FF', fontWeight: 700, fontVariantNumeric: 'tabular-nums', fontFamily: ult ? "'Fraunces',Georgia,serif" : 'inherit', fontSize: ult ? 14 : 12 }}>{fmt(s['Saldo proyectado'])}</td>
+                              <td style={{ padding: '7px 12px', textAlign: 'right', color: '#6EE7B7', fontVariantNumeric: 'tabular-nums' }}>+{fmt(s['Saldo proyectado'] - s['Total aportado'])}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Tu plan en 3 pasos */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12, margin: '16px 0 4px' }}>
+              {[
+                ['1', 'Aportas', `${fmt(f.aportMensual)}/mes`, `que se sienten como ${fmt(r.costoReal)} gracias al SAT`],
+                ['2', 'Deduces', `${fmt(r.devolucion)}/año`, 'de devolución vía Art. 151 LISR'],
+                ['3', 'Cosechas', `${fmt(r.pensionMensual)}/mes`, `de por vida a partir de los ${f.edadRetiro}`],
+              ].map(([n, t, v, s]) => (
+                <div key={n} style={{ border: '1px solid rgba(255,255,255,.12)', borderRadius: 12, padding: '12px 14px', background: 'rgba(255,255,255,.05)', textAlign: 'center' }}>
+                  <div style={{ width: 22, height: 22, borderRadius: '50%', background: 'linear-gradient(140deg,#E8CFA6,#C1975B)', color: '#051636', fontWeight: 800, fontSize: 11.5, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 5 }}>{n}</div>
+                  <div style={{ fontSize: 10, letterSpacing: 2, textTransform: 'uppercase', color: '#E8CFA6', fontWeight: 700 }}>{t}</div>
+                  <div style={{ fontFamily: "'Fraunces',Georgia,serif", fontSize: 17, color: '#fff', margin: '3px 0' }}>{v}</div>
+                  <div style={{ fontSize: 10.5, color: 'rgba(255,255,255,.55)', lineHeight: 1.4 }}>{s}</div>
+                </div>
+              ))}
             </div>
 
             {/* El costo de esperar */}
