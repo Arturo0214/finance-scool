@@ -20,6 +20,10 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 const isProd = process.env.NODE_ENV === 'production';
 
+// Detrás del proxy de Railway: sin esto express-rate-limit no identifica la
+// IP real del cliente (X-Forwarded-For) y los limitadores no cuentan bien.
+if (isProd) app.set('trust proxy', 1);
+
 // Security
 app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
 app.use(compression());
