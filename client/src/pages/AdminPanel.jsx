@@ -119,7 +119,7 @@ export default function AdminPanel() {
     { id: 'team',             label: SPANISH_LABELS.team,             icon: Settings   },
     { id: 'health',           label: 'Salud del sistema',             icon: Activity   },
   ].filter(item => {
-    if (item.id === 'health') return user?.role === 'superadmin';
+    if (item.id === 'health') return userIsAgency;
     return (item.id !== 'team' && item.id !== 'divider-2') || canManageTeam;
   });
 
@@ -340,7 +340,7 @@ export default function AdminPanel() {
               {!loading && activeView === 'crm-metas' && <CrmGoalsView isAgency={userSeesAllCrm} />}
               {!loading && activeView === 'crm-recordatorios' && <CrmRemindersView isAgency={userSeesAllCrm} />}
               {!loading && activeView === 'crm-cotizador' && <CrmQuoteView />}
-              {!loading && activeView === 'health' && user?.role === 'superadmin' && <HealthView />}
+              {!loading && activeView === 'health' && userIsAgency && <HealthView />}
             </Suspense>
           </main>
         </div>

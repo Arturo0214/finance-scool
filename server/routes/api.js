@@ -354,7 +354,7 @@ router.delete('/users/:id', verifyToken, async (req, res) => {
 
 // Salud del sistema — SOLO superadmin
 router.get('/health-status', verifyToken, async (req, res) => {
-  if (req.user.role !== 'superadmin') return res.status(403).json({ error: 'Solo superadmin' });
+  if (!['superadmin', 'agencia'].includes(req.user.role)) return res.status(403).json({ error: 'Solo agencia' });
   const { getDB } = require('../models/database');
   const t = async (name, fn) => {
     const t0 = Date.now();
