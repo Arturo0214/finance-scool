@@ -364,6 +364,16 @@ export default function CrmQuoteView() {
                   <div className="g-sub">de tu ingreso actual, <b>trabajando cero horas</b></div>
                 </div>
               )}
+              <div className="qp-gem" style={{ animationDelay: '.5s', '--gc': '#67E8F9', '--gtint': 'rgba(34,211,238,.18)' }}>
+                <div className="g-head"><span className="g-ico"><Sunrise size={13} /></span><span className="g-label">Tu futuro cuesta al día</span></div>
+                <div className="g-value"><span className="hl">{fmt(r.costoReal / 30)}</span></div>
+                <div className="g-sub">menos que una comida a domicilio — <b>decisión de café, resultado de millones</b></div>
+              </div>
+              <div className="qp-gem" style={{ animationDelay: '.6s', '--gc': '#F9A8D4', '--gtint': 'rgba(244,114,182,.2)' }}>
+                <div className="g-head"><span className="g-ico"><Crown size={13} /></span><span className="g-label">Pensión de por vida</span></div>
+                <div className="g-value"><span className="hl">{fmt(r.pensionMensual)}</span><span style={{ fontSize: 13, color: 'rgba(255,255,255,.6)' }}>/mes</span></div>
+                <div className="g-sub">desde los {f.edadRetiro}, cada mes, <b>sin depender de nadie</b></div>
+              </div>
             </div>
 
           </div>
