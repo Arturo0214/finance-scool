@@ -48,11 +48,15 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-// Rate limiting for API
-app.use('/api/', rateLimit({ windowMs: 15 * 60 * 1000, max: isProd ? 200 : 5000 }));
-
 /* ── Limitadores quirúrgicos anti-exploit (los intentos legítimos no cuentan) ── */
 const jsonLimit = (msg) => ({ standardHeaders: true, legacyHeaders: false, handler: (req, res) => res.status(429).json({ error: msg }) });
+
+// Techo global anti-flood. AMPLIO a propósito: el CRM hace polling (15-30s) y
+// una oficina entera comparte una sola IP pública (NAT) — con 200/15min el
+// equipo solo lo agotaba y el 429 salía en TEXTO plano (default de
+// express-rate-limit), rompiendo hasta el login con "Unexpected token 'T'…".
+// Siempre JSON y con margen real para uso legítimo.
+app.use('/api/', rateLimit({ windowMs: 15 * 60 * 1000, max: isProd ? 3000 : 5000, ...jsonLimit('Demasiadas solicitudes. Espera un momento e intenta de nuevo.') }));
 // Fuerza bruta de contraseñas: 20 intentos FALLIDOS por IP cada 15 min
 // (margen amplio porque una oficina comparte IP pública vía NAT; los
 // logins exitosos NO cuentan, así que solo los fallos acumulan)

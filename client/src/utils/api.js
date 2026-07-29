@@ -14,8 +14,16 @@ async function request(path, options = {}) {
     headers,
     ...options,
   });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Error de servidor');
+  // Los 429/errores de infraestructura pueden llegar en TEXTO plano ("Too many
+  // requests…") — parsear a ciegas rompía el login con "Unexpected token 'T'".
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { /* respuesta no-JSON */ }
+  if (!res.ok) {
+    const msg = (data && data.error)
+      || (res.status === 429 ? 'Demasiadas solicitudes. Espera un momento e intenta de nuevo.' : `Error de servidor (${res.status})`);
+    throw new Error(msg);
+  }
   return data;
 }
 
