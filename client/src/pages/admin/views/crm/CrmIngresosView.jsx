@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { getCrmCSS, fmtMoney, fmtMoneyFull, fmtDate, MESES } from './crmShared';
 import CrmCommissionsView from './CrmCommissionsView';
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, ReferenceLine, CartesianGrid } from 'recharts';
 
 const pct = (n, dec = 2) => `${((Number(n) || 0) * 100).toFixed(dec)}%`;
 
@@ -63,6 +64,13 @@ export default function CrmIngresosView({ isAgency }) {
   const [sim, setSim] = useState(null);
   const [simBusy, setSimBusy] = useState(false);
 
+  /* Trayectoria a 15 meses */
+  const [tray, setTray] = useState(null);
+  const [trayBusy, setTrayBusy] = useState(false);
+  const [trayVenta, setTrayVenta] = useState('');
+  const [trayTasa, setTrayTasa] = useState('');
+  const [trayCobra, setTrayCobra] = useState(true);
+
   const load = useCallback(async () => {
     setLoading(true); setErr('');
     try {
@@ -81,6 +89,7 @@ export default function CrmIngresosView({ isAgency }) {
     let alive = true;
     (async () => {
       setLoadingDetail(true); setSim(null); setSimSel({}); setVentaAdicional('');
+      setTray(null); setTrayVenta(''); setTrayTasa('');
       try {
         const d = await api.crmIngresosAgent(selClave);
         if (alive) setDetail(d);
@@ -105,6 +114,24 @@ export default function CrmIngresosView({ isAgency }) {
       setSim(d);
     } catch (e) { alert(e.message); }
     finally { setSimBusy(false); }
+  };
+
+  const runTrayectoria = async () => {
+    if (!detail) return;
+    setTrayBusy(true);
+    try {
+      const d = await api.crmIngresosTrayectoria({
+        clave: detail.agente.clave,
+        ...(trayVenta !== '' ? { ventaMensual: Number(trayVenta) } : {}),
+        ...(trayTasa !== '' ? { tasaConservacion: Number(trayTasa) / 100 } : {}),
+        cobrarPendientes: trayCobra,
+      });
+      setTray(d);
+      // Primera corrida: mostrar los supuestos que el server eligió por default
+      if (trayVenta === '') setTrayVenta(String(Math.round(d.supuestos.ventaMensual)));
+      if (trayTasa === '') setTrayTasa(String(Math.round(d.supuestos.tasaConservacion * 100)));
+    } catch (e) { alert(e.message); }
+    finally { setTrayBusy(false); }
   };
 
   /* Cobro/rehabilitación real (solo agencia): mueve el índice "hoy" al instante */
@@ -234,6 +261,28 @@ export default function CrmIngresosView({ isAgency }) {
               </p>
             )}
           </div>
+
+          {/* ── Proyección al cierre del trimestre ── */}
+          {detail.proyeccion?.cierreQ && (
+            <div className="crm-chart-card">
+              <h3><TrendingUp size={16} style={{ verticalAlign: -2, color: C.gold }} /> Proyección al cierre del trimestre — {fmtDate(detail.proyeccion.cierreQ.fecha)}</h3>
+              <p className="sub">Cómo termina el trimestre si no se cobra nada de aquí al cierre — y qué pólizas vencen en el camino.</p>
+              <div className="crm-kpi-detail">
+                <BonoCard icon={AlertTriangle} label="Índice al cierre sin cobrar" value={<span style={{ color: indiceColor(detail.proyeccion.cierreQ.actual) }}>{pct(detail.proyeccion.cierreQ.actual)}</span>} sub={idx.hoy ? `hoy está en ${pct(idx.hoy.actual)}` : null} color={detail.proyeccion.cierreQ.actual < 0.86 ? C.red : C.amber} />
+                <BonoCard icon={RotateCcw} label="Vencen antes del cierre" value={detail.proyeccion.cierreQ.vencenAntes.length} sub={detail.proyeccion.cierreQ.vencenAntes.length ? `${fmtMoney(detail.proyeccion.cierreQ.vencenAntes.reduce((s, p) => s + p.monto, 0))} de base en riesgo` : 'ninguna póliza vence en el periodo'} />
+                <BonoCard icon={TrendingUp} label="Si se cobra todo" value={<span style={{ color: indiceColor(detail.proyeccion.cierreQ.conPendiente) }}>{pct(detail.proyeccion.cierreQ.conPendiente)}</span>} sub="cerrando pendientes y vencimientos" />
+              </div>
+              {detail.proyeccion.cierreQ.actual < 0.86 && detail.proyeccion.cierreQ.conPendiente >= 0.86 && (
+                <p className="sub" style={{ color: C.amber }}><AlertTriangle size={13} style={{ verticalAlign: -2 }} /> Sin cobrar se pierde la banda de bonos; cobrando lo pendiente se rescata.</p>
+              )}
+              {detail.proyeccion.cierreQ.vencenAntes.slice(0, 6).map(p => (
+                <div key={p.id} className="crm-mc-row" style={{ borderBottom: '1px solid rgba(11,27,51,.06)', padding: '7px 0' }}>
+                  <span>Póliza <b>{p.poliza}</b> <span style={{ fontSize: 11, color: C.textMuted }}>{p.plan_id} · vence {fmtDate(p.pagado_hasta)} · {p.frecuencia_pago || ''}</span></span>
+                  <b>{fmtMoney(p.monto)} <span style={{ color: C.red, fontSize: 11 }}>−{pct(p.impacto_indice, 1)}</span></b>
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* ── Bonos del trimestre ── */}
           <div className="crm-chart-card">
@@ -398,6 +447,55 @@ export default function CrmIngresosView({ isAgency }) {
             </div>
           )}
         </>
+      )}
+
+      {/* ── Trayectoria a 15 meses ── */}
+      {tab === 'simulador' && detail && (
+        <div className="crm-chart-card">
+          <h3><TrendingUp size={16} style={{ verticalAlign: -2, color: C.gold }} /> Trayectoria del índice — ¿cuándo cruzo la banda?</h3>
+          <p className="sub">La ventana del índice solo crece y las canceladas no salen de ella: solo el negocio nuevo conservado lo recupera. El modelo asume que vienes vendiendo al mismo ritmo desde hace 15 meses (ese es el negocio que irá madurando a la ventana mes con mes).</p>
+
+          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 14 }}>
+            <div className="field" style={{ marginBottom: 0, minWidth: 190 }}>
+              <label>Venta mensual (prima $)</label>
+              <input type="number" min="0" placeholder="ritmo actual" value={trayVenta} onChange={e => setTrayVenta(e.target.value)} />
+            </div>
+            <div className="field" style={{ marginBottom: 0, minWidth: 160 }}>
+              <label>Conservación del negocio nuevo (%)</label>
+              <input type="number" min="1" max="100" placeholder="histórico" value={trayTasa} onChange={e => setTrayTasa(e.target.value)} />
+            </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, cursor: 'pointer', paddingBottom: 9 }}>
+              <input type="checkbox" style={{ accentColor: C.primary }} checked={trayCobra} onChange={e => setTrayCobra(e.target.checked)} />
+              Cobrando los pendientes actuales
+            </label>
+            <button className="btn-primary" disabled={trayBusy} onClick={runTrayectoria}><TrendingUp size={15} /> {trayBusy ? 'Proyectando...' : 'Proyectar'}</button>
+          </div>
+
+          {tray && (
+            <>
+              <div style={{ width: '100%', height: 260 }}>
+                <ResponsiveContainer>
+                  <LineChart data={tray.serie} margin={{ top: 8, right: 42, bottom: 0, left: -14 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(11,27,51,.08)" />
+                    <XAxis dataKey="mes" tick={{ fontSize: 11 }} />
+                    <YAxis domain={[dataMin => Math.max(0, Math.floor(dataMin * 10) / 10 - 0.1), 1]} tickFormatter={v => `${Math.round(v * 100)}%`} tick={{ fontSize: 11 }} />
+                    <Tooltip formatter={v => pct(v)} labelFormatter={l => `Mes ${l}`} />
+                    <ReferenceLine y={0.86} stroke={C.amber} strokeDasharray="4 4" label={{ value: '86%', fontSize: 10, fill: C.amber, position: 'right' }} />
+                    <ReferenceLine y={0.90} stroke="#0891B2" strokeDasharray="4 4" label={{ value: '90%', fontSize: 10, fill: '#0891B2', position: 'right' }} />
+                    <ReferenceLine y={0.94} stroke={C.green} strokeDasharray="4 4" label={{ value: '94%', fontSize: 10, fill: C.green, position: 'right' }} />
+                    <Line type="monotone" dataKey="indice" stroke={C.gold} strokeWidth={2.5} dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="crm-kpi-detail" style={{ marginTop: 10 }}>
+                <BonoCard icon={Target} label="Cruza el 86%" value={tray.cruces['0.86'] || 'No en el horizonte'} color={tray.cruces['0.86'] ? C.amber : C.red} sub={tray.cruces['0.86'] ? 'vuelve a cobrar bonos' : 'sube venta o conservación'} />
+                <BonoCard icon={Target} label="Cruza el 90%" value={tray.cruces['0.90'] || 'No en el horizonte'} color={tray.cruces['0.90'] ? '#0891B2' : C.red} />
+                <BonoCard icon={Target} label="Cruza el 94%" value={tray.cruces['0.94'] || 'No en el horizonte'} color={tray.cruces['0.94'] ? C.green : C.red} sub={tray.cruces['0.94'] ? 'banda máxima de bonos' : null} />
+              </div>
+              <p className="sub" style={{ marginTop: 6 }}>Supuestos: venta {fmtMoneyFull(tray.supuestos.ventaMensual)}/mes · conservación del nuevo {pct(tray.supuestos.tasaConservacion, 0)} · {tray.supuestos.cobrarPendientes ? 'cobrando' : 'sin cobrar'} los pendientes actuales.</p>
+            </>
+          )}
+        </div>
       )}
 
       {tab === 'simulador' && !detail && <p className="empty">Selecciona un agente en el Tablero PIR para simular.</p>}

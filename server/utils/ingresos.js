@@ -91,6 +91,39 @@ function derivarEstatus(p, fecha = new Date()) {
 /* Meses que cubre un pago según la frecuencia (para avanzar pagado_hasta) */
 const MESES_FRECUENCIA = { ANUAL: 12, SEMESTRAL: 6, TRIMESTRAL: 3, MENSUAL: 1 };
 
+const finTrimestre = (f) => new Date(f.getFullYear(), Math.floor(f.getMonth() / 3) * 3 + 3, 0);
+const isoLocal = (f) => new Date(f.getTime() - f.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+
+/**
+ * Trayectoria del índice a N meses. La ventana del índice solo crece (alta del
+ * agente → hoy−15 meses) y las canceladas nunca salen de ella, así que el
+ * índice solo se recupera con negocio que va entrando conservado a la ventana.
+ * Supuesto del modelo: el agente vende `ventaMensual` de prima cada mes (y lo
+ * venía haciendo los últimos 15 meses, que es el negocio que irá madurando a
+ * la ventana), del cual se conserva `tasaConservacion`.
+ */
+function proyectarTrayectoria({ polizas, ventaMensual = 0, tasaConservacion = 0.9, cobrarPendientes = false, meses = 15, hoy = new Date() }) {
+  let base = 0, conservada = 0;
+  for (const p of polizas) {
+    const st = derivarEstatus(p, hoy);
+    base += Number(p.base_a_conservar_mxn) || 0;
+    if (st === 'CONSERVADA' || (cobrarPendientes && st === 'PENDIENTE DE PAGO'))
+      conservada += Number(p.base_a_conservar_mxn) || 0;
+  }
+  const serie = [];
+  const cruces = { '0.86': null, '0.90': null, '0.94': null };
+  for (let m = 0; m <= meses; m++) {
+    const b = base + m * ventaMensual;
+    const c = conservada + m * ventaMensual * tasaConservacion;
+    const indice = b > 0 ? Math.round((c / b) * 10000) / 10000 : 1;
+    const d = new Date(hoy.getFullYear(), hoy.getMonth() + m, 1);
+    const mes = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    for (const u of Object.keys(cruces)) if (!cruces[u] && indice >= Number(u)) cruces[u] = mes;
+    serie.push({ mes, indice });
+  }
+  return { serie, cruces, supuestos: { ventaMensual: round2(ventaMensual), tasaConservacion, cobrarPendientes, meses } };
+}
+
 /**
  * Cálculo completo de ingresos PIR de un agente.
  * overrides (simulador): { ventaAdicional, cobrarPolizas: [ids], rehabilitarPolizas: [ids] }
@@ -116,6 +149,19 @@ function computeIngresos({ agente, primas, polizas, pir }, overrides = {}) {
     base_conservada_mxn: p.base_a_conservar_mxn,
   }));
   const indiceHoyInfo = computeIndice(polizasHoy);
+
+  /* Proyección al cierre del trimestre calendario: la misma regla evaluada a
+     esa fecha = índice si no se cobra nada de aquí al cierre */
+  const cierreQ = finTrimestre(hoyRef);
+  const indiceCierre = computeIndice(polizas.map(p => ({
+    ...p,
+    estatus_conservacion: derivarEstatus(p, cierreQ),
+    base_conservada_mxn: p.base_a_conservar_mxn,
+  })));
+  const vencenAntesDelCierre = polizasHoy
+    .filter(p => p.estatus_conservacion === 'CONSERVADA' && derivarEstatus(p, cierreQ) !== 'CONSERVADA')
+    .map(p => ({ id: p.id, poliza: p.poliza, plan_id: p.plan_id, frecuencia_pago: p.frecuencia_pago, pagado_hasta: p.pagado_hasta, monto: round2(p.base_a_conservar_mxn), impacto_indice: indiceInfo.baseAConservar > 0 ? (Number(p.base_a_conservar_mxn) || 0) / indiceInfo.baseAConservar : 0 }))
+    .sort((a, b) => b.monto - a.monto);
   let extraConservada = 0;
   for (const p of polizas) {
     const sel = cobrar.has(p.id) || rehabilitar.has(p.id);
@@ -198,11 +244,19 @@ function computeIngresos({ agente, primas, polizas, pir }, overrides = {}) {
       umbral, esNuevo,
       minimoBono: 0.86,
       hoy: {
-        fecha: new Date(hoyRef.getTime() - hoyRef.getTimezoneOffset() * 60000).toISOString().slice(0, 10),
+        fecha: isoLocal(hoyRef),
         actual: round2(indiceHoyInfo.actual * 10000) / 10000,
         conPendiente: round2(indiceHoyInfo.conPendiente * 10000) / 10000,
         baseConservada: indiceHoyInfo.baseConservada,
         basePendiente: indiceHoyInfo.basePendiente,
+      },
+    },
+    proyeccion: {
+      cierreQ: {
+        fecha: isoLocal(cierreQ),
+        actual: round2(indiceCierre.actual * 10000) / 10000,
+        conPendiente: round2(indiceCierre.conPendiente * 10000) / 10000,
+        vencenAntes: vencenAntesDelCierre,
       },
     },
     primas: { ubicacionQ, pagadaInicialQ, renovacionQ },
@@ -221,4 +275,4 @@ function computeIngresos({ agente, primas, polizas, pir }, overrides = {}) {
   };
 }
 
-module.exports = { computeIngresos, computeIndice, derivarEstatus, umbralDe, cuadernoKey, MESES_FRECUENCIA, PIR_DEFAULT };
+module.exports = { computeIngresos, computeIndice, derivarEstatus, proyectarTrayectoria, umbralDe, cuadernoKey, MESES_FRECUENCIA, PIR_DEFAULT };

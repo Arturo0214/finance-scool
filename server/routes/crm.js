@@ -1148,7 +1148,7 @@ router.get('/activity', async (req, res) => {
    Data del Business Review migrada a crm_pru_* (server/migrate-ingresos.js).
    Asesores solo ven su propia clave (crm_agents.clave ↔ crm_pru_agentes.clave). */
 
-const { computeIngresos, MESES_FRECUENCIA, PIR_DEFAULT } = require('../utils/ingresos');
+const { computeIngresos, proyectarTrayectoria, MESES_FRECUENCIA, PIR_DEFAULT } = require('../utils/ingresos');
 
 let _pirCache = null;
 async function getPirTablas() {
@@ -1243,6 +1243,42 @@ router.post('/ingresos/simulate', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 const round2sim = (n) => Math.round(n * 100) / 100;
+
+/* Trayectoria del índice a N meses: ¿cuándo cruzo el 86/90/94% si vendo
+   $X/mes conservando cierta tasa? Defaults: ritmo = promedio mensual de prima
+   ubicación del último trimestre; tasa = último índice histórico del agente. */
+router.post('/ingresos/trayectoria', async (req, res) => {
+  try {
+    const scope = await resolveClaveScope(req, res);
+    if (!scope) return;
+    const clave = String(req.body.clave || scope.clave || '').toUpperCase();
+    if (!clave) return res.status(400).json({ error: 'clave requerida' });
+    if (scope.restricted && scope.clave !== clave) return res.status(403).json({ error: 'Solo puedes proyectar tu propia clave' });
+
+    const { agentes, primas, polizas } = await fetchIngresosData(clave);
+    if (!agentes.length) return res.status(404).json({ error: `No hay data Prudential para la clave ${clave}` });
+
+    let ventaMensual = Number(req.body.ventaMensual);
+    if (!Number.isFinite(ventaMensual) || ventaMensual < 0) {
+      const conPrima = primas.filter(p => Number(p.prima_ubicacion) > 0);
+      ventaMensual = conPrima.length ? conPrima.reduce((s, p) => s + Number(p.prima_ubicacion), 0) / conPrima.length : 0;
+    }
+    let tasaConservacion = Number(req.body.tasaConservacion);
+    if (!Number.isFinite(tasaConservacion) || tasaConservacion <= 0 || tasaConservacion > 1) {
+      const { data: hist } = await getDB().from('crm_pru_indices_hist').select('indice').eq('clave', clave).order('periodo', { ascending: false }).limit(1);
+      tasaConservacion = (hist && hist[0] && Number(hist[0].indice) > 0) ? Math.min(1, Number(hist[0].indice)) : 0.90;
+    }
+
+    const tray = proyectarTrayectoria({
+      polizas,
+      ventaMensual,
+      tasaConservacion,
+      cobrarPendientes: Boolean(req.body.cobrarPendientes),
+      meses: Math.min(36, Math.max(3, Number(req.body.meses) || 15)),
+    });
+    res.json({ clave, nombre: agentes[0].nombre, ...tray });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
 /* Registrar un cobro o rehabilitación real (solo agencia): avanza pagado_hasta
    un periodo según la frecuencia de pago y el índice "hoy" lo refleja al
