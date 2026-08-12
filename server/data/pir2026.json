@@ -1,0 +1,138 @@
+{
+  "descripcion": "Tablas PIR 2026 nivel AGENTE extraídas de 'Ejemplo Tableros CRM Agentes -BusinessReview_INCUBADORA S-COOL (2).xlsb', hoja 'PIR 2026 AGENTE'. Vigencia: enero-diciembre 2026. Cambia cada año.",
+  "umbrales_indice_conservacion": {
+    "agente": [0.86, 0.90, 0.94],
+    "promotoria": [0.84, 0.88, 0.92],
+    "nota": "Debajo del primer umbral (86% agente) NO se paga bono aunque se alcance la prima. Los % de bono se escalonan por el umbral alcanzado."
+  },
+  "regla_agente_nuevo": "Agentes con menos de 15 meses desde su fecha de inicio de cálculos no tienen índice de conservación: se les paga como si estuvieran en el umbral 0.90.",
+  "cuadernos": {
+    "NOVEL": {
+      "bono_inicial_mensual": {
+        "base_prima": "prima_ubicacion_trimestral",
+        "aplica_sobre": "prima_pagada_inicial_del_mes",
+        "rangos": [
+          { "rango": 1, "prima_min": 143000, "pct": { "0.86": 0.30, "0.90": 0.35, "0.94": 0.40 } },
+          { "rango": 2, "prima_min": 130000, "pct": { "0.86": 0.25, "0.90": 0.30, "0.94": 0.35 } },
+          { "rango": 3, "prima_min": 118000, "pct": { "0.86": 0.245, "0.90": 0.25, "0.94": 0.30 } },
+          { "rango": 4, "prima_min": 105000, "pct": { "0.86": 0.22, "0.90": 0.245, "0.94": 0.25 } },
+          { "rango": 5, "prima_min": 92000, "pct": { "0.86": 0.195, "0.90": 0.22, "0.94": 0.245 } },
+          { "rango": 6, "prima_min": 79000, "pct": { "0.86": 0.18, "0.90": 0.195, "0.94": 0.22 } },
+          { "rango": 7, "prima_min": 66000, "pct": { "0.86": 0.175, "0.90": 0.18, "0.94": 0.185 } },
+          { "rango": 8, "prima_min": 55000, "pct": { "0.86": 0.16, "0.90": 0.175, "0.94": 0.18 } },
+          { "rango": 9, "prima_min": 41000, "pct": { "0.86": 0.15, "0.90": 0.16, "0.94": 0.175 } },
+          { "rango": 10, "prima_min": 29000, "pct": { "0.86": 0.14, "0.90": 0.15, "0.94": 0.16 } }
+        ]
+      },
+      "bono_inicial_trimestral": {
+        "base_prima": "prima_ubicacion_trimestral",
+        "aplica_sobre": "prima_pagada_inicial_del_trimestre",
+        "ajuste": "bono_trimestral - suma_bonos_mensuales_ya_pagados_del_trimestre",
+        "rangos": [
+          { "rango": 1, "prima_min": 472000, "pct": { "0.86": 0.35, "0.90": 0.40, "0.94": 0.45 } },
+          { "rango": 2, "prima_min": 431000, "pct": { "0.86": 0.30, "0.90": 0.35, "0.94": 0.40 } },
+          { "rango": 3, "prima_min": 388000, "pct": { "0.86": 0.275, "0.90": 0.30, "0.94": 0.35 } },
+          { "rango": 4, "prima_min": 345000, "pct": { "0.86": 0.25, "0.90": 0.275, "0.94": 0.30 } },
+          { "rango": 5, "prima_min": 305000, "pct": { "0.86": 0.225, "0.90": 0.25, "0.94": 0.275 } },
+          { "rango": 6, "prima_min": 260000, "pct": { "0.86": 0.21, "0.90": 0.225, "0.94": 0.25 } },
+          { "rango": 7, "prima_min": 219000, "pct": { "0.86": 0.195, "0.90": 0.21, "0.94": 0.225 } },
+          { "rango": 8, "prima_min": 181000, "pct": { "0.86": 0.18, "0.90": 0.195, "0.94": 0.21 } },
+          { "rango": 9, "prima_min": 133000, "pct": { "0.86": 0.17, "0.90": 0.18, "0.94": 0.195 } },
+          { "rango": 10, "prima_min": 92000, "pct": { "0.86": 0.16, "0.90": 0.17, "0.94": 0.18 } }
+        ]
+      },
+      "bono_conservacion": {
+        "base_prima": "prima_ubicacion_trimestral",
+        "aplica_sobre": "prima_pagada_renovacion_del_trimestre",
+        "rangos": [
+          { "rango": 1, "prima_min": 420000, "pct": { "0.86": 0.08, "0.90": 0.09, "0.94": 0.10 } },
+          { "rango": 2, "prima_min": 390000, "pct": { "0.86": 0.07, "0.90": 0.08, "0.94": 0.09 } },
+          { "rango": 3, "prima_min": 350000, "pct": { "0.86": 0.06, "0.90": 0.07, "0.94": 0.08 } },
+          { "rango": 4, "prima_min": 310000, "pct": { "0.86": 0.05, "0.90": 0.06, "0.94": 0.07 } },
+          { "rango": 5, "prima_min": 270000, "pct": { "0.86": 0.04, "0.90": 0.05, "0.94": 0.06 } },
+          { "rango": 6, "prima_min": 230000, "pct": { "0.86": 0.033, "0.90": 0.04, "0.94": 0.05 } },
+          { "rango": 7, "prima_min": 200000, "pct": { "0.86": 0.028, "0.90": 0.033, "0.94": 0.04 } },
+          { "rango": 8, "prima_min": 160000, "pct": { "0.86": 0.025, "0.90": 0.028, "0.94": 0.033 } },
+          { "rango": 9, "prima_min": 120000, "pct": { "0.86": 0.023, "0.90": 0.025, "0.94": 0.028 } },
+          { "rango": 10, "prima_min": 80000, "pct": { "0.86": 0.018, "0.90": 0.023, "0.94": 0.025 } }
+        ]
+      }
+    },
+    "EN_DESARROLLO": {
+      "bono_inicial_mensual": {
+        "rangos": [
+          { "rango": 1, "prima_min": 209000, "pct": { "0.86": 0.23, "0.90": 0.25, "0.94": 0.35 } },
+          { "rango": 2, "prima_min": 176000, "pct": { "0.86": 0.205, "0.90": 0.23, "0.94": 0.25 } },
+          { "rango": 3, "prima_min": 143000, "pct": { "0.86": 0.20, "0.90": 0.205, "0.94": 0.23 } },
+          { "rango": 4, "prima_min": 110000, "pct": { "0.86": 0.175, "0.90": 0.20, "0.94": 0.205 } },
+          { "rango": 5, "prima_min": 98000, "pct": { "0.86": 0.15, "0.90": 0.175, "0.94": 0.20 } },
+          { "rango": 6, "prima_min": 66000, "pct": { "0.86": 0.135, "0.90": 0.15, "0.94": 0.175 } },
+          { "rango": 7, "prima_min": 51000, "pct": { "0.86": 0.11, "0.90": 0.135, "0.94": 0.15 } },
+          { "rango": 8, "prima_min": 39000, "pct": { "0.86": 0.085, "0.90": 0.11, "0.94": 0.135 } },
+          { "rango": 9, "prima_min": 35000, "pct": { "0.86": 0.07, "0.90": 0.085, "0.94": 0.11 } },
+          { "rango": 10, "prima_min": 32000, "pct": { "0.86": 0.05, "0.90": 0.07, "0.94": 0.085 } }
+        ]
+      },
+      "bono_inicial_trimestral": {
+        "rangos": [
+          { "rango": 1, "prima_min": 713000, "pct": { "0.86": 0.30, "0.90": 0.35, "0.94": 0.43 } },
+          { "rango": 2, "prima_min": 587000, "pct": { "0.86": 0.275, "0.90": 0.30, "0.94": 0.35 } },
+          { "rango": 3, "prima_min": 472000, "pct": { "0.86": 0.25, "0.90": 0.275, "0.94": 0.30 } },
+          { "rango": 4, "prima_min": 368000, "pct": { "0.86": 0.225, "0.90": 0.25, "0.94": 0.275 } },
+          { "rango": 5, "prima_min": 322000, "pct": { "0.86": 0.20, "0.90": 0.225, "0.94": 0.25 } },
+          { "rango": 6, "prima_min": 219000, "pct": { "0.86": 0.175, "0.90": 0.20, "0.94": 0.225 } },
+          { "rango": 7, "prima_min": 167000, "pct": { "0.86": 0.15, "0.90": 0.175, "0.94": 0.20 } },
+          { "rango": 8, "prima_min": 127000, "pct": { "0.86": 0.125, "0.90": 0.15, "0.94": 0.175 } },
+          { "rango": 9, "prima_min": 115000, "pct": { "0.86": 0.10, "0.90": 0.125, "0.94": 0.15 } },
+          { "rango": 10, "prima_min": 104000, "pct": { "0.86": 0.08, "0.90": 0.10, "0.94": 0.125 } }
+        ]
+      },
+      "bono_conservacion": {
+        "rangos": [
+          { "rango": 1, "prima_min": 640000, "pct": { "0.86": 0.12, "0.90": 0.135, "0.94": 0.15 } },
+          { "rango": 2, "prima_min": 530000, "pct": { "0.86": 0.105, "0.90": 0.12, "0.94": 0.135 } },
+          { "rango": 3, "prima_min": 420000, "pct": { "0.86": 0.09, "0.90": 0.105, "0.94": 0.12 } },
+          { "rango": 4, "prima_min": 330000, "pct": { "0.86": 0.075, "0.90": 0.09, "0.94": 0.105 } },
+          { "rango": 5, "prima_min": 290000, "pct": { "0.86": 0.06, "0.90": 0.075, "0.94": 0.09 } },
+          { "rango": 6, "prima_min": 200000, "pct": { "0.86": 0.049, "0.90": 0.06, "0.94": 0.075 } },
+          { "rango": 7, "prima_min": 150000, "pct": { "0.86": 0.041, "0.90": 0.049, "0.94": 0.06 } },
+          { "rango": 8, "prima_min": 110000, "pct": { "0.86": 0.038, "0.90": 0.041, "0.94": 0.049 } },
+          { "rango": 9, "prima_min": 100000, "pct": { "0.86": 0.034, "0.90": 0.038, "0.94": 0.041 } },
+          { "rango": 10, "prima_min": 90000, "pct": { "0.86": 0.026, "0.90": 0.034, "0.94": 0.038 } }
+        ]
+      }
+    },
+    "CONSOLIDADO": {
+      "bono_inicial_mensual": null,
+      "nota": "Los agentes CONSOLIDADO no tienen bono inicial mensual, solo trimestral y conservación.",
+      "bono_inicial_trimestral": {
+        "rangos": [
+          { "rango": 1, "prima_min": 1000000, "pct": { "0.86": 0.30, "0.90": 0.35, "0.94": 0.40 } },
+          { "rango": 2, "prima_min": 858000, "pct": { "0.86": 0.275, "0.90": 0.30, "0.94": 0.35 } },
+          { "rango": 3, "prima_min": 682000, "pct": { "0.86": 0.25, "0.90": 0.275, "0.94": 0.30 } },
+          { "rango": 4, "prima_min": 539000, "pct": { "0.86": 0.225, "0.90": 0.25, "0.94": 0.275 } },
+          { "rango": 5, "prima_min": 407000, "pct": { "0.86": 0.20, "0.90": 0.225, "0.94": 0.25 } },
+          { "rango": 6, "prima_min": 297000, "pct": { "0.86": 0.175, "0.90": 0.20, "0.94": 0.225 } },
+          { "rango": 7, "prima_min": 220000, "pct": { "0.86": 0.15, "0.90": 0.175, "0.94": 0.20 } },
+          { "rango": 8, "prima_min": 154000, "pct": { "0.86": 0.125, "0.90": 0.15, "0.94": 0.175 } },
+          { "rango": 9, "prima_min": 127000, "pct": { "0.86": 0.10, "0.90": 0.125, "0.94": 0.15 } },
+          { "rango": 10, "prima_min": 110000, "pct": { "0.86": 0.08, "0.90": 0.10, "0.94": 0.125 } }
+        ]
+      },
+      "bono_conservacion": {
+        "rangos": [
+          { "rango": 1, "prima_min": 900000, "pct": { "0.86": 0.16, "0.90": 0.18, "0.94": 0.20 } },
+          { "rango": 2, "prima_min": 770000, "pct": { "0.86": 0.14, "0.90": 0.16, "0.94": 0.18 } },
+          { "rango": 3, "prima_min": 610000, "pct": { "0.86": 0.12, "0.90": 0.14, "0.94": 0.16 } },
+          { "rango": 4, "prima_min": 490000, "pct": { "0.86": 0.10, "0.90": 0.12, "0.94": 0.14 } },
+          { "rango": 5, "prima_min": 370000, "pct": { "0.86": 0.08, "0.90": 0.10, "0.94": 0.12 } },
+          { "rango": 6, "prima_min": 270000, "pct": { "0.86": 0.065, "0.90": 0.08, "0.94": 0.10 } },
+          { "rango": 7, "prima_min": 200000, "pct": { "0.86": 0.055, "0.90": 0.065, "0.94": 0.08 } },
+          { "rango": 8, "prima_min": 140000, "pct": { "0.86": 0.05, "0.90": 0.055, "0.94": 0.065 } },
+          { "rango": 9, "prima_min": 110000, "pct": { "0.86": 0.045, "0.90": 0.05, "0.94": 0.055 } },
+          { "rango": 10, "prima_min": 100000, "pct": { "0.86": 0.035, "0.90": 0.045, "0.94": 0.05 } }
+        ]
+      }
+    }
+  }
+}

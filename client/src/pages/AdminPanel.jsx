@@ -46,6 +46,7 @@ const CrmPoliciesView     = lazy(() => import('./admin/views/crm/CrmPoliciesView
 const CrmGoalsView        = lazy(() => import('./admin/views/crm/CrmGoalsView'));
 const CrmRemindersView    = lazy(() => import('./admin/views/crm/CrmRemindersView'));
 const CrmCommissionsView  = lazy(() => import('./admin/views/crm/CrmCommissionsView'));
+const CrmIngresosView     = lazy(() => import('./admin/views/crm/CrmIngresosView'));
 const CrmQuoteView        = lazy(() => import('./admin/views/crm/CrmQuoteView'));
 const HealthView          = lazy(() => import('./admin/views/HealthView'));
 
@@ -111,7 +112,7 @@ export default function AdminPanel() {
     { id: 'crm-pipeline',     label: 'Pipeline',                      icon: KanbanSquare },
     { id: 'crm-clientes',     label: 'Clientes',                      icon: Contact    },
     { id: 'crm-polizas',      label: 'Pólizas',                       icon: FileText   },
-    { id: 'crm-comisiones',   label: 'Comisiones',                    icon: HandCoins  },
+    { id: 'crm-ingresos',     label: 'Ingresos',                      icon: HandCoins  },
     { id: 'crm-metas',        label: 'Metas & Forecast',              icon: Target     },
     { id: 'crm-recordatorios', label: 'Recordatorios',                icon: Bell       },
     { id: 'crm-cotizador',    label: 'Cotizador PPR',                 icon: BarChart3  },
@@ -336,6 +337,8 @@ export default function AdminPanel() {
               {!loading && activeView === 'crm-pipeline' && <CrmPipelineView isAgency={userSeesAllCrm} />}
               {!loading && activeView === 'crm-clientes' && <CrmClientsView isAgency={userSeesAllCrm} />}
               {!loading && activeView === 'crm-polizas' && <CrmPoliciesView isAgency={userSeesAllCrm} />}
+              {!loading && activeView === 'crm-ingresos' && <CrmIngresosView isAgency={userSeesAllCrm} />}
+              {/* Ruta directa conservada: la vista de comisiones vive también como pestaña de Ingresos */}
               {!loading && activeView === 'crm-comisiones' && <CrmCommissionsView isAgency={userSeesAllCrm} />}
               {!loading && activeView === 'crm-metas' && <CrmGoalsView isAgency={userSeesAllCrm} />}
               {!loading && activeView === 'crm-recordatorios' && <CrmRemindersView isAgency={userSeesAllCrm} />}

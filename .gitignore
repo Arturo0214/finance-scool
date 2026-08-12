@@ -25,3 +25,5 @@ VERIFICATION.md
 CLAUDE.md
 push-to-github.sh
 scripts/
+# Datos sensibles Prudential (corte Business Review) — solo local
+server/data/pru-*.json

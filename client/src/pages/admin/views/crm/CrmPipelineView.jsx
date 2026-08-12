@@ -177,7 +177,9 @@ export default function CrmPipelineView({ isAgency }) {
         </div>
       </div>
 
-      <RitmoReport clients={visible} titulo={isAgency && !agentFilter ? 'Promotoría' : (currentAgent?.nombre || 'Mi pipeline')} />
+      {/* Reporte de ritmo solo para administración: a los asesores los desmotiva
+          verse abajo del benchmark (acuerdo reunión 30-jul-2026) */}
+      {isAgency && <RitmoReport clients={visible} titulo={!agentFilter ? 'Promotoría' : (currentAgent?.nombre || 'Pipeline')} />}
 
       <div className="kb-board">
         {ETAPAS.map(etapa => {

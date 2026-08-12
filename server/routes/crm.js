@@ -1144,4 +1144,104 @@ router.get('/activity', async (req, res) => {
   res.json({ activity: data });
 });
 
+/* ═══════════════ TABLERO DE INGRESOS (PIR Prudential) ═══════════════
+   Data del Business Review migrada a crm_pru_* (server/migrate-ingresos.js).
+   Asesores solo ven su propia clave (crm_agents.clave ↔ crm_pru_agentes.clave). */
+
+const { computeIngresos, PIR_DEFAULT } = require('../utils/ingresos');
+
+let _pirCache = null;
+async function getPirTablas() {
+  if (_pirCache) return _pirCache;
+  const { data } = await getDB().from('crm_pir_tablas').select('tablas').eq('anio', new Date().getFullYear()).maybeSingle();
+  _pirCache = (data && data.tablas) || PIR_DEFAULT;
+  return _pirCache;
+}
+
+/* Resuelve la clave Prudential permitida: null = todas (agencia) */
+async function resolveClaveScope(req, res) {
+  if (isAgency(req.user.role)) return { restricted: false, clave: req.query.clave || null };
+  const agent = await getOwnAgent(req.user.id);
+  if (!agent || !agent.clave) {
+    res.status(403).json({ error: 'Tu usuario no tiene clave de agente Prudential asignada en el CRM' });
+    return null;
+  }
+  return { restricted: true, clave: agent.clave };
+}
+
+async function fetchIngresosData(clave) {
+  const db = getDB();
+  let qA = db.from('crm_pru_agentes').select('*').order('nombre');
+  let qP = db.from('crm_pru_primas').select('*');
+  let qZ = db.from('crm_pru_polizas_indice').select('*');
+  if (clave) { qA = qA.eq('clave', clave); qP = qP.eq('clave', clave); qZ = qZ.eq('clave', clave); }
+  const [{ data: agentes, error: e1 }, { data: primas, error: e2 }, { data: polizas, error: e3 }] =
+    await Promise.all([qA, qP, qZ]);
+  const err = e1 || e2 || e3;
+  if (err) throw new Error(err.message);
+  return { agentes: agentes || [], primas: primas || [], polizas: polizas || [] };
+}
+
+/* Resumen de todos los agentes (o el propio): índice + bonos del trimestre */
+router.get('/ingresos/overview', async (req, res) => {
+  try {
+    const scope = await resolveClaveScope(req, res);
+    if (!scope) return;
+    const [pir, { agentes, primas, polizas }] = await Promise.all([getPirTablas(), fetchIngresosData(scope.clave)]);
+    const rows = agentes.map(a => {
+      const r = computeIngresos({
+        agente: a,
+        primas: primas.filter(p => p.clave === a.clave),
+        polizas: polizas.filter(p => p.clave === a.clave),
+        pir,
+      });
+      return {
+        clave: a.clave, nombre: a.nombre, cuaderno: a.cuaderno, estatus: a.estatus,
+        mes_agente: r.agente.mes_agente, es_nuevo: r.agente.es_nuevo,
+        indice: r.indice, primas: r.primas,
+        bonos: { total_trimestre: r.bonos.total_trimestre, trimestral: r.bonos.trimestral, conservacion: r.bonos.conservacion, total_mensuales: r.bonos.total_mensuales },
+        accionables: { pendientes: r.accionables.pendientesPago.length, rehabilitables: r.accionables.rehabilitables.length },
+        periodo: r.periodo,
+      };
+    });
+    res.json({ agentes: rows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* Detalle completo de un agente */
+router.get('/ingresos/agent/:clave', async (req, res) => {
+  try {
+    const scope = await resolveClaveScope(req, res);
+    if (!scope) return;
+    const clave = String(req.params.clave).toUpperCase();
+    if (scope.restricted && scope.clave !== clave) return res.status(403).json({ error: 'Solo puedes consultar tu propia clave' });
+    const [pir, { agentes, primas, polizas }] = await Promise.all([getPirTablas(), fetchIngresosData(clave)]);
+    if (!agentes.length) return res.status(404).json({ error: `No hay data Prudential para la clave ${clave}` });
+    const detalle = computeIngresos({ agente: agentes[0], primas, polizas, pir });
+    const { data: hist } = await getDB().from('crm_pru_indices_hist').select('periodo,base_a_conservar,base_conservada,indice').eq('clave', clave).order('periodo');
+    res.json({ ...detalle, historico: hist || [] });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* Simulador: ¿qué pasa si vendo $X y/o cobro/rehabilito estas pólizas? */
+router.post('/ingresos/simulate', async (req, res) => {
+  try {
+    const scope = await resolveClaveScope(req, res);
+    if (!scope) return;
+    const clave = String(req.body.clave || scope.clave || '').toUpperCase();
+    if (!clave) return res.status(400).json({ error: 'clave requerida' });
+    if (scope.restricted && scope.clave !== clave) return res.status(403).json({ error: 'Solo puedes simular tu propia clave' });
+    const [pir, { agentes, primas, polizas }] = await Promise.all([getPirTablas(), fetchIngresosData(clave)]);
+    if (!agentes.length) return res.status(404).json({ error: `No hay data Prudential para la clave ${clave}` });
+    const base = computeIngresos({ agente: agentes[0], primas, polizas, pir });
+    const sim = computeIngresos({ agente: agentes[0], primas, polizas, pir }, {
+      ventaAdicional: Number(req.body.ventaAdicional) || 0,
+      cobrarPolizas: req.body.cobrarPolizas || [],
+      rehabilitarPolizas: req.body.rehabilitarPolizas || [],
+    });
+    res.json({ base, simulado: sim, delta: { bonos: round2sim(sim.bonos.total_trimestre - base.bonos.total_trimestre), indice: sim.indice.operativo - base.indice.operativo } });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+const round2sim = (n) => Math.round(n * 100) / 100;
+
 module.exports = router;
