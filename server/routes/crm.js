@@ -1148,7 +1148,7 @@ router.get('/activity', async (req, res) => {
    Data del Business Review migrada a crm_pru_* (server/migrate-ingresos.js).
    Asesores solo ven su propia clave (crm_agents.clave ↔ crm_pru_agentes.clave). */
 
-const { computeIngresos, PIR_DEFAULT } = require('../utils/ingresos');
+const { computeIngresos, MESES_FRECUENCIA, PIR_DEFAULT } = require('../utils/ingresos');
 
 let _pirCache = null;
 async function getPirTablas() {
@@ -1243,5 +1243,32 @@ router.post('/ingresos/simulate', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 const round2sim = (n) => Math.round(n * 100) / 100;
+
+/* Registrar un cobro o rehabilitación real (solo agencia): avanza pagado_hasta
+   un periodo según la frecuencia de pago y el índice "hoy" lo refleja al
+   instante. No toca el estatus del corte — ese es el oficial de Prudential. */
+router.patch('/ingresos/poliza/:id', async (req, res) => {
+  try {
+    if (!isAgency(req.user.role)) return res.status(403).json({ error: 'Solo la agencia registra cobros; los asesores pueden simularlos' });
+    const accion = req.body.accion;
+    if (!['pago', 'rehabilitar'].includes(accion)) return res.status(400).json({ error: "accion debe ser 'pago' o 'rehabilitar'" });
+
+    const db = getDB();
+    const { data: pol, error: e1 } = await db.from('crm_pru_polizas_indice').select('*').eq('id', req.params.id).maybeSingle();
+    if (e1) return res.status(500).json({ error: e1.message });
+    if (!pol) return res.status(404).json({ error: 'Póliza no encontrada' });
+
+    const meses = MESES_FRECUENCIA[String(pol.frecuencia_pago || '').toUpperCase()] || 12;
+    const desde = pol.pagado_hasta ? new Date(pol.pagado_hasta) : new Date();
+    desde.setMonth(desde.getMonth() + meses);
+    const patch = { pagado_hasta: desde.toISOString().slice(0, 10), updated_at: new Date().toISOString() };
+    if (accion === 'rehabilitar') patch.estatus_calculo = 'Vigente';
+
+    const { data, error: e2 } = await db.from('crm_pru_polizas_indice').update(patch).eq('id', pol.id).select();
+    if (e2) return res.status(500).json({ error: e2.message });
+    logActivity(req, accion === 'pago' ? 'cobro' : 'rehabilitar', 'poliza-indice', pol.id, `${pol.clave} · ${pol.poliza} → pagada hasta ${patch.pagado_hasta}`);
+    res.json({ poliza: data[0] });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
 module.exports = router;

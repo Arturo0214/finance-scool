@@ -107,6 +107,19 @@ export default function CrmIngresosView({ isAgency }) {
     finally { setSimBusy(false); }
   };
 
+  /* Cobro/rehabilitación real (solo agencia): mueve el índice "hoy" al instante */
+  const registrar = async (p, accion) => {
+    const txt = accion === 'pago'
+      ? `¿Registrar el cobro de la póliza ${p.poliza}? Su "pagada hasta" avanza un periodo (${p.frecuencia_pago || 'ANUAL'}).`
+      : `¿Marcar la póliza ${p.poliza} como rehabilitada? Vuelve a Vigente y su "pagada hasta" avanza un periodo.`;
+    if (!window.confirm(txt)) return;
+    try {
+      await api.crmIngresosPoliza(p.id, accion);
+      const d = await api.crmIngresosAgent(selClave);
+      setDetail(d);
+    } catch (e) { alert(e.message); }
+  };
+
   if (loading) return <><style>{getCrmCSS()}</style><div className="loading-wrap"><div className="spinner" /><p>Cargando ingresos...</p></div></>;
 
   const b = detail?.bonos;
@@ -150,16 +163,17 @@ export default function CrmIngresosView({ isAgency }) {
         <div className="tbl-wrap desktop-only-table" style={{ marginBottom: 20 }}>
           <table>
             <thead>
-              <tr><th>Agente</th><th>Cuaderno</th><th>Índice actual</th><th>+ Pend. de pago</th><th>Prima ubicación Q</th><th>Bonos del Q</th><th>Accionables</th></tr>
+              <tr><th>Agente</th><th>Cuaderno</th><th>Índice al corte</th><th>+ Pend. de pago</th><th>Índice hoy</th><th>Prima ubicación Q</th><th>Bonos del Q</th><th>Accionables</th></tr>
             </thead>
             <tbody>
-              {overview.length === 0 && <tr><td colSpan={7} className="empty">Sin data Prudential migrada</td></tr>}
+              {overview.length === 0 && <tr><td colSpan={8} className="empty">Sin data Prudential migrada</td></tr>}
               {overview.map(a => (
                 <tr key={a.clave} className="crm-rank-row" onClick={() => setSelClave(a.clave)}>
                   <td><b>{a.nombre}</b><br /><span style={{ fontSize: 11, color: C.textMuted }}>{a.clave} · mes {a.mes_agente}</span></td>
                   <td><span className="badge" style={{ background: C.blueBg, color: C.primary }}>{a.cuaderno || '—'}</span>{a.es_nuevo && <span className="badge" style={{ background: C.goldBg, color: '#8A6A34', marginLeft: 4 }}>Nuevo</span>}</td>
                   <td><b style={{ color: indiceColor(a.indice.actual) }}>{pct(a.indice.actual)}</b></td>
                   <td style={{ color: indiceColor(a.indice.conPendiente) }}>{pct(a.indice.conPendiente)}</td>
+                  <td>{a.indice.hoy ? <b style={{ color: indiceColor(a.indice.hoy.actual) }}>{pct(a.indice.hoy.actual)}</b> : '—'}</td>
                   <td style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(a.primas.ubicacionQ)}</td>
                   <td><b style={{ color: a.bonos.total_trimestre > 0 ? C.green : C.textLight }}>{fmtMoneyFull(a.bonos.total_trimestre)}</b></td>
                   <td style={{ fontSize: 12 }}>{a.accionables.pendientes} por cobrar · {a.accionables.rehabilitables} rehabilitables</td>
@@ -208,7 +222,8 @@ export default function CrmIngresosView({ isAgency }) {
             <p className="sub">Base a conservar {fmtMoneyFull(idx.baseAConservar)} · conservada {fmtMoneyFull(idx.baseConservada)} · pendiente de pago {fmtMoneyFull(idx.basePendiente)}</p>
             <IndiceBar actual={idx.actual} operativo={idx.operativo} />
             <div className="crm-kpi-detail">
-              <BonoCard icon={ShieldCheck} label="Índice actual" value={<span style={{ color: indiceColor(idx.actual) }}>{pct(idx.actual)}</span>} sub="solo pólizas ya conservadas" />
+              <BonoCard icon={ShieldCheck} label="Índice al corte" value={<span style={{ color: indiceColor(idx.actual) }}>{pct(idx.actual)}</span>} sub="oficial del último corte Prudential" />
+              {idx.hoy && <BonoCard icon={RefreshCw} label="Índice hoy (en vivo)" value={<span style={{ color: indiceColor(idx.hoy.actual) }}>{pct(idx.hoy.actual)}</span>} sub={`al ${fmtDate(idx.hoy.fecha)} · se recalcula solo con cada pago que vence o se cobra`} />}
               <BonoCard icon={TrendingUp} label="Con pendientes de pago" value={<span style={{ color: indiceColor(idx.conPendiente) }}>{pct(idx.conPendiente)}</span>} sub="si se cobra lo pendiente del mes" />
               <BonoCard icon={Target} label="Banda de bono" value={idx.esNuevo ? 'Banda 90%' : (UMBRAL_LABEL[idx.umbral] || 'Sin bono')} sub={idx.esNuevo ? 'por agente nuevo' : 'mínimo 86% para cobrar bonos'} color={idx.umbral ? C.green : C.red} />
               <BonoCard icon={HandCoins} label="Bonos del trimestre" value={<span style={{ color: C.green }}>{fmtMoneyFull(b.total_trimestre)}</span>} sub={`mensuales ${fmtMoney(b.total_mensuales)} + ajuste ${fmtMoney(b.trimestral.ajuste)} + conservación ${fmtMoney(b.conservacion.monto)}`} />
@@ -292,7 +307,10 @@ export default function CrmIngresosView({ isAgency }) {
               {detail.accionables.pendientesPago.slice(0, 8).map(p => (
                 <div key={p.id} className="crm-mc-row" style={{ borderBottom: '1px solid rgba(11,27,51,.06)', padding: '7px 0' }}>
                   <span>Póliza <b>{p.poliza}</b> <span style={{ fontSize: 11, color: C.textMuted }}>{p.plan_id} · pagada hasta {fmtDate(p.pagado_hasta)}</span></span>
-                  <b>{fmtMoney(p.monto)} <span style={{ color: C.green, fontSize: 11 }}>+{pct(p.impacto_indice, 1)}</span></b>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <b>{fmtMoney(p.monto)} <span style={{ color: C.green, fontSize: 11 }}>+{pct(p.impacto_indice, 1)}</span></b>
+                    {isAgency && <button className="btn-secondary" style={{ padding: '3px 9px', fontSize: 11.5 }} onClick={() => registrar(p, 'pago')}>Registrar cobro</button>}
+                  </span>
                 </div>
               ))}
             </div>
@@ -303,7 +321,10 @@ export default function CrmIngresosView({ isAgency }) {
               {detail.accionables.rehabilitables.slice(0, 8).map(p => (
                 <div key={p.id} className="crm-mc-row" style={{ borderBottom: '1px solid rgba(11,27,51,.06)', padding: '7px 0' }}>
                   <span>Póliza <b>{p.poliza}</b> <span style={{ fontSize: 11, color: C.textMuted }}>{p.plan_id} · cancelada {fmtDate(p.fecha_ultima_cancelacion)}</span></span>
-                  <b>{fmtMoney(p.monto)} <span style={{ color: C.green, fontSize: 11 }}>+{pct(p.impacto_indice, 1)}</span></b>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <b>{fmtMoney(p.monto)} <span style={{ color: C.green, fontSize: 11 }}>+{pct(p.impacto_indice, 1)}</span></b>
+                    {isAgency && <button className="btn-secondary" style={{ padding: '3px 9px', fontSize: 11.5 }} onClick={() => registrar(p, 'rehabilitar')}>Rehabilitada</button>}
+                  </span>
                 </div>
               ))}
             </div>

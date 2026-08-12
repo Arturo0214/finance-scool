@@ -184,6 +184,7 @@ export const api = {
   crmIngresosOverview: () => request('/crm/ingresos/overview'),
   crmIngresosAgent: (clave) => request(`/crm/ingresos/agent/${encodeURIComponent(clave)}`),
   crmIngresosSimulate: (data) => request('/crm/ingresos/simulate', { method: 'POST', body: JSON.stringify(data) }),
+  crmIngresosPoliza: (id, accion) => request(`/crm/ingresos/poliza/${id}`, { method: 'PATCH', body: JSON.stringify({ accion }) }),
   crmPortalData: (t) => request(`/crm/portal?t=${encodeURIComponent(t)}`),
 
   crmUploadFile: async (file, { client_id, policy_id, categoria } = {}) => {

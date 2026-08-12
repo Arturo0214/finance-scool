@@ -77,6 +77,20 @@ function computeIndice(polizas) {
   };
 }
 
+/* Estatus de conservación derivado a una fecha. Regla del Business Review
+   (verificada contra las 782 pólizas del corte T2-2026, 0 excepciones):
+   Cancelada → NO CONSERVADA; Vigente pagada más allá de la fecha → CONSERVADA;
+   Vigente con pago vencido → PENDIENTE DE PAGO. Evaluar con hoy da el índice
+   en vivo entre cortes: cambia solo al vencer pagos o al registrarse cobros. */
+function derivarEstatus(p, fecha = new Date()) {
+  if (String(p.estatus_calculo || '').toUpperCase() !== 'VIGENTE') return 'NO CONSERVADA';
+  if (p.pagado_hasta && new Date(p.pagado_hasta) > fecha) return 'CONSERVADA';
+  return 'PENDIENTE DE PAGO';
+}
+
+/* Meses que cubre un pago según la frecuencia (para avanzar pagado_hasta) */
+const MESES_FRECUENCIA = { ANUAL: 12, SEMESTRAL: 6, TRIMESTRAL: 3, MENSUAL: 1 };
+
 /**
  * Cálculo completo de ingresos PIR de un agente.
  * overrides (simulador): { ventaAdicional, cobrarPolizas: [ids], rehabilitarPolizas: [ids] }
@@ -91,6 +105,17 @@ function computeIngresos({ agente, primas, polizas, pir }, overrides = {}) {
 
   /* Índice (con simulación de cobros/rehabilitaciones) */
   const indiceInfo = computeIndice(polizas);
+
+  /* Índice "hoy": mismo cálculo pero con el estatus derivado a la fecha actual
+     en lugar del congelado del corte. La base conservada de una póliza al
+     corriente es su base a conservar completa. */
+  const hoyRef = new Date();
+  const polizasHoy = polizas.map(p => ({
+    ...p,
+    estatus_conservacion: derivarEstatus(p, hoyRef),
+    base_conservada_mxn: p.base_a_conservar_mxn,
+  }));
+  const indiceHoyInfo = computeIndice(polizasHoy);
   let extraConservada = 0;
   for (const p of polizas) {
     const sel = cobrar.has(p.id) || rehabilitar.has(p.id);
@@ -144,14 +169,16 @@ function computeIngresos({ agente, primas, polizas, pir }, overrides = {}) {
   const seisMesesAtras = new Date(hoy); seisMesesAtras.setMonth(hoy.getMonth() - 6);
   const impacto = (monto) => indiceInfo.baseAConservar > 0 ? monto / indiceInfo.baseAConservar : 0;
 
-  const pendientesPago = polizas
+  /* Accionables sobre el estatus derivado a hoy, no el del corte: una póliza
+     cuyo pago venció después del corte también aparece por cobrar */
+  const pendientesPago = polizasHoy
     .filter(p => p.estatus_conservacion === 'PENDIENTE DE PAGO')
-    .map(p => ({ id: p.id, poliza: p.poliza, plan_id: p.plan_id, forma_pago: p.forma_pago, pagado_hasta: p.pagado_hasta, monto: round2(p.base_a_conservar_mxn), impacto_indice: impacto(Number(p.base_a_conservar_mxn) || 0) }))
+    .map(p => ({ id: p.id, poliza: p.poliza, plan_id: p.plan_id, forma_pago: p.forma_pago, frecuencia_pago: p.frecuencia_pago, pagado_hasta: p.pagado_hasta, monto: round2(p.base_a_conservar_mxn), impacto_indice: impacto(Number(p.base_a_conservar_mxn) || 0) }))
     .sort((a, b) => b.monto - a.monto);
 
-  const rehabilitables = polizas
+  const rehabilitables = polizasHoy
     .filter(p => p.estatus_conservacion === 'NO CONSERVADA' && p.fecha_ultima_cancelacion && new Date(p.fecha_ultima_cancelacion) >= seisMesesAtras)
-    .map(p => ({ id: p.id, poliza: p.poliza, plan_id: p.plan_id, forma_pago: p.forma_pago, fecha_ultima_cancelacion: p.fecha_ultima_cancelacion, monto: round2(p.base_a_conservar_mxn), impacto_indice: impacto(Number(p.base_a_conservar_mxn) || 0) }))
+    .map(p => ({ id: p.id, poliza: p.poliza, plan_id: p.plan_id, forma_pago: p.forma_pago, frecuencia_pago: p.frecuencia_pago, fecha_ultima_cancelacion: p.fecha_ultima_cancelacion, monto: round2(p.base_a_conservar_mxn), impacto_indice: impacto(Number(p.base_a_conservar_mxn) || 0) }))
     .sort((a, b) => b.monto - a.monto);
 
   return {
@@ -170,6 +197,13 @@ function computeIngresos({ agente, primas, polizas, pir }, overrides = {}) {
       operativo: round2(indiceOperativo * 10000) / 10000,
       umbral, esNuevo,
       minimoBono: 0.86,
+      hoy: {
+        fecha: new Date(hoyRef.getTime() - hoyRef.getTimezoneOffset() * 60000).toISOString().slice(0, 10),
+        actual: round2(indiceHoyInfo.actual * 10000) / 10000,
+        conPendiente: round2(indiceHoyInfo.conPendiente * 10000) / 10000,
+        baseConservada: indiceHoyInfo.baseConservada,
+        basePendiente: indiceHoyInfo.basePendiente,
+      },
     },
     primas: { ubicacionQ, pagadaInicialQ, renovacionQ },
     bonos: {
@@ -187,4 +221,4 @@ function computeIngresos({ agente, primas, polizas, pir }, overrides = {}) {
   };
 }
 
-module.exports = { computeIngresos, computeIndice, umbralDe, cuadernoKey, PIR_DEFAULT };
+module.exports = { computeIngresos, computeIndice, derivarEstatus, umbralDe, cuadernoKey, MESES_FRECUENCIA, PIR_DEFAULT };
