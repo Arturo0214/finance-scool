@@ -257,7 +257,7 @@ router.get('/clients', async (req, res) => {
   const scope = await resolveScope(req, res);
   if (!scope) return;
   const db = getDB();
-  let q = db.from('crm_clients').select('*, crm_agents(nombre, clave)').order('created_at', { ascending: false });
+  let q = db.from('crm_clients').select('*, crm_agents(nombre, clave)').order('created_at', { ascending: false }).range(0, 4999);
   if (scope.restricted) q = q.eq('agent_id', scope.agentId);
   else if (req.query.agent_id) q = q.eq('agent_id', req.query.agent_id);
   if (req.query.etapa) q = q.eq('etapa', req.query.etapa);
@@ -347,7 +347,7 @@ router.get('/policies', async (req, res) => {
   const scope = await resolveScope(req, res);
   if (!scope) return;
   const db = getDB();
-  let q = db.from('crm_policies').select('*, crm_clients(nombre), crm_agents(nombre, clave)').order('created_at', { ascending: false });
+  let q = db.from('crm_policies').select('*, crm_clients(nombre), crm_agents(nombre, clave)').order('created_at', { ascending: false }).range(0, 4999);
   if (scope.restricted) q = q.eq('agent_id', scope.agentId);
   else if (req.query.agent_id) q = q.eq('agent_id', req.query.agent_id);
   if (req.query.estatus) q = q.eq('estatus', req.query.estatus);
