@@ -181,6 +181,13 @@ export const api = {
     return data;
   },
   crmReconcileConfirm: (items) => request('/crm/commissions/reconcile-confirm', { method: 'POST', body: JSON.stringify({ items }) }),
+  // ── Consultores (carteras PRU / Insignia Life) y productos ──
+  crmConsultoresOverview: () => request('/crm/consultores/overview'),
+  crmSetEditPermission: (agentId, canEdit) => request(`/crm/consultores/${agentId}/edit-permission`, { method: 'PUT', body: JSON.stringify({ crm_can_edit: canEdit }) }),
+  crmGetProducts: (params = {}) => request(`/crm/products?${new URLSearchParams(params)}`),
+  crmCreateProduct: (data) => request('/crm/products', { method: 'POST', body: JSON.stringify(data) }),
+  crmUpdateProduct: (id, data) => request(`/crm/products/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  crmDeleteProduct: (id) => request(`/crm/products/${id}`, { method: 'DELETE' }),
   crmIngresosOverview: () => request('/crm/ingresos/overview'),
   crmIngresosAgent: (clave) => request(`/crm/ingresos/agent/${encodeURIComponent(clave)}`),
   crmIngresosSimulate: (data) => request('/crm/ingresos/simulate', { method: 'POST', body: JSON.stringify(data) }),

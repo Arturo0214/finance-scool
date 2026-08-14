@@ -124,11 +124,19 @@ async function resolveScope(req, res) {
   return { restricted: true, agentId: agent.id, agent };
 }
 
+/* ¿Puede este usuario editar datos (clientes/pólizas)? La administración siempre;
+   los demás solo si el admin les otorgó el permiso users.crm_can_edit. */
+async function canEditData(req) {
+  if (isAgency(req.user.role)) return true;
+  const { data } = await getDB().from('users').select('crm_can_edit').eq('id', req.user.id).maybeSingle();
+  return !!(data && data.crm_can_edit);
+}
+
 const monthOf = (dateStr) => (dateStr ? parseInt(String(dateStr).slice(5, 7), 10) : null);
 const yearOf = (dateStr) => (dateStr ? parseInt(String(dateStr).slice(0, 4), 10) : null);
 
 /* ── KPIs de un conjunto de pólizas para un año ── */
-function computeKpis(policies, goals, anio) {
+function computeKpis(policies, goals, anio, pruPrimas = []) {
   const months = Array.from({ length: 12 }, (_, i) => ({
     mes: i + 1,
     primaNueva: 0,        // pagada, tipo nueva
@@ -164,6 +172,18 @@ function computeKpis(policies, goals, anio) {
     }
   }
 
+  /* Cortes oficiales Prudential (crm_pru_primas): en los meses con corte, la
+     prima pagada inicial/renovación reportada por Prudential ES la venta real
+     del mes — sustituye lo derivado de pólizas (que solo trae el índice de
+     conservación y deja las ventas nuevas en 0). */
+  for (const pr of pruPrimas) {
+    if (Number(pr.anio) !== anio) continue;
+    const m = months[Number(pr.mes) - 1];
+    if (!m) continue;
+    m.primaNueva = Number(pr.prima_pagada_inicial) || 0;
+    m.primaRenovacion = Number(pr.prima_pagada_renovacion) || 0;
+  }
+
   for (const g of goals) {
     if (g.anio === anio && g.mes >= 1 && g.mes <= 12) months[g.mes - 1].meta = Number(g.meta_prima) || 0;
   }
@@ -191,6 +211,37 @@ function computeKpis(policies, goals, anio) {
       basePendiente,
       indiceActual,
       indiceProyectado,
+    },
+  };
+}
+
+/* Suma KPIs de varios agentes mes a mes (para los totales de la promotoría) */
+function aggregateKpis(kpisList) {
+  const months = Array.from({ length: 12 }, (_, i) => ({ mes: i + 1, primaNueva: 0, primaRenovacion: 0, meta: 0, pipeline: 0 }));
+  const conservacion = { baseConservar: 0, baseConservada: 0, basePendiente: 0 };
+  for (const k of kpisList) {
+    k.months.forEach((m, i) => {
+      months[i].primaNueva += m.primaNueva; months[i].primaRenovacion += m.primaRenovacion;
+      months[i].meta += m.meta; months[i].pipeline += m.pipeline;
+    });
+    conservacion.baseConservar += k.conservacion.baseConservar;
+    conservacion.baseConservada += k.conservacion.baseConservada;
+    conservacion.basePendiente += k.conservacion.basePendiente;
+  }
+  const totalNueva = months.reduce((s, m) => s + m.primaNueva, 0);
+  const totalRenovacion = months.reduce((s, m) => s + m.primaRenovacion, 0);
+  const totalMeta = months.reduce((s, m) => s + m.meta, 0);
+  const totalPipeline = months.reduce((s, m) => s + m.pipeline, 0);
+  return {
+    months,
+    totales: {
+      primaNueva: totalNueva, primaRenovacion: totalRenovacion, primaTotal: totalNueva + totalRenovacion,
+      meta: totalMeta, pipeline: totalPipeline, cumplimiento: totalMeta > 0 ? (totalNueva / totalMeta) : null,
+    },
+    conservacion: {
+      ...conservacion,
+      indiceActual: conservacion.baseConservar > 0 ? conservacion.baseConservada / conservacion.baseConservar : 1,
+      indiceProyectado: conservacion.baseConservar > 0 ? (conservacion.baseConservada + conservacion.basePendiente) / conservacion.baseConservar : 1,
     },
   };
 }
@@ -240,7 +291,8 @@ router.post('/agents', async (req, res) => {
 
 router.put('/agents/:id', async (req, res) => {
   if (!isAgency(req.user.role)) return res.status(403).json({ error: 'Solo administración puede editar asesores' });
-  const allowed = ['clave', 'nombre', 'cuaderno', 'fecha_inicio_calculos', 'estatus', 'telefono', 'email', 'user_id', 'fireflies_api_key'];
+  const allowed = ['clave', 'nombre', 'cuaderno', 'fecha_inicio_calculos', 'estatus', 'telefono', 'email', 'user_id', 'fireflies_api_key',
+    'alta_pru', 'alta_il', 'activo_fsc'];
   const patch = {};
   for (const k of allowed) if (k in req.body) patch[k] = req.body[k];
   patch.updated_at = new Date().toISOString();
@@ -301,6 +353,7 @@ router.post('/clients', async (req, res) => {
     agent_id, nombre: b.nombre, email: b.email, telefono: b.telefono, rfc: b.rfc,
     fecha_nacimiento: b.fecha_nacimiento || null, ocupacion: b.ocupacion, empresa: b.empresa,
     direccion: b.direccion, etapa: b.etapa || 'prospecto', origen: b.origen || 'referido', notas: b.notas,
+    aseguradora: b.aseguradora || 'PRU',
     ingreso_mensual: b.ingreso_mensual || null, gasto_mensual: b.gasto_mensual || null,
     saldo_afore: b.saldo_afore || null, retiro_deseado: b.retiro_deseado || null, edad_retiro_deseada: b.edad_retiro_deseada || null,
   }, 'crm_clients')]).select();
@@ -316,8 +369,9 @@ router.put('/clients/:id', async (req, res) => {
   const { data: existing } = await db.from('crm_clients').select('agent_id').eq('id', req.params.id).maybeSingle();
   if (!existing) return res.status(404).json({ error: 'Cliente no encontrado' });
   if (scope.restricted && existing.agent_id !== scope.agentId) return res.status(403).json({ error: 'Sin acceso a este cliente' });
+  if (!(await canEditData(req))) return res.status(403).json({ error: 'No tienes permiso de edición. Pídeselo a tu administrador.' });
   const allowed = ['nombre', 'email', 'telefono', 'rfc', 'fecha_nacimiento', 'ocupacion', 'empresa', 'direccion', 'etapa', 'origen', 'notas', 'agent_id',
-    'ingreso_mensual', 'gasto_mensual', 'saldo_afore', 'retiro_deseado', 'edad_retiro_deseada'];
+    'ingreso_mensual', 'gasto_mensual', 'saldo_afore', 'retiro_deseado', 'edad_retiro_deseada', 'aseguradora'];
   const patch = {};
   for (const k of allowed) if (k in req.body) patch[k] = req.body[k] === '' ? null : req.body[k];
   if (scope.restricted) delete patch.agent_id;
@@ -335,6 +389,7 @@ router.delete('/clients/:id', async (req, res) => {
   const { data: existing } = await db.from('crm_clients').select('agent_id').eq('id', req.params.id).maybeSingle();
   if (!existing) return res.status(404).json({ error: 'Cliente no encontrado' });
   if (scope.restricted && existing.agent_id !== scope.agentId) return res.status(403).json({ error: 'Sin acceso a este cliente' });
+  if (!(await canEditData(req))) return res.status(403).json({ error: 'No tienes permiso de edición. Pídeselo a tu administrador.' });
   const { error } = await db.from('crm_clients').delete().eq('id', req.params.id);
   if (error) return res.status(500).json({ error: error.message });
   logActivity(req, 'eliminar', 'cliente', req.params.id, null);
@@ -372,6 +427,7 @@ router.post('/policies', async (req, res) => {
     suma_asegurada: b.suma_asegurada || null, fecha_emision: b.fecha_emision || null,
     fecha_pago: b.fecha_pago || null, fecha_renovacion: b.fecha_renovacion || null,
     estatus: b.estatus || 'en_tramite', moneda: b.moneda || 'MXN', notas: b.notas,
+    aseguradora: b.aseguradora || 'PRU',
     comision_pct: b.comision_pct || null, comision_monto: b.comision_monto || null,
     comision_estatus: b.comision_estatus || 'pendiente',
   }, 'crm_policies')]).select();
@@ -387,10 +443,17 @@ router.put('/policies/:id', async (req, res) => {
   const { data: existing } = await db.from('crm_policies').select('agent_id').eq('id', req.params.id).maybeSingle();
   if (!existing) return res.status(404).json({ error: 'Póliza no encontrada' });
   if (scope.restricted && existing.agent_id !== scope.agentId) return res.status(403).json({ error: 'Sin acceso a esta póliza' });
+  if (!(await canEditData(req))) return res.status(403).json({ error: 'No tienes permiso de edición. Pídeselo a tu administrador.' });
   const allowed = ['poliza', 'plan', 'tipo', 'prima', 'forma_pago', 'suma_asegurada', 'fecha_emision', 'fecha_pago', 'fecha_renovacion', 'estatus', 'moneda', 'notas',
-    'comision_pct', 'comision_monto', 'comision_estatus', 'comision_fecha', 'comision_notas'];
+    'comision_pct', 'comision_monto', 'comision_estatus', 'comision_fecha', 'comision_notas', 'aseguradora', 'client_id'];
   const patch = {};
   for (const k of allowed) if (k in req.body) patch[k] = req.body[k] === '' ? null : req.body[k];
+  if (patch.client_id) {
+    const { data: nuevoCliente } = await db.from('crm_clients').select('agent_id').eq('id', patch.client_id).maybeSingle();
+    if (!nuevoCliente) return res.status(404).json({ error: 'El cliente destino no existe' });
+    if (scope.restricted && nuevoCliente.agent_id !== scope.agentId) return res.status(403).json({ error: 'Sin acceso al cliente destino' });
+    patch.agent_id = nuevoCliente.agent_id;
+  }
   patch.updated_at = new Date().toISOString();
   const { data, error } = await db.from('crm_policies').update(encryptFields(patch, 'crm_policies')).eq('id', req.params.id).select();
   if (error) return res.status(500).json({ error: error.message });
@@ -405,6 +468,7 @@ router.delete('/policies/:id', async (req, res) => {
   const { data: existing } = await db.from('crm_policies').select('agent_id').eq('id', req.params.id).maybeSingle();
   if (!existing) return res.status(404).json({ error: 'Póliza no encontrada' });
   if (scope.restricted && existing.agent_id !== scope.agentId) return res.status(403).json({ error: 'Sin acceso a esta póliza' });
+  if (!(await canEditData(req))) return res.status(403).json({ error: 'No tienes permiso de edición. Pídeselo a tu administrador.' });
   const { error } = await db.from('crm_policies').delete().eq('id', req.params.id);
   if (error) return res.status(500).json({ error: error.message });
   logActivity(req, 'eliminar', 'poliza', req.params.id, null);
@@ -697,19 +761,21 @@ async function loadAgentData(db, anio, agentIds = null) {
   const ids = (agents || []).map(a => a.id);
   if (!ids.length) return { agents: [], policies: [], goals: [], clients: [] };
 
-  const [{ data: policies }, { data: goals }, { data: clients }] = await Promise.all([
-    db.from('crm_policies').select('*').in('agent_id', ids),
+  const claves = (agents || []).map(a => a.clave).filter(Boolean);
+  const [{ data: policies }, { data: goals }, { data: clients }, { data: pruPrimas }] = await Promise.all([
+    db.from('crm_policies').select('*').in('agent_id', ids).range(0, 9999),
     db.from('crm_goals').select('*').eq('anio', anio).in('agent_id', ids),
     db.from('crm_clients').select('id, agent_id, etapa').in('agent_id', ids),
+    claves.length ? db.from('crm_pru_primas').select('*').eq('anio', anio).in('clave', claves) : Promise.resolve({ data: [] }),
   ]);
-  return { agents: agents || [], policies: policies || [], goals: goals || [], clients: clients || [] };
+  return { agents: agents || [], policies: policies || [], goals: goals || [], clients: clients || [], pruPrimas: pruPrimas || [] };
 }
 
-function buildAgentSummary(agent, policies, goals, clients, anio) {
+function buildAgentSummary(agent, policies, goals, clients, anio, pruPrimas = []) {
   const own = policies.filter(p => p.agent_id === agent.id);
   const ownGoals = goals.filter(g => g.agent_id === agent.id);
   const ownClients = clients.filter(c => c.agent_id === agent.id);
-  const kpis = computeKpis(own, ownGoals, anio);
+  const kpis = computeKpis(own, ownGoals, anio, pruPrimas.filter(pr => pr.clave && pr.clave === agent.clave));
   const forecast = computeForecast(kpis, anio);
 
   // Bonos: trimestre actual
@@ -745,12 +811,12 @@ router.get('/dashboard', async (req, res) => {
   if (!scope) return;
   const anio = parseInt(req.query.anio) || new Date().getFullYear();
   const db = getDB();
-  const { agents, policies, goals, clients } = await loadAgentData(db, anio, scope.restricted ? [scope.agentId] : null);
+  const { agents, policies, goals, clients, pruPrimas } = await loadAgentData(db, anio, scope.restricted ? [scope.agentId] : null);
 
-  const porAgente = agents.map(a => buildAgentSummary(a, policies, goals, clients, anio));
+  const porAgente = agents.map(a => buildAgentSummary(a, policies, goals, clients, anio, pruPrimas));
 
-  // Totales de la promotoría
-  const globalKpis = computeKpis(policies, goals, anio);
+  // Totales de la promotoría: suma de los meses por agente (respeta los cortes Prudential)
+  const globalKpis = aggregateKpis(porAgente.map(a => a.kpis));
   const globalForecast = computeForecast(globalKpis, anio);
 
   // Recordatorios próximos (7 días)
@@ -771,17 +837,154 @@ router.get('/agents/:id/summary', async (req, res) => {
   if (scope.restricted && agentId !== scope.agentId) return res.status(403).json({ error: 'Sin acceso a este asesor' });
   const anio = parseInt(req.query.anio) || new Date().getFullYear();
   const db = getDB();
-  const { agents, policies, goals, clients } = await loadAgentData(db, anio, [agentId]);
+  const { agents, policies, goals, clients, pruPrimas } = await loadAgentData(db, anio, [agentId]);
   if (!agents.length) return res.status(404).json({ error: 'Asesor no encontrado' });
-  res.json({ anio, ...buildAgentSummary(agents[0], policies, goals, clients, anio) });
+  res.json({ anio, ...buildAgentSummary(agents[0], policies, goals, clients, anio, pruPrimas) });
+});
+
+/* ═══════════════ CONSULTORES (tablero PRU / Insignia Life) ═══════════════
+   Vista de Flavio: cada consultor con sus dos carteras (Prudential migrada e
+   Insignia Life), pólizas vigentes por aseguradora, actividad, última venta y
+   alta real en la promotoría. */
+
+router.get('/consultores/overview', async (req, res) => {
+  const scope = await resolveScope(req, res);
+  if (!scope) return;
+  const db = getDB();
+  let agQ = db.from('crm_agents').select('*').order('nombre');
+  if (scope.restricted) agQ = agQ.eq('id', scope.agentId);
+  const { data: agents, error: eA } = await agQ;
+  if (eA) return res.status(500).json({ error: eA.message });
+  const ids = (agents || []).map(a => a.id);
+  if (!ids.length) return res.json({ consultores: [], huerfanas: { total: 0, detalle: [] } });
+
+  const [{ data: policies }, { data: clients }, { data: pruPrimas }, { data: users }] = await Promise.all([
+    db.from('crm_policies').select('id, agent_id, client_id, aseguradora, estatus, tipo, prima, fecha_emision, fecha_pago').in('agent_id', ids).range(0, 9999),
+    db.from('crm_clients').select('id, agent_id, aseguradora, origen').in('agent_id', ids).range(0, 9999),
+    db.from('crm_pru_primas').select('clave, anio, mes, prima_pagada_inicial'),
+    isAgency(req.user.role)
+      ? db.from('users').select('id, crm_can_edit').in('id', (agents || []).map(a => a.user_id).filter(Boolean))
+      : Promise.resolve({ data: [] }),
+  ]);
+  const canEditByUser = new Map((users || []).map(u => [u.id, !!u.crm_can_edit]));
+
+  const VIGENTES = ['pagada', 'pendiente_pago'];
+  const finDeMes = (anio, mes) => `${anio}-${String(mes).padStart(2, '0')}-28`;
+
+  const consultores = (agents || []).map(a => {
+    const pols = (policies || []).filter(p => p.agent_id === a.id);
+    const cls = (clients || []).filter(c => c.agent_id === a.id);
+    const porAseg = (aseg) => ({
+      vigentes: pols.filter(p => (p.aseguradora || 'PRU') === aseg && VIGENTES.includes(p.estatus)).length,
+      total: pols.filter(p => (p.aseguradora || 'PRU') === aseg).length,
+      clientes: cls.filter(c => (c.aseguradora || 'PRU') === aseg && c.origen !== 'Prudential').length,
+    });
+
+    /* Última venta: lo más reciente entre pólizas nuevas capturadas y los
+       cortes mensuales Prudential con prima inicial > 0 */
+    let ultimaVenta = null;
+    for (const p of pols) {
+      if (p.tipo !== 'nueva') continue;
+      const f = p.fecha_emision || p.fecha_pago;
+      if (f && (!ultimaVenta || f > ultimaVenta)) ultimaVenta = f;
+    }
+    for (const pr of (pruPrimas || [])) {
+      if (pr.clave !== a.clave || !(Number(pr.prima_pagada_inicial) > 0)) continue;
+      const f = finDeMes(pr.anio, pr.mes);
+      if (!ultimaVenta || f > ultimaVenta) ultimaVenta = f;
+    }
+
+    const inactivoPru = /INACTIVO/i.test(a.estatus || '');
+    return {
+      id: a.id, clave: a.clave, nombre: a.nombre, user_id: a.user_id,
+      estatus_pru: a.estatus || null, activo_fsc: a.activo_fsc !== false,
+      alta_pru: a.alta_pru || a.fecha_inicio_calculos || null,
+      alta_il: a.alta_il || null,
+      registrado_pru: !!(a.clave || a.alta_pru),
+      registrado_il: !!a.alta_il,
+      cuaderno: a.cuaderno || null,
+      polizas: { pru: porAseg('PRU'), il: porAseg('IL') },
+      ultima_venta: ultimaVenta,
+      sin_actividad: a.activo_fsc === false || inactivoPru,
+      puede_editar: a.user_id ? (canEditByUser.get(a.user_id) || false) : false,
+      tiene_usuario: !!a.user_id,
+    };
+  });
+
+  /* Pólizas huérfanas: vigentes cuyo asesor ya no tiene actividad */
+  const inactivos = new Map(consultores.filter(c => c.sin_actividad).map(c => [c.id, c]));
+  const huerfanasRows = (policies || []).filter(p => inactivos.has(p.agent_id) && VIGENTES.includes(p.estatus));
+  const detalle = [...inactivos.values()].map(c => ({
+    agent_id: c.id, nombre: c.nombre, clave: c.clave, ultima_venta: c.ultima_venta,
+    polizas: huerfanasRows.filter(p => p.agent_id === c.id).length,
+    prima: huerfanasRows.filter(p => p.agent_id === c.id).reduce((s, p) => s + (Number(p.prima) || 0), 0),
+  })).filter(d => d.polizas > 0).sort((x, y) => y.polizas - x.polizas);
+
+  res.json({ consultores, huerfanas: { total: huerfanasRows.length, detalle } });
+});
+
+/* El admin otorga o quita a un usuario el permiso de editar datos del CRM */
+router.put('/consultores/:agentId/edit-permission', async (req, res) => {
+  if (!isAgency(req.user.role)) return res.status(403).json({ error: 'Solo administración puede asignar permisos de edición' });
+  const db = getDB();
+  const { data: agent } = await db.from('crm_agents').select('id, user_id, nombre').eq('id', req.params.agentId).maybeSingle();
+  if (!agent) return res.status(404).json({ error: 'Asesor no encontrado' });
+  if (!agent.user_id) return res.status(400).json({ error: 'Este asesor no tiene usuario vinculado — vincúlalo primero en Equipo' });
+  const value = req.body.crm_can_edit === true;
+  const { error } = await db.from('users').update({ crm_can_edit: value }).eq('id', agent.user_id);
+  if (error) return res.status(500).json({ error: error.message });
+  logActivity(req, 'editar', 'permiso-edicion', agent.id, `${agent.nombre}: ${value ? 'puede editar' : 'solo lectura'}`);
+  res.json({ ok: true, crm_can_edit: value });
+});
+
+/* ═══════════════ PRODUCTOS (catálogo por aseguradora) ═══════════════ */
+
+router.get('/products', async (req, res) => {
+  const db = getDB();
+  let q = db.from('crm_products').select('*').order('aseguradora').order('nombre');
+  if (req.query.aseguradora) q = q.eq('aseguradora', req.query.aseguradora);
+  if (req.query.activo !== 'todos') q = q.eq('activo', true);
+  const { data, error } = await q;
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ products: data });
+});
+
+router.post('/products', async (req, res) => {
+  if (!isAgency(req.user.role)) return res.status(403).json({ error: 'Solo administración puede crear productos' });
+  const b = req.body;
+  if (!b.nombre) return res.status(400).json({ error: 'El nombre es requerido' });
+  const { data, error } = await getDB().from('crm_products').insert([{
+    aseguradora: b.aseguradora === 'IL' ? 'IL' : 'PRU', nombre: b.nombre,
+    tipo: b.tipo || null, moneda: b.moneda || 'MXN', descripcion: b.descripcion || null,
+  }]).select();
+  if (error) return res.status(500).json({ error: error.message });
+  logActivity(req, 'crear', 'producto', data[0].id, b.nombre);
+  res.status(201).json({ product: data[0] });
+});
+
+router.put('/products/:id', async (req, res) => {
+  if (!isAgency(req.user.role)) return res.status(403).json({ error: 'Solo administración puede editar productos' });
+  const allowed = ['aseguradora', 'nombre', 'tipo', 'moneda', 'descripcion', 'activo'];
+  const patch = {};
+  for (const k of allowed) if (k in req.body) patch[k] = req.body[k];
+  const { data, error } = await getDB().from('crm_products').update(patch).eq('id', req.params.id).select();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ product: data[0] });
+});
+
+router.delete('/products/:id', async (req, res) => {
+  if (!isAgency(req.user.role)) return res.status(403).json({ error: 'Solo administración puede eliminar productos' });
+  const { error } = await getDB().from('crm_products').delete().eq('id', req.params.id);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ok: true });
 });
 
 /* ═══════════════ REPORTE PDF DEL BUSINESS REVIEW ═══════════════ */
 
 async function buildReportData(db, agentId, anio) {
-  const { agents, policies, goals, clients } = await loadAgentData(db, anio, [agentId]);
+  const { agents, policies, goals, clients, pruPrimas } = await loadAgentData(db, anio, [agentId]);
   if (!agents.length) return null;
-  const summary = buildAgentSummary(agents[0], policies, goals, clients, anio);
+  const summary = buildAgentSummary(agents[0], policies, goals, clients, anio, pruPrimas);
 
   // Renovaciones próximas 90 días (descifrando nombre de cliente vía join simple)
   const today = new Date().toISOString().slice(0, 10);

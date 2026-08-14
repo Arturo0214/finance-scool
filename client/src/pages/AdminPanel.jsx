@@ -42,6 +42,7 @@ const FSCConversationsView = lazy(() => import('./admin/views/FSCConversationsVi
 const CrmDashboardView    = lazy(() => import('./admin/views/crm/CrmDashboardView'));
 const CrmPipelineView     = lazy(() => import('./admin/views/crm/CrmPipelineView'));
 const CrmClientsView      = lazy(() => import('./admin/views/crm/CrmClientsView'));
+const CrmConsultoresView  = lazy(() => import('./admin/views/crm/CrmConsultoresView'));
 const CrmPoliciesView     = lazy(() => import('./admin/views/crm/CrmPoliciesView'));
 const CrmGoalsView        = lazy(() => import('./admin/views/crm/CrmGoalsView'));
 const CrmRemindersView    = lazy(() => import('./admin/views/crm/CrmRemindersView'));
@@ -110,7 +111,7 @@ export default function AdminPanel() {
     { id: 'divider-crm',      label: '── CRM Asesores ──',            icon: null       },
     { id: 'crm',              label: 'Tableros CRM',                  icon: LayoutDashboard },
     { id: 'crm-pipeline',     label: 'Pipeline',                      icon: KanbanSquare },
-    { id: 'crm-clientes',     label: 'Clientes',                      icon: Contact    },
+    { id: 'crm-clientes',     label: 'Consultores',                   icon: Contact    },
     { id: 'crm-polizas',      label: 'Pólizas',                       icon: FileText   },
     { id: 'crm-ingresos',     label: 'Ingresos',                      icon: HandCoins  },
     { id: 'crm-metas',        label: 'Metas & Forecast',              icon: Target     },
@@ -335,7 +336,7 @@ export default function AdminPanel() {
               {/* ── CRM Asesores ── */}
               {!loading && activeView === 'crm' && <CrmDashboardView />}
               {!loading && activeView === 'crm-pipeline' && <CrmPipelineView isAgency={userSeesAllCrm} />}
-              {!loading && activeView === 'crm-clientes' && <CrmClientsView isAgency={userSeesAllCrm} />}
+              {!loading && activeView === 'crm-clientes' && <CrmConsultoresView isAgency={userSeesAllCrm} />}
               {!loading && activeView === 'crm-polizas' && <CrmPoliciesView isAgency={userSeesAllCrm} />}
               {!loading && activeView === 'crm-ingresos' && <CrmIngresosView isAgency={userSeesAllCrm} />}
               {/* Ruta directa conservada: la vista de comisiones vive también como pestaña de Ingresos */}

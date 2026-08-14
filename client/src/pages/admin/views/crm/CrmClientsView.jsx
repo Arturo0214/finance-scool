@@ -13,17 +13,28 @@ import {
   TIPOS_RECORDATORIO, tipoRecordatorio, fmtMoney, fmtDate,
 } from './crmShared';
 
-const EMPTY_CLIENT = { nombre: '', email: '', telefono: '', rfc: '', fecha_nacimiento: '', ocupacion: '', empresa: '', direccion: '', etapa: 'prospecto', origen: 'referido', notas: '', agent_id: '' };
-const EMPTY_POLICY = { poliza: '', plan: PLANES[0], tipo: 'nueva', prima: '', forma_pago: 'anual', suma_asegurada: '', fecha_emision: '', fecha_pago: '', fecha_renovacion: '', estatus: 'en_tramite', notas: '' };
+const EMPTY_CLIENT = { nombre: '', email: '', telefono: '', rfc: '', fecha_nacimiento: '', ocupacion: '', empresa: '', direccion: '', etapa: 'prospecto', origen: 'referido', notas: '', agent_id: '', aseguradora: 'PRU' };
+const EMPTY_POLICY = { poliza: '', plan: PLANES[0], tipo: 'nueva', prima: '', forma_pago: 'anual', suma_asegurada: '', fecha_emision: '', fecha_pago: '', fecha_renovacion: '', estatus: 'en_tramite', notas: '', aseguradora: 'PRU' };
+
+/* Carteras por aseguradora */
+const ASEGURADORAS = [
+  { id: 'PRU', label: 'Prudential', color: '#003DA5', bg: 'rgba(0,61,165,.09)' },
+  { id: 'IL', label: 'Insignia Life', color: '#0E7C6B', bg: 'rgba(14,124,107,.10)' },
+];
+const asegInfo = (id) => ASEGURADORAS.find(a => a.id === id) || ASEGURADORAS[0];
+/* Los contenedores "Cartera Prudential — asesor" agrupan la base migrada del
+   Business Review: son la cartera del consultor, no un cliente con etapa. */
+const esCartera = (c) => c.origen === 'Prudential' || c.origen === 'Insignia';
 const EMPTY_REMINDER = { titulo: '', descripcion: '', tipo: 'seguimiento', fecha: '', hora: '' };
 const CATEGORIAS_ARCHIVO = ['general', 'identificacion', 'solicitud', 'poliza', 'comprobante'];
 
-export default function CrmClientsView({ isAgency }) {
+export default function CrmClientsView({ isAgency, embedded }) {
   const [clients, setClients] = useState([]);
   const [agents, setAgents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [etapaFilter, setEtapaFilter] = useState('todas');
   const [agentFilter, setAgentFilter] = useState('');
+  const [asegFilter, setAsegFilter] = useState('');
   const [search, setSearch] = useState('');
 
   /* Expediente */
@@ -182,8 +193,9 @@ export default function CrmClientsView({ isAgency }) {
   };
 
   const filtered = clients.filter(c => {
-    if (etapaFilter !== 'todas' && c.etapa !== etapaFilter) return false;
+    if (etapaFilter !== 'todas' && (c.etapa !== etapaFilter || esCartera(c))) return false;
     if (agentFilter && String(c.agent_id) !== agentFilter) return false;
+    if (asegFilter && (c.aseguradora || 'PRU') !== asegFilter) return false;
     if (search && !c.nombre.toLowerCase().includes(search.toLowerCase()) && !(c.telefono || '').includes(search)) return false;
     return true;
   });
@@ -220,6 +232,7 @@ export default function CrmClientsView({ isAgency }) {
     { key: 'direccion', label: 'Dirección' },
     { key: 'etapa', label: 'Etapa', type: 'select', options: ETAPAS.map(e => ({ value: e.id, label: e.label })) },
     { key: 'origen', label: 'Origen', type: 'select', options: ['referido', 'frio', 'campania', 'evento', 'otro'] },
+    { key: 'aseguradora', label: 'Cartera / Aseguradora', type: 'select', options: ASEGURADORAS.map(a => ({ value: a.id, label: a.label })) },
   ];
 
   return (
@@ -228,7 +241,7 @@ export default function CrmClientsView({ isAgency }) {
 
       <div className="crm-toolbar">
         <div>
-          <h1 className="view-title">Clientes</h1>
+          {!embedded && <h1 className="view-title">Cartera de clientes</h1>}
           <p className="view-subtitle" style={{ marginBottom: 0 }}>{filtered.length} de {clients.length} en cartera</p>
         </div>
         <div className="crm-toolbar-right">
@@ -236,6 +249,10 @@ export default function CrmClientsView({ isAgency }) {
             <Search size={15} />
             <input className="crm-search" placeholder="Buscar por nombre o teléfono..." value={search} onChange={e => setSearch(e.target.value)} />
           </div>
+          <select className="crm-select" value={asegFilter} onChange={e => setAsegFilter(e.target.value)}>
+            <option value="">Ambas carteras</option>
+            {ASEGURADORAS.map(a => <option key={a.id} value={a.id}>{a.label}</option>)}
+          </select>
           {isAgency && (
             <select className="crm-select" value={agentFilter} onChange={e => setAgentFilter(e.target.value)}>
               <option value="">Todos los asesores</option>
@@ -252,7 +269,7 @@ export default function CrmClientsView({ isAgency }) {
         <button className={`f-tab${etapaFilter === 'todas' ? ' active' : ''}`} onClick={() => setEtapaFilter('todas')}>Todas</button>
         {ETAPAS.map(e => (
           <button key={e.id} className={`f-tab${etapaFilter === e.id ? ' active' : ''}`} onClick={() => setEtapaFilter(e.id)}>
-            {e.label} ({clients.filter(c => c.etapa === e.id).length})
+            {e.label} ({clients.filter(c => c.etapa === e.id && !esCartera(c)).length})
           </button>
         ))}
       </div>
@@ -282,12 +299,20 @@ export default function CrmClientsView({ isAgency }) {
             {filtered.length === 0 && <tr><td colSpan={6} className="empty">Sin clientes con estos filtros</td></tr>}
             {filtered.map(c => {
               const e = etapaInfo(c.etapa);
+              const aseg = asegInfo(c.aseguradora);
               return (
                 <tr key={c.id} className="crm-rank-row" onClick={() => openDetail(c.id)}>
-                  <td><b>{c.nombre}</b>{c.ocupacion && <><br /><span style={{ fontSize: 11.5, color: C.textMuted }}>{c.ocupacion}{c.empresa ? ` · ${c.empresa}` : ''}</span></>}</td>
+                  <td>
+                    <b>{c.nombre}</b> <span className="badge" style={{ background: aseg.bg, color: aseg.color, fontSize: 10 }}>{aseg.id}</span>
+                    {c.ocupacion && <><br /><span style={{ fontSize: 11.5, color: C.textMuted }}>{c.ocupacion}{c.empresa ? ` · ${c.empresa}` : ''}</span></>}
+                  </td>
                   <td style={{ fontSize: 12.5 }}>{c.telefono || '—'}<br /><span style={{ color: C.textMuted }}>{c.email || ''}</span></td>
-                  <td><span className="badge" style={{ background: `${e.color}1A`, color: e.color }}>{e.label}</span></td>
-                  <td style={{ textTransform: 'capitalize' }}>{c.origen || '—'}</td>
+                  <td>
+                    {esCartera(c)
+                      ? <span className="badge" style={{ background: aseg.bg, color: aseg.color }}>Cartera {aseg.label}</span>
+                      : <span className="badge" style={{ background: `${e.color}1A`, color: e.color }}>{e.label}</span>}
+                  </td>
+                  <td style={{ textTransform: 'capitalize' }}>{esCartera(c) ? 'Business Review' : (c.origen || '—')}</td>
                   {isAgency && <td style={{ fontSize: 12.5 }}>{c.crm_agents?.nombre || '—'}</td>}
                   <td style={{ fontSize: 12.5, color: C.textMuted }}>{fmtDate(c.created_at)}</td>
                 </tr>
@@ -304,11 +329,14 @@ export default function CrmClientsView({ isAgency }) {
         {filtered.length === 0 && <p className="empty">Sin clientes con estos filtros</p>}
         {filtered.map(c => {
           const e = etapaInfo(c.etapa);
+          const aseg = asegInfo(c.aseguradora);
           return (
             <div key={c.id} className="crm-mobile-card" onClick={() => openDetail(c.id)}>
               <div className="crm-mc-top">
                 <div className="crm-mc-name">{c.nombre}</div>
-                <span className="badge" style={{ background: `${e.color}1A`, color: e.color }}>{e.label}</span>
+                {esCartera(c)
+                  ? <span className="badge" style={{ background: aseg.bg, color: aseg.color }}>Cartera {aseg.id}</span>
+                  : <span className="badge" style={{ background: `${e.color}1A`, color: e.color }}>{e.label}</span>}
               </div>
               {c.telefono && <div className="crm-mc-row"><span><Phone size={11} style={{ marginRight: 4 }} />{c.telefono}</span></div>}
               {isAgency && c.crm_agents?.nombre && <div className="crm-mc-row"><span>Asesor</span><b>{c.crm_agents.nombre}</b></div>}
@@ -571,6 +599,7 @@ export default function CrmClientsView({ isAgency }) {
                     <div className="config-panel" style={{ marginBottom: 16 }}>
                       <h3 style={{ margin: '0 0 12px', fontSize: 14 }}>{policyForm.id ? 'Editar póliza' : 'Nueva póliza'}</h3>
                       {inputRow(policyForm, setPolicyForm, [
+                        { key: 'aseguradora', label: 'Aseguradora', type: 'select', options: ASEGURADORAS.map(a => ({ value: a.id, label: a.label })) },
                         { key: 'poliza', label: 'No. de póliza' },
                         { key: 'plan', label: 'Plan', type: 'select', options: PLANES },
                         { key: 'tipo', label: 'Tipo', type: 'select', options: [{ value: 'nueva', label: 'Nueva' }, { value: 'renovacion', label: 'Renovación' }] },
