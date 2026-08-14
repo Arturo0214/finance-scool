@@ -450,6 +450,151 @@ function PerformanceTab({ data, anio, personal = false }) {
   );
 }
 
+/* ── Modal de desglose de cada KPI del tablero: qué lo compone, con qué
+   fórmula se calcula y quién aporta cada parte ── */
+function KpiModal({ id, onClose, data, anio, pir, promoIdx, single, bonoTotal, clientesTotal, idxOficial }) {
+  const g = data.global.kpis.totales;
+  const months = data.global.kpis.months;
+
+  const filaMes = (campo) => months
+    .map((m, i) => ({ mes: MESES[i], v: m[campo] }))
+    .filter(r => r.v > 0);
+
+  const topAgentes = (getter, fmt = fmtMoneyFull) => data.porAgente
+    .map(a => ({ n: a.agent.nombre, v: getter(a) }))
+    .filter(x => x.v > 0)
+    .sort((x, y) => y.v - x.v)
+    .map(x => ({ ...x, txt: fmt(x.v) }));
+
+  const CONTENIDO = {
+    primaNueva: {
+      titulo: `Prima nueva ${anio} — ${fmtMoneyFull(g.primaNueva)}`,
+      que: 'Es la prima pagada INICIAL: lo que se cobró de pólizas de venta nueva. En los meses con corte del Business Review el dato es el oficial de Prudential (crm_pru_primas); en los demás, lo capturado en el CRM.',
+      formula: 'Prima nueva = Σ prima pagada inicial de cada mes del año',
+      meses: filaMes('primaNueva'),
+      lista: { titulo: 'Aporte por asesor', rows: topAgentes(a => a.kpis.totales.primaNueva) },
+    },
+    primaRenovacion: {
+      titulo: `Prima renovación ${anio} — ${fmtMoneyFull(g.primaRenovacion)}`,
+      que: 'Es la prima pagada de RENOVACIÓN: cobros de pólizas que ya cumplieron uno o más años. Es la cartera que sostiene el índice de conservación.',
+      formula: 'Prima renovación = Σ prima pagada de renovación de cada mes del año',
+      meses: filaMes('primaRenovacion'),
+      lista: { titulo: 'Aporte por asesor', rows: topAgentes(a => a.kpis.totales.primaRenovacion) },
+    },
+    meta: {
+      titulo: `Cumplimiento de meta — ${fmtPct(g.cumplimiento)}`,
+      que: `Compara la prima NUEVA cobrada (${fmtMoneyFull(g.primaNueva)}) contra la meta anual capturada en Metas & Forecast (${fmtMoneyFull(g.meta)}). Solo cuenta venta nueva: la renovación no abona a la meta.`,
+      formula: 'Cumplimiento = prima nueva cobrada ÷ meta anual',
+      lista: {
+        titulo: 'Cumplimiento por asesor (con meta capturada)',
+        rows: data.porAgente
+          .filter(a => a.kpis.totales.meta > 0)
+          .map(a => ({ n: a.agent.nombre, v: a.kpis.totales.cumplimiento || 0, txt: `${fmtPct(a.kpis.totales.cumplimiento)} de ${fmtMoney(a.kpis.totales.meta)}` }))
+          .sort((x, y) => y.v - x.v),
+      },
+    },
+    indice: {
+      titulo: `Índice de conservación ${single ? '' : 'de la promotoría'} — ${idxOficial ? fmtPct(idxOficial.actual, 1) : '…'}`,
+      que: single
+        ? 'Mide cuánta de tu cartera en renovación sigue pagada. Sale del Business Review Prudential: base conservada ÷ base a conservar. Necesitas 86% mínimo para cobrar bonos.'
+        : 'Mide cuánta de la cartera en renovación de TODA la promotoría sigue pagada, según el Business Review Prudential. La promotoría necesita 84% mínimo (cada agente, 86%).',
+      formula: 'Índice = base conservada ÷ base a conservar (renovaciones dentro de la ventana de cálculo)',
+      extra: promoIdx ? [
+        ['Base a conservar', fmtMoneyFull(promoIdx.indice.baseAConservar)],
+        ['Base conservada (al corte)', fmtMoneyFull(promoIdx.indice.baseConservada)],
+        ['Pendiente de pago (al corte)', fmtMoneyFull(promoIdx.indice.basePendiente)],
+        ['Índice al corte oficial', fmtPct(promoIdx.indice.actual, 2)],
+        ['Índice hoy (vencimientos posteriores al corte)', fmtPct(promoIdx.indice.hoy.actual, 2)],
+        ['Si se cobra todo lo pendiente', fmtPct(promoIdx.indice.siCobraTodo, 2)],
+        ['Si además se rehabilitan las canceladas <6 meses', fmtPct(promoIdx.indice.siCobraYRehabilitaTodo, 2)],
+        ['Pólizas en el índice', `${promoIdx.polizas.total} (${promoIdx.polizas.conservadas} conservadas · ${promoIdx.polizas.pendientes} por cobrar · ${promoIdx.polizas.noConservadas} canceladas, ${promoIdx.polizas.rehabilitables} rehabilitables)`],
+      ] : null,
+      nota: 'El índice está bajo porque hay muchas pólizas pendientes de cobro desde el corte — cada cobro lo sube. El detalle accionable (qué cobrar y qué rehabilitar, con simulador) está en la sección Ingresos.',
+      lista: pir ? {
+        titulo: 'Índice por asesor (al corte)',
+        rows: pir.map(a => ({ n: a.nombre, v: a.indice.actual, txt: fmtPct(a.indice.actual, 1) })).sort((x, y) => y.v - x.v),
+      } : null,
+    },
+    pipeline: {
+      titulo: `Pipeline — ${fmtMoneyFull(g.pipeline)}`,
+      que: 'Prima de pólizas VIVAS que aún no se cobran: en trámite (solicitudes en proceso) más pendientes de pago, ubicadas en el mes de su fecha de emisión o renovación. Es lo que puede convertirse en ingreso si se cierra y cobra.',
+      formula: 'Pipeline = Σ prima de pólizas en trámite + pendientes de pago del año',
+      meses: filaMes('pipeline'),
+      lista: { titulo: 'Pipeline por asesor', rows: topAgentes(a => a.kpis.totales.pipeline) },
+    },
+    bonos: {
+      titulo: `Bonos PIR del trimestre — ${bonoTotal === null ? '…' : fmtMoneyFull(bonoTotal)}`,
+      que: 'Suma de los bonos PIR 2026 estimados por asesor según el Business Review: bono inicial mensual + ajuste trimestral + bono de conservación. Cada bono depende de la prima del periodo, del cuaderno del agente (Novel / En desarrollo / Consolidado) y de su banda de índice (86 / 90 / 94%).',
+      formula: 'Bono del Q = Σ por asesor (mensuales + ajuste trimestral + conservación)',
+      lista: pir ? { titulo: 'Bono por asesor', rows: pir.map(a => ({ n: a.nombre, v: a.bonos?.total_trimestre || 0, txt: fmtMoneyFull(a.bonos?.total_trimestre || 0) })).filter(x => x.v > 0).sort((x, y) => y.v - x.v) } : null,
+      nota: 'Un asesor con índice debajo de 86% no cobra bonos aunque llegue a la prima — por eso la cobranza importa tanto como la venta.',
+    },
+    clientes: {
+      titulo: `Clientes en cartera — ${clientesTotal}`,
+      que: 'Clientes con nombre real registrados en el CRM (los trae el Reporte de pólizas de Prudential más los capturados a mano). Ya no se cuentan contenedores ni datos de ejemplo.',
+      formula: 'Clientes = Σ clientes de cada asesor',
+      lista: { titulo: 'Clientes por asesor', rows: topAgentes(a => a.clientes.total, (v) => `${v}`) },
+    },
+  };
+
+  const c = CONTENIDO[id];
+  if (!c) return null;
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal crm-modal-lg" onClick={e => e.stopPropagation()}>
+        <div className="modal-head">
+          <h2>{c.titulo}</h2>
+          <button className="close-btn" onClick={onClose}><X size={20} /></button>
+        </div>
+        <div className="modal-body">
+          <div className="info-box" style={{ marginBottom: 14 }}><p>{c.que}</p></div>
+          <p style={{ fontSize: 12.5, color: C.textMuted, margin: '0 0 14px' }}>
+            <b>Fórmula:</b> <span style={{ fontFamily: 'monospace' }}>{c.formula}</span>
+          </p>
+
+          {c.extra && (
+            <div className="tbl-wrap" style={{ marginBottom: 14 }}>
+              <table><tbody>
+                {c.extra.map(([k, v]) => (
+                  <tr key={k}><td style={{ color: C.textMuted }}>{k}</td><td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}><b>{v}</b></td></tr>
+                ))}
+              </tbody></table>
+            </div>
+          )}
+
+          {c.meses && c.meses.length > 0 && (
+            <>
+              <h3 style={{ fontSize: 14, margin: '0 0 8px' }}>Por mes</h3>
+              <div className="tbl-wrap" style={{ marginBottom: 14 }}>
+                <table><tbody>
+                  {c.meses.map(r => (
+                    <tr key={r.mes}><td>{r.mes}</td><td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}><b>{fmtMoneyFull(r.v)}</b></td></tr>
+                  ))}
+                </tbody></table>
+              </div>
+            </>
+          )}
+
+          {c.lista && c.lista.rows.length > 0 && (
+            <>
+              <h3 style={{ fontSize: 14, margin: '0 0 8px' }}>{c.lista.titulo}</h3>
+              <div className="tbl-wrap" style={{ marginBottom: 6 }}>
+                <table><tbody>
+                  {c.lista.rows.map(r => (
+                    <tr key={r.n}><td>{r.n}</td><td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}><b>{r.txt}</b></td></tr>
+                  ))}
+                </tbody></table>
+              </div>
+            </>
+          )}
+
+          {c.nota && <p style={{ fontSize: 12.5, color: '#8A6A34', background: C.goldBg, borderRadius: 10, padding: '10px 14px' }}>💡 {c.nota}</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function CrmDashboardView() {
   const [anio, setAnio] = useState(2026);
   const [data, setData] = useState(null);
@@ -459,6 +604,7 @@ export default function CrmDashboardView() {
   const [tab, setTab] = useState('resumen'); // resumen | rendimiento (solo admins)
   const [pir, setPir] = useState(null);     // motor PIR: índice real + bonos (ingresos)
   const [promoIdx, setPromoIdx] = useState(null); // índice agregado de la promotoría
+  const [kpiModal, setKpiModal] = useState(null); // tarjeta KPI abierta en modal de desglose
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -517,21 +663,21 @@ export default function CrmDashboardView() {
         </div>
       </div>
 
-      {/* ── KPIs globales ── */}
+      {/* ── KPIs globales (clic en cada tarjeta → desglose de qué la compone) ── */}
       <div className="stats-grid">
-        <div className="stat-card">
+        <div className="stat-card" style={{ cursor: 'pointer' }} title="Ver desglose" onClick={() => setKpiModal('primaNueva')}>
           <div className="stat-icon" style={{ background: C.blueBg, color: C.primary }}><TrendingUp size={20} /></div>
           <div><p className="stat-label">Prima nueva {anio}</p><p className="stat-value">{fmtMoney(g.primaNueva)}</p></div>
         </div>
-        <div className="stat-card">
+        <div className="stat-card" style={{ cursor: 'pointer' }} title="Ver desglose" onClick={() => setKpiModal('primaRenovacion')}>
           <div className="stat-icon" style={{ background: C.blueBg, color: C.primary }}><RefreshCw size={20} /></div>
           <div><p className="stat-label">Prima renovación {anio}</p><p className="stat-value">{fmtMoney(g.primaRenovacion)}</p></div>
         </div>
-        <div className="stat-card">
+        <div className="stat-card" style={{ cursor: 'pointer' }} title="Ver desglose" onClick={() => setKpiModal('meta')}>
           <div className="stat-icon" style={{ background: C.amberBg, color: C.amber }}><Target size={20} /></div>
           <div><p className="stat-label">Cumplimiento meta</p><p className="stat-value">{fmtPct(g.cumplimiento)}</p></div>
         </div>
-        <div className="stat-card">
+        <div className="stat-card" style={{ cursor: 'pointer' }} title="Ver desglose" onClick={() => setKpiModal('indice')}>
           <div className="stat-icon" style={{ background: C.greenBg, color: idxOficial && idxOficial.actual >= idxOficial.umbral ? C.green : C.red }}><Shield size={20} /></div>
           <div>
             <p className="stat-label">Índice conservación {single ? '' : '(promotoría)'}</p>
@@ -545,11 +691,11 @@ export default function CrmDashboardView() {
             )}
           </div>
         </div>
-        <div className="stat-card">
+        <div className="stat-card" style={{ cursor: 'pointer' }} title="Ver desglose" onClick={() => setKpiModal('pipeline')}>
           <div className="stat-icon" style={{ background: '#EDE9FE', color: '#6D28D9' }}><Briefcase size={20} /></div>
           <div><p className="stat-label">Pipeline</p><p className="stat-value">{fmtMoney(g.pipeline)}</p></div>
         </div>
-        <div className="stat-card">
+        <div className="stat-card" style={{ cursor: 'pointer' }} title="Ver desglose" onClick={() => setKpiModal('bonos')}>
           <div className="stat-icon" style={{ background: C.greenBg, color: C.green }}><Award size={20} /></div>
           <div>
             <p className="stat-label">Bonos PIR del Q</p>
@@ -558,12 +704,19 @@ export default function CrmDashboardView() {
           </div>
         </div>
         {!single && (
-          <div className="stat-card">
+          <div className="stat-card" style={{ cursor: 'pointer' }} title="Ver desglose" onClick={() => setKpiModal('clientes')}>
             <div className="stat-icon" style={{ background: C.blueBg, color: C.accent }}><Users size={20} /></div>
             <div><p className="stat-label">Clientes en cartera</p><p className="stat-value">{clientesTotal}</p></div>
           </div>
         )}
       </div>
+
+      {/* ── Modal de desglose del KPI seleccionado ── */}
+      {kpiModal && (
+        <KpiModal id={kpiModal} onClose={() => setKpiModal(null)}
+          data={data} anio={anio} pir={pir} promoIdx={promoIdx} single={single}
+          bonoTotal={bonoTotal} clientesTotal={clientesTotal} idxOficial={idxOficial} />
+      )}
 
       {/* ── Cartera del Reporte de pólizas: segmentada por año + comparativo histórico ── */}
       <CrmCarteraSection titulo="Cartera Prudential — por año de emisión" />
