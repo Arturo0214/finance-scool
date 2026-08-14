@@ -12,8 +12,9 @@ import {
 } from 'recharts';
 import { TrendingUp, TrendingDown, Target, Shield, Award, Users, RefreshCw, X, Briefcase, Bell, FileDown, Trophy, Medal } from 'lucide-react';
 import { getCrmCSS, MESES, fmtMoney, fmtMoneyFull, fmtPct, fmtDate, etapaInfo, ETAPAS, tipoRecordatorio } from './crmShared';
+import CrmCarteraSection from './CrmCarteraSection';
 
-const ANIOS = [2025, 2026, 2027];
+const ANIOS = [2023, 2024, 2025, 2026, 2027];
 
 function chartData(summary) {
   return summary.kpis.months.map((m, i) => ({
@@ -509,7 +510,11 @@ export default function CrmDashboardView() {
       <div className="stats-grid">
         <div className="stat-card">
           <div className="stat-icon" style={{ background: C.blueBg, color: C.primary }}><TrendingUp size={20} /></div>
-          <div><p className="stat-label">Prima pagada {anio}</p><p className="stat-value">{fmtMoney(g.primaTotal)}</p></div>
+          <div><p className="stat-label">Prima nueva {anio}</p><p className="stat-value">{fmtMoney(g.primaNueva)}</p></div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-icon" style={{ background: C.blueBg, color: C.primary }}><RefreshCw size={20} /></div>
+          <div><p className="stat-label">Prima renovación {anio}</p><p className="stat-value">{fmtMoney(g.primaRenovacion)}</p></div>
         </div>
         <div className="stat-card">
           <div className="stat-icon" style={{ background: C.amberBg, color: C.amber }}><Target size={20} /></div>
@@ -534,6 +539,9 @@ export default function CrmDashboardView() {
           </div>
         )}
       </div>
+
+      {/* ── Cartera del Reporte de pólizas: segmentada por año + comparativo histórico ── */}
+      <CrmCarteraSection titulo="Cartera Prudential — por año de emisión" />
 
       {/* ── Asesor: tabs Resumen | Mis Ventas. Admin: tabs Resumen | Rendimiento ── */}
       {single ? (

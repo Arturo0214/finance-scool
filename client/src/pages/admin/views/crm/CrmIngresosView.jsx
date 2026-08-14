@@ -24,9 +24,8 @@ const indiceColor = (i) => (i >= 0.94 ? C.green : i >= 0.90 ? '#0891B2' : i >= 0
 
 const UMBRAL_LABEL = { '0.86': 'Banda 86%', '0.90': 'Banda 90%', '0.94': 'Banda 94%' };
 
-/* Barra del índice con las marcas 86 / 90 / 94 */
-function IndiceBar({ actual, operativo }) {
-  const marks = [0.86, 0.90, 0.94];
+/* Barra del índice con las marcas 86 / 90 / 94 (o las que se pidan) */
+function IndiceBar({ actual, operativo, marks = [0.86, 0.90, 0.94] }) {
   return (
     <div style={{ position: 'relative', height: 14, background: 'rgba(11,27,51,.07)', borderRadius: 8, overflow: 'hidden', margin: '10px 0 18px' }}>
       <div style={{ position: 'absolute', inset: 0, width: `${Math.min(100, operativo * 100)}%`, background: `${indiceColor(operativo)}55`, transition: 'width .5s' }} />
@@ -52,6 +51,8 @@ function BonoCard({ icon: Icon, label, value, sub, color }) {
 export default function CrmIngresosView({ isAgency }) {
   const [tab, setTab] = useState('tablero');
   const [overview, setOverview] = useState([]);
+  const [promo, setPromo] = useState(null);       // tablero de la promotoría
+  const [promoSel, setPromoSel] = useState({});   // poliza_id → true (simulador promotoría)
   const [selClave, setSelClave] = useState('');
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -79,6 +80,7 @@ export default function CrmIngresosView({ isAgency }) {
       setOverview(rows);
       // Asesor: solo viene su clave → entrar directo al detalle
       if (rows.length === 1) setSelClave(rows[0].clave);
+      else api.crmIngresosPromotoria().then(p => setPromo(p)).catch(() => {});
     } catch (e) { setErr(e.message); }
     finally { setLoading(false); }
   }, []);
@@ -184,6 +186,103 @@ export default function CrmIngresosView({ isAgency }) {
 
       {/* ═══════════ TAB CONCILIACIÓN (vista de comisiones existente) ═══════════ */}
       {tab === 'conciliacion' && <CrmCommissionsView isAgency={isAgency} />}
+
+      {/* ═══════════ TABLERO DE LA PROMOTORÍA (agregado, umbral 84%) ═══════════ */}
+      {tab === 'tablero' && !selClave && isAgency && promo && (() => {
+        const promoColor = (i) => (i >= 0.84 ? C.green : C.red);
+        const seleccion = [...promo.accionables.pendientesPago, ...promo.accionables.rehabilitables].filter(p => promoSel[p.id]);
+        const baseSel = seleccion.reduce((s, p) => s + p.monto, 0);
+        const simulado = promo.indice.baseAConservar > 0
+          ? (promo.indice.hoy.baseConservada + baseSel) / promo.indice.baseAConservar : 1;
+        const toggleTodos = (lista, on) => setPromoSel(s => {
+          const n = { ...s };
+          for (const p of lista) { if (on) n[p.id] = true; else delete n[p.id]; }
+          return n;
+        });
+        const diasBadge = (d) => (
+          <span className="badge" style={{ background: d <= 30 ? C.redBg : d <= 90 ? C.amberBg : C.greenBg, color: d <= 30 ? C.red : d <= 90 ? C.amber : C.green }}>
+            {d <= 0 ? 'vence hoy' : `quedan ${d} días`}
+          </span>
+        );
+        const fila = (p, tipo) => (
+          <div key={`${tipo}${p.id}`} className="crm-mc-row" style={{ borderBottom: '1px solid rgba(11,27,51,.06)', padding: '7px 0', gap: 8 }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+              <input type="checkbox" style={{ accentColor: C.primary, cursor: 'pointer', flexShrink: 0 }} checked={!!promoSel[p.id]}
+                onChange={e => setPromoSel(s => ({ ...s, [p.id]: e.target.checked || undefined }))} />
+              <span style={{ minWidth: 0 }}>
+                <b>{p.poliza}</b> <span style={{ fontSize: 11, color: C.textMuted }}>{p.plan_id}</span>
+                <br /><span style={{ fontSize: 11, color: C.textMuted, cursor: 'pointer', textDecoration: 'underline' }} onClick={() => setSelClave(p.clave)} title="Abrir el tablero de este asesor">{p.agente}</span>
+              </span>
+            </span>
+            <span style={{ textAlign: 'right', flexShrink: 0 }}>
+              <b>{fmtMoney(p.monto)}</b> <span style={{ color: C.green, fontSize: 11 }}>+{pct(p.impacto_indice, 2)}</span>
+              {tipo === 'r' && <><br />{diasBadge(p.dias_restantes)}</>}
+            </span>
+          </div>
+        );
+        return (
+          <>
+            <div className="crm-chart-card">
+              <h3><ShieldCheck size={16} style={{ verticalAlign: -2, color: C.gold }} /> Índice de conservación de la promotoría</h3>
+              <p className="sub">
+                Toda la cartera ({promo.agentes} asesores) · base a conservar {fmtMoneyFull(promo.indice.baseAConservar)} · conservada {fmtMoneyFull(promo.indice.hoy.baseConservada)} · pendiente {fmtMoneyFull(promo.indice.hoy.basePendiente)} · <b>mínimo promotoría 84%</b> (agentes 86%)
+              </p>
+              <IndiceBar actual={promo.indice.hoy.actual} operativo={promo.indice.siCobraTodo} marks={[0.84]} />
+              <div className="crm-kpi-detail">
+                <BonoCard icon={ShieldCheck} label="Índice al corte" value={<span style={{ color: promoColor(promo.indice.actual) }}>{pct(promo.indice.actual)}</span>} sub="oficial del último corte" />
+                <BonoCard icon={RefreshCw} label="Índice hoy (en vivo)" value={<span style={{ color: promoColor(promo.indice.hoy.actual) }}>{pct(promo.indice.hoy.actual)}</span>} sub="con vencimientos posteriores al corte" />
+                <BonoCard icon={TrendingUp} label="Si se cobra todo" value={<span style={{ color: promoColor(promo.indice.siCobraTodo) }}>{pct(promo.indice.siCobraTodo)}</span>} sub="cobrando todos los pendientes de pago" />
+                <BonoCard icon={RotateCcw} label="Cobrando y rehabilitando todo" value={<span style={{ color: promoColor(promo.indice.siCobraYRehabilitaTodo) }}>{pct(promo.indice.siCobraYRehabilitaTodo)}</span>} sub="pendientes + canceladas aún rehabilitables" />
+                <BonoCard icon={Target} label="Pólizas en el índice" value={promo.polizas.total}
+                  sub={`${promo.polizas.conservadas} conservadas · ${promo.polizas.pendientes} por cobrar · ${promo.polizas.noConservadas} canceladas (${promo.polizas.rehabilitables} rehabilitables)`} />
+              </div>
+            </div>
+
+            <div className="crm-chart-card">
+              <h3><AlertTriangle size={16} style={{ verticalAlign: -2, color: C.amber }} /> Pendientes de pago y rehabilitables — simulador de la promotoría</h3>
+              <p className="sub">
+                Regla de rehabilitación: canceladas con <b>menos de 6 meses</b> aún se pueden rehabilitar (a los 5 meses 29 días todavía; a los 6 ya no).
+                Selecciona pólizas (de cualquier asesor) y mira a cuánto se va el índice de la promotoría.
+              </p>
+
+              <div className="crm-kpi-detail" style={{ marginBottom: 14 }}>
+                <BonoCard icon={Calculator} label="Índice simulado" value={<span style={{ color: promoColor(simulado) }}>{pct(simulado)}</span>}
+                  sub={seleccion.length ? `${seleccion.length} pólizas seleccionadas · ${fmtMoney(baseSel)} de base · hoy está en ${pct(promo.indice.hoy.actual)}` : 'selecciona pólizas abajo'} />
+                <BonoCard icon={Target} label="Contra el mínimo 84%" value={simulado >= 0.84 ? '✓ Arriba del mínimo' : `Faltan ${pct(Math.max(0, 0.84 - simulado))}`}
+                  color={simulado >= 0.84 ? C.green : C.red}
+                  sub={simulado >= 0.84 ? null : `≈ ${fmtMoney(Math.max(0, 0.84 * promo.indice.baseAConservar - promo.indice.hoy.baseConservada - baseSel))} de base por conservar`} />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(320px,1fr))', gap: 20 }}>
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <h4 style={{ margin: 0, fontSize: 13.5 }}>Pendientes de pago ({promo.accionables.pendientesPago.length})</h4>
+                    <span>
+                      <button className="f-tab" style={{ fontSize: 11 }} onClick={() => toggleTodos(promo.accionables.pendientesPago, true)}>Todas</button>
+                      <button className="f-tab" style={{ fontSize: 11 }} onClick={() => toggleTodos(promo.accionables.pendientesPago, false)}>Ninguna</button>
+                    </span>
+                  </div>
+                  {promo.accionables.pendientesPago.length === 0 && <p className="empty">Nada pendiente 🎉</p>}
+                  {promo.accionables.pendientesPago.slice(0, 15).map(p => fila(p, 'p'))}
+                  {promo.accionables.pendientesPago.length > 15 && <p className="sub" style={{ marginTop: 6 }}>…y {promo.accionables.pendientesPago.length - 15} más (usa "Todas" para incluirlas en la simulación).</p>}
+                </div>
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <h4 style={{ margin: 0, fontSize: 13.5 }}>Rehabilitables ({promo.accionables.rehabilitables.length})</h4>
+                    <span>
+                      <button className="f-tab" style={{ fontSize: 11 }} onClick={() => toggleTodos(promo.accionables.rehabilitables, true)}>Todas</button>
+                      <button className="f-tab" style={{ fontSize: 11 }} onClick={() => toggleTodos(promo.accionables.rehabilitables, false)}>Ninguna</button>
+                    </span>
+                  </div>
+                  {promo.accionables.rehabilitables.length === 0 && <p className="empty">Sin canceladas recientes</p>}
+                  {promo.accionables.rehabilitables.slice(0, 15).map(p => fila(p, 'r'))}
+                  {promo.accionables.rehabilitables.length > 15 && <p className="sub" style={{ marginTop: 6 }}>…y {promo.accionables.rehabilitables.length - 15} más (ordenadas por urgencia: las que están por vencer primero).</p>}
+                </div>
+              </div>
+            </div>
+          </>
+        );
+      })()}
 
       {/* ═══════════ TAB TABLERO ═══════════ */}
       {tab === 'tablero' && !selClave && isAgency && (

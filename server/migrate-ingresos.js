@@ -68,62 +68,88 @@ async function upsert(table, rows, onConflict) {
   }
   console.log(`✓ crm_agents sincronizados: ${agNuevos} nuevos, ${agentes.length - agNuevos} actualizados`);
 
+  /* Contenedores "Cartera Prudential — asesor": SOLO se crean si hace falta
+     insertar una póliza sin cliente real (el Reporte de pólizas ya asigna a
+     casi todas su cliente con nombre). */
   const { data: contenedores, error: eCt } = await db.from('crm_clients').select('id, agent_id').eq('origen', 'Prudential');
   if (eCt) throw new Error(`crm_clients: ${eCt.message}`);
   const contPorAgente = new Map(contenedores.map(c => [c.agent_id, c.id]));
-  for (const a of agentes) {
-    const ag = agentePorClave.get(a.clave);
-    if (!ag || contPorAgente.has(ag.id)) continue;
+  async function contenedorDe(ag) {
+    if (contPorAgente.has(ag.id)) return contPorAgente.get(ag.id);
     const { data, error } = await db.from('crm_clients').insert([encryptFields({
       agent_id: ag.id,
-      nombre: `Cartera Prudential — ${ag.nombre || titulo(a.nombre)}`,
+      nombre: `Cartera Prudential — ${ag.nombre}`,
       etapa: 'postventa', origen: 'Prudential',
       notas: 'Cliente contenedor de la cartera migrada del Business Review. Reasigna cada póliza a su cliente real al capturarlo.',
     }, 'crm_clients')]).select('id, agent_id');
     if (error) throw new Error(`crm_clients: ${error.message}`);
     contPorAgente.set(ag.id, data[0].id);
+    return data[0].id;
   }
-  console.log(`✓ clientes contenedores Prudential: ${contPorAgente.size}`);
 
-  /* Pólizas: el número va cifrado en crm_policies, así que el match de
-     idempotencia se hace descifrando lo existente en memoria */
-  const { data: polActuales, error: ePl } = await db.from('crm_policies').select('id, agent_id, plan, poliza').range(0, 9999);
-  if (ePl) throw new Error(`crm_policies: ${ePl.message}`);
-  const polKey = (agentId, numero, plan) => `${agentId}|${numero}|${plan || ''}`;
-  const yaImportadas = new Map(polActuales.map(p => [polKey(p.agent_id, decryptFields(p, 'crm_policies').poliza, p.plan), p.id]));
+  /* Pólizas: el índice trae UNA FILA POR COBERTURA — se agrupan por número
+     de póliza (prima = suma de coberturas, datos de la cobertura principal).
+     El match de idempotencia es por número descifrando lo existente en
+     memoria; Supabase trunca a 1000 filas, así que se pagina. */
+  const polActuales = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await db.from('crm_policies').select('id, agent_id, plan, poliza').order('id').range(from, from + 999);
+    if (error) throw new Error(`crm_policies: ${error.message}`);
+    polActuales.push(...(data || []));
+    if (!data || data.length < 1000) break;
+  }
+  const yaImportadas = new Map();
+  for (const p of polActuales) {
+    const numero = String(decryptFields(p, 'crm_policies').poliza || '').replace(/\.0$/, '');
+    if (numero && !yaImportadas.has(numero)) yaImportadas.set(numero, p.id);
+  }
+
+  const grupos = new Map(); // `${clave}|${numero}` → líneas de cobertura
+  for (const p of polizas) {
+    const numero = String(p.poliza).replace(/\.0$/, '');
+    const k = `${p.clave}|${numero}`;
+    if (!grupos.has(k)) grupos.set(k, []);
+    grupos.get(k).push(p);
+  }
 
   const hoy = new Date();
   const unAnioAtras = new Date(hoy); unAnioAtras.setFullYear(hoy.getFullYear() - 1);
-  const insertar = [], actualizar = [];
-  for (const p of polizas) {
-    const ag = agentePorClave.get(p.clave);
+  let insertadas = 0, actualizadas = 0;
+  for (const lineas of grupos.values()) {
+    const ag = agentePorClave.get(lineas[0].clave);
     if (!ag) continue;
-    const numero = String(p.poliza).replace(/\.0$/, '');
-    const st = derivarEstatus(p, hoy);
-    const row = {
-      agent_id: ag.id, client_id: contPorAgente.get(ag.id),
-      poliza: numero, plan: p.plan_id || null,
-      tipo: (p.fecha_emision && new Date(p.fecha_emision) >= unAnioAtras) ? 'nueva' : 'renovacion',
-      prima: p.base_a_conservar_mxn, forma_pago: String(p.frecuencia_pago || '').toLowerCase() || null,
-      fecha_emision: p.fecha_emision || null, fecha_pago: p.pagado_hasta || null,
+    const numero = String(lineas[0].poliza).replace(/\.0$/, '');
+    const principal = lineas.reduce((a, b) => (Number(b.base_a_conservar_mxn) || 0) > (Number(a.base_a_conservar_mxn) || 0) ? b : a);
+    const primaTotal = Math.round(lineas.reduce((s, l) => s + (Number(l.base_a_conservar_mxn) || 0), 0) * 100) / 100;
+    const st = derivarEstatus(principal, hoy);
+    const patchComun = {
+      prima: primaTotal, fecha_pago: principal.pagado_hasta || null,
       estatus: st === 'CONSERVADA' ? 'pagada' : st === 'PENDIENTE DE PAGO' ? 'pendiente_pago' : 'cancelada',
-      moneda: 'MXN',
-      notas: `Business Review ${p.anio}-${p.periodo} · prima original ${p.prima_neta_anualizada} ${p.moneda} (t.c. ${p.tipo_cambio})`,
       updated_at: nowIso(),
     };
-    const exId = yaImportadas.get(polKey(ag.id, numero, row.plan));
-    if (exId) actualizar.push({ id: exId, patch: { prima: row.prima, fecha_pago: row.fecha_pago, estatus: row.estatus, updated_at: row.updated_at } });
-    else insertar.push(encryptFields(row, 'crm_policies'));
+    const exId = yaImportadas.get(numero);
+    if (exId) {
+      const { error } = await db.from('crm_policies').update(patchComun).eq('id', exId);
+      if (error) throw new Error(`crm_policies: ${error.message}`);
+      actualizadas++;
+    } else {
+      const row = {
+        agent_id: ag.id, client_id: await contenedorDe(ag),
+        poliza: numero, plan: principal.plan_id || null,
+        tipo: (principal.fecha_emision && new Date(principal.fecha_emision) >= unAnioAtras) ? 'nueva' : 'renovacion',
+        forma_pago: String(principal.frecuencia_pago || '').toLowerCase() || null,
+        fecha_emision: principal.fecha_emision || null,
+        moneda: 'MXN', aseguradora: 'PRU',
+        notas: `Business Review ${principal.anio}-${principal.periodo} · prima original ${principal.prima_neta_anualizada} ${principal.moneda} (t.c. ${principal.tipo_cambio})${lineas.length > 1 ? ` · ${lineas.length} coberturas (prima = suma)` : ''}`,
+        ...patchComun,
+      };
+      const { data, error } = await db.from('crm_policies').insert([encryptFields(row, 'crm_policies')]).select('id');
+      if (error) throw new Error(`crm_policies: ${error.message}`);
+      yaImportadas.set(numero, data[0].id);
+      insertadas++;
+    }
   }
-  for (let i = 0; i < insertar.length; i += 200) {
-    const { error } = await db.from('crm_policies').insert(insertar.slice(i, i + 200));
-    if (error) throw new Error(`crm_policies: ${error.message}`);
-  }
-  for (const u of actualizar) {
-    const { error } = await db.from('crm_policies').update(u.patch).eq('id', u.id);
-    if (error) throw new Error(`crm_policies: ${error.message}`);
-  }
-  console.log(`✓ crm_policies: ${insertar.length} insertadas, ${actualizar.length} actualizadas`);
+  console.log(`✓ crm_policies: ${insertadas} insertadas, ${actualizadas} actualizadas (${grupos.size} pólizas del índice)`);
 
   console.log('Migración de ingresos completa.');
   process.exit(0);

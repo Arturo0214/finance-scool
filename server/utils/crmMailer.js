@@ -26,4 +26,11 @@ async function sendMailWithPdf({ to, subject, text, filename, buffer }) {
   });
 }
 
-module.exports = { sendMailWithPdf };
+async function sendMail({ to, subject, text }) {
+  return getTransporter().sendMail({
+    from: `"Incubadora S-COOL CRM" <${process.env.EMAIL_USER}>`,
+    to, subject, text,
+  });
+}
+
+module.exports = { sendMailWithPdf, sendMail };

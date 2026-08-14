@@ -13,8 +13,8 @@ import {
   TIPOS_RECORDATORIO, tipoRecordatorio, fmtMoney, fmtDate,
 } from './crmShared';
 
-const EMPTY_CLIENT = { nombre: '', email: '', telefono: '', rfc: '', fecha_nacimiento: '', ocupacion: '', empresa: '', direccion: '', etapa: 'prospecto', origen: 'referido', notas: '', agent_id: '', aseguradora: 'PRU' };
-const EMPTY_POLICY = { poliza: '', plan: PLANES[0], tipo: 'nueva', prima: '', forma_pago: 'anual', suma_asegurada: '', fecha_emision: '', fecha_pago: '', fecha_renovacion: '', estatus: 'en_tramite', notas: '', aseguradora: 'PRU' };
+const EMPTY_CLIENT = { nombre: '', email: '', telefono: '', rfc: '', fecha_nacimiento: '', fecha_nacimiento_conyuge: '', hijos: '', motivo_no_compra: '', ocupacion: '', empresa: '', direccion: '', etapa: 'prospecto', origen: 'referido', notas: '', agent_id: '', aseguradora: 'PRU' };
+const EMPTY_POLICY = { poliza: '', plan: PLANES[0], tipo: 'nueva', prima: '', forma_pago: 'anual', suma_asegurada: '', fecha_emision: '', fecha_pago: '', fecha_renovacion: '', estatus: 'en_tramite', notas: '', motivo_compra: '', aseguradora: 'PRU' };
 
 /* Carteras por aseguradora */
 const ASEGURADORAS = [
@@ -227,6 +227,8 @@ export default function CrmClientsView({ isAgency, embedded }) {
     { key: 'email', label: 'Correo', type: 'email' },
     { key: 'rfc', label: 'RFC' },
     { key: 'fecha_nacimiento', label: 'Fecha de nacimiento', type: 'date' },
+    { key: 'fecha_nacimiento_conyuge', label: 'Fecha de nacimiento del cónyuge', type: 'date' },
+    { key: 'hijos', label: 'Hijos (nombres y edades)' },
     { key: 'ocupacion', label: 'Ocupación' },
     { key: 'empresa', label: 'Empresa' },
     { key: 'direccion', label: 'Dirección' },
@@ -581,6 +583,10 @@ export default function CrmClientsView({ isAgency, embedded }) {
               {tab === 'info' && editForm && (
                 <>
                   {inputRow(editForm, setEditForm, clientFields)}
+                  <div className="field">
+                    <label>¿Por qué NO ha comprado? (objeción principal — para trabajarla en el siguiente contacto)</label>
+                    <textarea rows={2} value={editForm.motivo_no_compra ?? ''} onChange={e => setEditForm({ ...editForm, motivo_no_compra: e.target.value })} />
+                  </div>
                   <div className="field"><label>Notas</label><textarea rows={3} value={editForm.notas ?? ''} onChange={e => setEditForm({ ...editForm, notas: e.target.value })} /></div>
                   <div style={{ display: 'flex', gap: 10, justifyContent: 'space-between', flexWrap: 'wrap' }}>
                     <button className="btn-secondary" style={{ color: C.red, borderColor: `${C.red}40` }} onClick={deleteClient}><Trash2 size={14} style={{ marginRight: 5 }} />Eliminar</button>
@@ -610,6 +616,7 @@ export default function CrmClientsView({ isAgency, embedded }) {
                         { key: 'fecha_pago', label: 'Fecha de pago', type: 'date' },
                         { key: 'fecha_renovacion', label: 'Fecha renovación', type: 'date' },
                         { key: 'estatus', label: 'Estatus', type: 'select', options: ESTATUS_POLIZA.map(s => ({ value: s.id, label: s.label })) },
+                        { key: 'motivo_compra', label: '¿Por qué compró? (argumento de retención)', type: 'textarea' },
                       ])}
                       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                         <button className="btn-secondary" onClick={() => setPolicyForm(null)}>Cancelar</button>
@@ -628,6 +635,7 @@ export default function CrmClientsView({ isAgency, embedded }) {
                             {p.tipo === 'renovacion' ? 'Renovación' : 'Nueva'} · Prima {fmtMoney(p.prima)}
                             {p.fecha_pago ? ` · Pagada ${fmtDate(p.fecha_pago)}` : p.fecha_renovacion ? ` · Renueva ${fmtDate(p.fecha_renovacion)}` : ''}
                           </div>
+                          {p.motivo_compra && <div className="fmeta" style={{ color: '#8A6A34' }}>🛡 Compró porque: {p.motivo_compra}</div>}
                         </div>
                         <span className="badge" style={{ background: s.bg, color: s.text }}>{s.label}</span>
                       </div>

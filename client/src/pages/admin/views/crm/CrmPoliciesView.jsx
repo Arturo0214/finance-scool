@@ -2,10 +2,10 @@
  * CrmPoliciesView — Pólizas de toda la cartera
  * Filtros por estatus/asesor, alta y edición rápida.
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../../../../utils/api';
 import { C } from '../../constants';
-import { Plus, X, Trash2, Search, ChevronUp, ChevronDown } from 'lucide-react';
+import { Plus, X, Trash2, Search, ChevronUp, ChevronDown, Upload, Download } from 'lucide-react';
 import { getCrmCSS, ESTATUS_POLIZA, estatusPoliza, PLANES, fmtMoney, fmtDate } from './crmShared';
 
 const EMPTY = { client_id: '', poliza: '', plan: PLANES[0], tipo: 'nueva', prima: '', forma_pago: 'anual', suma_asegurada: '', fecha_emision: '', fecha_pago: '', fecha_renovacion: '', estatus: 'en_tramite', notas: '', aseguradora: 'PRU' };
@@ -35,6 +35,9 @@ export default function CrmPoliciesView({ isAgency }) {
   const [sort, setSort] = useState({ key: '', dir: 'desc' });
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [ultimaImport, setUltimaImport] = useState(null);
+  const [importando, setImportando] = useState(false);
+  const importRef = useRef(null);
 
   const toggleSort = (key) => setSort(s => ({ key, dir: s.key === key && s.dir === 'desc' ? 'asc' : 'desc' }));
   const SortTh = ({ k, children }) => (
@@ -51,6 +54,7 @@ export default function CrmPoliciesView({ isAgency }) {
     try {
       const [p, c, a, pr] = await Promise.all([api.crmGetPolicies(), api.crmGetClients(), api.crmGetAgents(), api.crmGetProducts().catch(() => ({ products: [] }))]);
       setPolicies(p.policies || []); setClients(c.clients || []); setAgents(a.agents || []); setProducts(pr.products || []);
+      setUltimaImport(p.ultimaImportacion || null);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }, []);
@@ -138,7 +142,16 @@ export default function CrmPoliciesView({ isAgency }) {
       <div className="crm-toolbar">
         <div>
           <h1 className="view-title">Pólizas</h1>
-          <p className="view-subtitle" style={{ marginBottom: 0 }}>{filtered.length} pólizas · prima total {fmtMoney(totalPrima)}</p>
+          <p className="view-subtitle" style={{ marginBottom: 0 }}>
+            {filtered.length} pólizas · prima total {fmtMoney(totalPrima)}
+            {ultimaImport && (
+              <span style={{ display: 'block', fontSize: 11.5, color: C.textMuted, marginTop: 2 }}>
+                Última actualización del reporte: {new Date(ultimaImport.created_at).toLocaleString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                {ultimaImport.usuario ? ` por ${ultimaImport.usuario}` : ''}
+                {ultimaImport.resumen ? ` · ${ultimaImport.resumen.insertadas || 0} nuevas, ${ultimaImport.resumen.canceladas || 0} canceladas` : ''}
+              </span>
+            )}
+          </p>
         </div>
         <div className="crm-toolbar-right">
           <div className="crm-search-wrap">
@@ -151,6 +164,27 @@ export default function CrmPoliciesView({ isAgency }) {
               {agents.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
             </select>
           )}
+          {isAgency && (
+            <>
+              <input ref={importRef} type="file" accept=".xlsx,.xls" hidden onChange={async (e) => {
+                const f = e.target.files[0];
+                if (!f) return;
+                setImportando(true);
+                try {
+                  const { resumen } = await api.crmImportPolizas(f);
+                  alert(`Reporte cargado ✓\n${resumen.filas} filas · ${resumen.insertadas} nuevas · ${resumen.actualizadas} actualizadas · ${resumen.canceladas} canceladas · ${resumen.revividas} revividas · ${resumen.clientesNuevos} clientes nuevos`);
+                  load();
+                } catch (err) { alert(err.message); }
+                finally { setImportando(false); if (importRef.current) importRef.current.value = ''; }
+              }} />
+              <button className="btn-secondary" disabled={importando} onClick={() => importRef.current?.click()} title="Cargar el Reporte de pólizas Prudential (actualiza sin duplicar)">
+                <Upload size={15} /> {importando ? 'Cargando...' : 'Cargar reporte'}
+              </button>
+            </>
+          )}
+          <button className="btn-secondary" onClick={() => api.crmExportPolizas().catch(e => alert(e.message))} title="Descargar Excel con la información de esta página">
+            <Download size={15} /> Exportar
+          </button>
           <button className="btn-primary" onClick={() => setForm({ ...EMPTY })}><Plus size={16} /> Nueva póliza</button>
         </div>
       </div>
@@ -306,6 +340,15 @@ export default function CrmPoliciesView({ isAgency }) {
                 <div className="field"><label>Fecha renovación</label><input type="date" value={form.fecha_renovacion ?? ''} onChange={e => setForm({ ...form, fecha_renovacion: e.target.value })} /></div>
                 <div className="field"><label>Estatus</label><select value={form.estatus} onChange={e => setForm({ ...form, estatus: e.target.value })}>{ESTATUS_POLIZA.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}</select></div>
               </div>
+              <div className="field">
+                <label>¿Por qué compró? (motivo original — la herramienta para retener si un día quiere cancelar)</label>
+                <textarea rows={2} placeholder='Ej. "Quería un retiro de 4 MDP a los 65" — al querer cancelar, recuérdale su meta.' value={form.motivo_compra ?? ''} onChange={e => setForm({ ...form, motivo_compra: e.target.value })} />
+              </div>
+              {form.motivo_compra && (
+                <div className="info-box" style={{ marginBottom: 12, background: 'rgba(193,151,91,.08)', borderColor: 'rgba(193,151,91,.35)' }}>
+                  <p>🛡 <b>Argumento de retención:</b> {form.motivo_compra}</p>
+                </div>
+              )}
               <div className="field"><label>Notas</label><textarea rows={2} value={form.notas ?? ''} onChange={e => setForm({ ...form, notas: e.target.value })} /></div>
             </div>
             <div className="modal-foot" style={{ justifyContent: form.id ? 'space-between' : 'flex-end' }}>

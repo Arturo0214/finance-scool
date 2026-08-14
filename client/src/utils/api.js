@@ -189,6 +189,37 @@ export const api = {
   crmUpdateProduct: (id, data) => request(`/crm/products/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   crmDeleteProduct: (id) => request(`/crm/products/${id}`, { method: 'DELETE' }),
   crmIngresosOverview: () => request('/crm/ingresos/overview'),
+  crmIngresosPromotoria: () => request('/crm/ingresos/promotoria'),
+  // ── Cartera, carga diaria del reporte y export ──
+  crmCarteraResumen: () => request('/crm/cartera/resumen'),
+  crmCobranzaMailing: (clave) => request('/crm/cobranza-mailing', { method: 'POST', body: JSON.stringify(clave ? { clave } : {}) }),
+  crmLastImport: () => request('/crm/polizas/last-import'),
+  crmImportPolizas: async (file) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await fetch(`${API}/crm/polizas/import`, {
+      method: 'POST', credentials: 'include',
+      headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {},
+      body: fd,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Error al importar');
+    return data;
+  },
+  crmExportPolizas: async () => {
+    const res = await fetch(`${API}/crm/polizas/export`, {
+      credentials: 'include',
+      headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {},
+    });
+    if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || 'Error al exportar'); }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = (res.headers.get('Content-Disposition') || '').match(/filename="(.+)"/)?.[1] || 'Polizas_CRM.xlsx';
+    a.click();
+    URL.revokeObjectURL(url);
+  },
   crmIngresosAgent: (clave) => request(`/crm/ingresos/agent/${encodeURIComponent(clave)}`),
   crmIngresosSimulate: (data) => request('/crm/ingresos/simulate', { method: 'POST', body: JSON.stringify(data) }),
   crmIngresosPoliza: (id, accion) => request(`/crm/ingresos/poliza/${id}`, { method: 'PATCH', body: JSON.stringify({ accion }) }),
