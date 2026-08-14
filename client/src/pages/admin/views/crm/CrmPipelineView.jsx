@@ -206,6 +206,9 @@ export default function CrmPipelineView({ isAgency }) {
   const [overCol, setOverCol] = useState(null);
   const [search, setSearch] = useState('');
   const [reminders, setReminders] = useState([]);
+  const [fDesde, setFDesde] = useState('');
+  const [fHasta, setFHasta] = useState('');
+  const [embudoEtapa, setEmbudoEtapa] = useState(null); // etapa expandida en el embudo
   const [newForm, setNewForm] = useState(null); // alta manual de prospecto desde el pipeline
   const [saving, setSaving] = useState(false);
   const [detail, setDetail] = useState(null);   // tarjeta abierta: datos + notas por etapa
@@ -268,10 +271,16 @@ export default function CrmPipelineView({ isAgency }) {
     return m;
   }, [policies]);
 
-  const visible = clients.filter(c =>
-    (!isAgency || !agentFilter || String(c.agent_id) === agentFilter) &&
-    (!search || (c.nombre || '').toLowerCase().includes(search.toLowerCase()))
-  );
+  const visible = clients.filter(c => {
+    if (isAgency && agentFilter && String(c.agent_id) !== agentFilter) return false;
+    if (search && !(c.nombre || '').toLowerCase().includes(search.toLowerCase())) return false;
+    /* Filtro de fechas: leads dados de alta en el rango — con un mes o una
+       semana seleccionada se ve en qué estatus quedó cada lead de ese periodo */
+    const alta = String(c.created_at || '').slice(0, 10);
+    if (fDesde && alta && alta < fDesde) return false;
+    if (fHasta && alta && alta > fHasta) return false;
+    return true;
+  });
   const currentAgent = agents.find(a => String(a.id) === agentFilter);
 
   const moveClient = async (clientId, etapa) => {
@@ -306,6 +315,11 @@ export default function CrmPipelineView({ isAgency }) {
               <option value="">— Todos los asesores —</option>
             </select>
           )}
+          <input type="date" className="crm-select" title="Alta desde" value={fDesde} onChange={e => setFDesde(e.target.value)} />
+          <input type="date" className="crm-select" title="Alta hasta" value={fHasta} onChange={e => setFHasta(e.target.value)} />
+          {(fDesde || fHasta) && (
+            <button className="f-tab" onClick={() => { setFDesde(''); setFHasta(''); }} title="Quitar filtro de fechas">✕ fechas</button>
+          )}
           <button className="btn-secondary" onClick={load}><RefreshCw size={15} /></button>
           <button className="btn-primary" onClick={() => setNewForm({ nombre: '', telefono: '', ocupacion: '', etapa: 'prospecto', origen: 'referido', aseguradora: 'PRU' })}>
             <Plus size={15} /> Nuevo prospecto
@@ -317,6 +331,52 @@ export default function CrmPipelineView({ isAgency }) {
       <CitasSection
         citas={reminders.filter(r => r.tipo === 'cita' && (!isAgency || !agentFilter || String(r.agent_id) === agentFilter))}
         titulo={isAgency ? (!agentFilter ? 'Promotoría' : (currentAgent?.nombre || '')) : 'tu agenda'} />
+
+      {/* ══ Embudo de leads: todos los leads del asesor con su estatus.
+          Con el filtro de fechas se ve en qué estatus quedaron los leads
+          dados de alta en ese mes o semana. ══ */}
+      <div className="crm-chart-card" style={{ marginBottom: 20 }}>
+        <h3>🔻 Embudo de leads {isAgency && currentAgent ? `— ${currentAgent.nombre}` : ''}</h3>
+        <p className="sub">
+          {visible.length} leads{(fDesde || fHasta) ? ` dados de alta ${fDesde ? `desde ${fDesde}` : ''}${fHasta ? ` hasta ${fHasta}` : ''}` : ' en total'} · haz clic en una etapa para ver quiénes están ahí
+        </p>
+        {(() => {
+          const total = visible.length || 1;
+          return ETAPAS.map(etapa => {
+            const items = visible.filter(c => c.etapa === etapa.id);
+            const pct = items.length / total;
+            const abierta = embudoEtapa === etapa.id;
+            return (
+              <div key={etapa.id} style={{ marginBottom: 6 }}>
+                <div onClick={() => setEmbudoEtapa(abierta ? null : etapa.id)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '4px 0' }}>
+                  <span style={{ width: 9, height: 9, borderRadius: '50%', background: etapa.color, flexShrink: 0 }} />
+                  <span style={{ width: 150, fontSize: 12.5, fontWeight: 600, color: C.ink, flexShrink: 0 }}>{etapa.label}</span>
+                  <div style={{ flex: 1, height: 18, background: 'rgba(11,27,51,.05)', borderRadius: 9, overflow: 'hidden' }}>
+                    <div style={{ width: `${Math.max(pct * 100, items.length ? 3 : 0)}%`, height: '100%', background: `${etapa.color}99`, borderRadius: 9, transition: 'width .4s' }} />
+                  </div>
+                  <b style={{ width: 34, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{items.length}</b>
+                  <span style={{ width: 52, fontSize: 11, color: C.textMuted, textAlign: 'right' }}>{Math.round(pct * 100)}%</span>
+                </div>
+                {abierta && (
+                  <div style={{ margin: '4px 0 10px 169px' }}>
+                    {items.length === 0 && <p className="empty" style={{ padding: 8 }}>Nadie en esta etapa</p>}
+                    {items.map(c => (
+                      <div key={c.id} className="crm-mc-row" style={{ borderBottom: '1px solid rgba(11,27,51,.06)', padding: '5px 0', cursor: 'pointer' }}
+                        onClick={() => openDetail(c)}>
+                        <span><b>{c.nombre}</b> <span style={{ fontSize: 11, color: C.textMuted }}>{c.telefono || ''}</span></span>
+                        <span style={{ fontSize: 11, color: C.textMuted }}>
+                          alta {String(c.created_at || '').slice(0, 10)} · últ. mov. {String(c.updated_at || c.created_at || '').slice(0, 10)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          });
+        })()}
+      </div>
 
       {/* Reporte de ritmo solo para administración: a los asesores los desmotiva
           verse abajo del benchmark (acuerdo reunión 30-jul-2026) */}
