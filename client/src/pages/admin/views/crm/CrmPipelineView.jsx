@@ -6,8 +6,99 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { api } from '../../../../utils/api';
 import { C } from '../../constants';
-import { Phone, GripVertical, RefreshCw, Search } from 'lucide-react';
+import { Phone, GripVertical, RefreshCw, Search, Plus, X, CalendarCheck } from 'lucide-react';
 import { getCrmCSS, ETAPAS, BENCHMARK_SEMANAL, fmtMoney } from './crmShared';
+
+/* ── Mis citas: conteo por periodo (semana/mes/trimestre/año) vs el periodo
+   anterior, a partir de los recordatorios tipo "cita" (tienen fecha). ── */
+const GRANULARIDADES = [
+  { id: 'semana', label: 'Semana' },
+  { id: 'mes', label: 'Mes' },
+  { id: 'trimestre', label: 'Trimestre' },
+  { id: 'anio', label: 'Año' },
+];
+
+function periodoDe(fechaStr, gran) {
+  const d = new Date(`${String(fechaStr).slice(0, 10)}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return null;
+  const y = d.getFullYear();
+  if (gran === 'anio') return { key: `${y}`, label: `${y}` };
+  if (gran === 'trimestre') { const q = Math.ceil((d.getMonth() + 1) / 3); return { key: `${y}-Q${q}`, label: `Q${q} ${y}` }; }
+  if (gran === 'mes') return { key: `${y}-${String(d.getMonth() + 1).padStart(2, '0')}`, label: d.toLocaleDateString('es-MX', { month: 'short', year: 'numeric' }) };
+  // semana: lunes como inicio
+  const lunes = new Date(d); lunes.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return { key: lunes.toISOString().slice(0, 10), label: `sem. del ${lunes.toLocaleDateString('es-MX', { day: 'numeric', month: 'short' })}` };
+}
+
+function CitasSection({ citas, titulo }) {
+  const [gran, setGran] = useState('mes');
+  const hoy = new Date();
+  const actual = periodoDe(hoy.toISOString(), gran);
+
+  const porPeriodo = new Map();
+  for (const c of citas) {
+    const p = periodoDe(c.fecha, gran);
+    if (!p) continue;
+    if (!porPeriodo.has(p.key)) porPeriodo.set(p.key, { ...p, total: 0, realizadas: 0 });
+    const g = porPeriodo.get(p.key);
+    g.total++;
+    if (c.estatus === 'completado') g.realizadas++;
+  }
+  const ordenados = [...porPeriodo.values()].sort((a, b) => a.key.localeCompare(b.key));
+  const idxActual = ordenados.findIndex(p => p.key === actual.key);
+  const act = idxActual >= 0 ? ordenados[idxActual] : { ...actual, total: 0, realizadas: 0 };
+  const prev = idxActual > 0 ? ordenados[idxActual - 1]
+    : (idxActual === -1 && ordenados.length ? ordenados[ordenados.length - 1] : null);
+  const delta = prev ? act.total - prev.total : null;
+  const historial = ordenados.slice(-6);
+  const maxH = Math.max(1, ...historial.map(p => p.total));
+
+  return (
+    <div className="crm-chart-card" style={{ marginBottom: 20 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+        <h3 style={{ margin: 0 }}><CalendarCheck size={16} style={{ verticalAlign: -2, color: C.gold }} /> Citas — {titulo}</h3>
+        <div style={{ display: 'flex', gap: 6 }}>
+          {GRANULARIDADES.map(g => (
+            <button key={g.id} className={`f-tab${gran === g.id ? ' active' : ''}`} onClick={() => setGran(g.id)}>{g.label}</button>
+          ))}
+        </div>
+      </div>
+      <p className="sub" style={{ margin: '4px 0 14px' }}>Recordatorios tipo "cita" por fecha — agenda tus citas desde el expediente del cliente o Recordatorios para que cuenten aquí.</p>
+      <div className="crm-kpi-detail">
+        <div className="crm-kpi-box">
+          <div className="k-label">Este {gran === 'anio' ? 'año' : gran} ({act.label})</div>
+          <div className="k-value">{act.total}</div>
+          <div className="k-sub">{act.realizadas} realizadas · {act.total - act.realizadas} por venir</div>
+        </div>
+        <div className="crm-kpi-box">
+          <div className="k-label">{gran === 'anio' ? 'Año' : gran.charAt(0).toUpperCase() + gran.slice(1)} anterior {prev ? `(${prev.label})` : ''}</div>
+          <div className="k-value">{prev ? prev.total : '—'}</div>
+          <div className="k-sub">{prev ? `${prev.realizadas} realizadas` : 'sin citas registradas'}</div>
+        </div>
+        <div className="crm-kpi-box">
+          <div className="k-label">Comparativo</div>
+          <div className="k-value" style={{ color: delta === null ? C.textLight : delta >= 0 ? C.green : C.red }}>
+            {delta === null ? '—' : `${delta >= 0 ? '+' : ''}${delta}`}
+          </div>
+          <div className="k-sub">{delta === null ? 'aún sin periodo previo' : delta >= 0 ? 'vas arriba del periodo anterior 💪' : 'agenda más citas para alcanzarlo'}</div>
+        </div>
+      </div>
+      {historial.length > 0 && (
+        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', marginTop: 6 }}>
+          {historial.map(p => (
+            <div key={p.key} style={{ textAlign: 'center', flex: 1, maxWidth: 90 }}>
+              <div style={{ height: 54, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+                <div style={{ width: 26, height: `${Math.max(8, (p.total / maxH) * 54)}px`, borderRadius: 6, background: p.key === act.key ? C.gold : 'rgba(11,27,51,.15)' }} title={`${p.total} citas`} />
+              </div>
+              <div style={{ fontSize: 10, color: C.textMuted, marginTop: 4 }}>{p.label}</div>
+              <div style={{ fontSize: 11.5, fontWeight: 700 }}>{p.total}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /* ── Reporte de ritmo: tasas de transición de industria + forecast ──
    Modelo: cada semana un cliente avanza una etapa con la tasa de
@@ -114,17 +205,59 @@ export default function CrmPipelineView({ isAgency }) {
   const [dragId, setDragId] = useState(null);
   const [overCol, setOverCol] = useState(null);
   const [search, setSearch] = useState('');
+  const [reminders, setReminders] = useState([]);
+  const [newForm, setNewForm] = useState(null); // alta manual de prospecto desde el pipeline
+  const [saving, setSaving] = useState(false);
+  const [detail, setDetail] = useState(null);   // tarjeta abierta: datos + notas por etapa
+  const [notes, setNotes] = useState(null);
+  const [noteText, setNoteText] = useState('');
+
+  const openDetail = async (c) => {
+    setDetail(c); setNotes(null); setNoteText('');
+    try { const d = await api.crmGetNotes(c.id); setNotes(d.notes || []); }
+    catch { setNotes([]); }
+  };
+
+  const addNote = async () => {
+    if (!noteText.trim() || !detail) return;
+    const etapa = ETAPAS.find(e => e.id === detail.etapa);
+    try {
+      await api.crmCreateNote({ client_id: detail.id, tipo: 'nota', texto: `[${etapa?.label || detail.etapa}] ${noteText.trim()}` });
+      setNoteText('');
+      const d = await api.crmGetNotes(detail.id);
+      setNotes(d.notes || []);
+    } catch (e) { alert(e.message); }
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [c, p, a] = await Promise.all([api.crmGetClients(), api.crmGetPolicies(), api.crmGetAgents()]);
+      const [c, p, a, r] = await Promise.all([
+        api.crmGetClients(), api.crmGetPolicies(), api.crmGetAgents(),
+        api.crmGetReminders().catch(() => ({ reminders: [] })),
+      ]);
       setClients(c.clients || []); setPolicies(p.policies || []); setAgents(a.agents || []);
+      setReminders(r.reminders || []);
       if (!agentFilter && (a.agents || []).length) setAgentFilter(String(a.agents[0].id));
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }, [agentFilter]);
   useEffect(() => { load(); }, []); // eslint-disable-line
+
+  const createProspecto = async () => {
+    if (!newForm.nombre) return alert('El nombre es requerido');
+    if (isAgency && !agentFilter) return alert('Selecciona un asesor en el filtro para asignarle el prospecto');
+    setSaving(true);
+    try {
+      await api.crmCreateClient({
+        nombre: newForm.nombre, telefono: newForm.telefono, ocupacion: newForm.ocupacion,
+        etapa: newForm.etapa, origen: newForm.origen || 'referido', aseguradora: newForm.aseguradora || 'PRU',
+        ...(isAgency ? { agent_id: Number(agentFilter) } : {}),
+      });
+      setNewForm(null); load();
+    } catch (e) { alert(e.message); }
+    finally { setSaving(false); }
+  };
 
   const primaByClient = useMemo(() => {
     const m = {};
@@ -174,12 +307,121 @@ export default function CrmPipelineView({ isAgency }) {
             </select>
           )}
           <button className="btn-secondary" onClick={load}><RefreshCw size={15} /></button>
+          <button className="btn-primary" onClick={() => setNewForm({ nombre: '', telefono: '', ocupacion: '', etapa: 'prospecto', origen: 'referido', aseguradora: 'PRU' })}>
+            <Plus size={15} /> Nuevo prospecto
+          </button>
         </div>
       </div>
+
+      {/* Citas del periodo vs el anterior (semana/mes/trimestre/año) */}
+      <CitasSection
+        citas={reminders.filter(r => r.tipo === 'cita' && (!isAgency || !agentFilter || String(r.agent_id) === agentFilter))}
+        titulo={isAgency ? (!agentFilter ? 'Promotoría' : (currentAgent?.nombre || '')) : 'tu agenda'} />
 
       {/* Reporte de ritmo solo para administración: a los asesores los desmotiva
           verse abajo del benchmark (acuerdo reunión 30-jul-2026) */}
       {isAgency && <RitmoReport clients={visible} titulo={!agentFilter ? 'Promotoría' : (currentAgent?.nombre || 'Pipeline')} />}
+
+      {/* ══ Detalle de la tarjeta: datos del cliente + notas por etapa ══ */}
+      {detail && (() => {
+        const etapa = ETAPAS.find(e => e.id === detail.etapa) || ETAPAS[0];
+        return (
+          <div className="modal-overlay" onClick={() => setDetail(null)}>
+            <div className="modal crm-modal-lg" onClick={e => e.stopPropagation()}>
+              <div className="modal-head">
+                <div>
+                  <h2>{detail.nombre}</h2>
+                  <div style={{ display: 'flex', gap: 10, marginTop: 5, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <span className="badge" style={{ background: `${etapa.color}1A`, color: etapa.color }}>{etapa.label}</span>
+                    <select className="crm-select" style={{ padding: '4px 10px', fontSize: 12 }} value={detail.etapa}
+                      onChange={e => { moveClient(detail.id, e.target.value); setDetail({ ...detail, etapa: e.target.value }); }}>
+                      {ETAPAS.map(et => <option key={et.id} value={et.id}>Mover a: {et.label}</option>)}
+                    </select>
+                    {detail.telefono && (
+                      <a href={`https://wa.me/${detail.telefono.replace(/\D/g, '')}`} target="_blank" rel="noreferrer"
+                        style={{ color: '#25D366', fontWeight: 600, textDecoration: 'none', fontSize: 12.5 }}>WhatsApp ↗</a>
+                    )}
+                  </div>
+                </div>
+                <button className="close-btn" onClick={() => setDetail(null)}><X size={20} /></button>
+              </div>
+              <div className="modal-body">
+                {/* Datos del cliente */}
+                <div className="crm-kpi-detail" style={{ marginBottom: 14 }}>
+                  <div className="crm-kpi-box"><div className="k-label">Contacto</div><div style={{ fontSize: 13.5 }}>{detail.telefono || '—'}<br /><span style={{ color: C.textMuted, fontSize: 12 }}>{detail.email || ''}</span></div></div>
+                  <div className="crm-kpi-box"><div className="k-label">Ocupación</div><div style={{ fontSize: 13.5 }}>{detail.ocupacion || '—'}{detail.empresa ? ` · ${detail.empresa}` : ''}</div></div>
+                  <div className="crm-kpi-box"><div className="k-label">Origen / Cartera</div><div style={{ fontSize: 13.5, textTransform: 'capitalize' }}>{detail.origen || '—'} · {detail.aseguradora === 'IL' ? 'Insignia Life' : 'Prudential'}</div></div>
+                  {primaByClient[detail.id] > 0 && <div className="crm-kpi-box"><div className="k-label">Prima en pólizas</div><div style={{ fontSize: 13.5, fontWeight: 700, color: C.green }}>{fmtMoney(primaByClient[detail.id])}</div></div>}
+                </div>
+                {detail.motivo_no_compra && (
+                  <div className="info-box" style={{ marginBottom: 12, background: C.amberBg, borderColor: `${C.amber}40` }}>
+                    <p>🚧 <b>Objeción registrada:</b> {detail.motivo_no_compra}</p>
+                  </div>
+                )}
+                {detail.notas && <p style={{ fontSize: 12.5, color: C.textMuted, marginBottom: 14 }}>📄 {detail.notas}</p>}
+
+                {/* Notas por etapa */}
+                <h3 style={{ fontSize: 14, margin: '0 0 8px' }}>Notas de seguimiento</h3>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                  <textarea rows={2} style={{ flex: 1, padding: '9px 12px', border: '1px solid rgba(11,27,51,.14)', borderRadius: 10, fontSize: 13.5, fontFamily: 'inherit', resize: 'vertical' }}
+                    placeholder={`Nota en "${etapa.label}" — qué pasó, qué sigue...`}
+                    value={noteText} onChange={e => setNoteText(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addNote(); } }} />
+                  <button className="btn-primary" disabled={!noteText.trim()} onClick={addNote}><Plus size={15} /></button>
+                </div>
+                {notes === null && <div className="loading-wrap" style={{ minHeight: 60 }}><div className="spinner" /></div>}
+                {notes !== null && notes.length === 0 && <p className="empty">Sin notas aún — deja la primera para este cliente.</p>}
+                {(notes || []).map(n => (
+                  <div key={n.id} className="crm-file-row" style={{ alignItems: 'flex-start' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div className="fname" style={{ whiteSpace: 'pre-wrap' }}>{n.texto}</div>
+                      <div className="fmeta">{n.user_name || ''} · {new Date(n.created_at).toLocaleString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ══ Alta manual de prospecto (asesores y admin) ══ */}
+      {newForm && (
+        <div className="modal-overlay" onClick={() => setNewForm(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-head">
+              <h2>Nuevo prospecto {isAgency && currentAgent ? `— ${currentAgent.nombre}` : ''}</h2>
+              <button className="close-btn" onClick={() => setNewForm(null)}><X size={20} /></button>
+            </div>
+            <div className="modal-body">
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: '0 14px' }}>
+                <div className="field"><label>Nombre *</label><input value={newForm.nombre} onChange={e => setNewForm({ ...newForm, nombre: e.target.value })} /></div>
+                <div className="field"><label>Teléfono</label><input value={newForm.telefono} onChange={e => setNewForm({ ...newForm, telefono: e.target.value })} /></div>
+                <div className="field"><label>Ocupación</label><input value={newForm.ocupacion} onChange={e => setNewForm({ ...newForm, ocupacion: e.target.value })} /></div>
+                <div className="field"><label>Etapa</label>
+                  <select value={newForm.etapa} onChange={e => setNewForm({ ...newForm, etapa: e.target.value })}>
+                    {ETAPAS.map(et => <option key={et.id} value={et.id}>{et.label}</option>)}
+                  </select>
+                </div>
+                <div className="field"><label>Origen</label>
+                  <select value={newForm.origen} onChange={e => setNewForm({ ...newForm, origen: e.target.value })}>
+                    {['referido', 'frio', 'campania', 'evento', 'otro'].map(o => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                </div>
+                <div className="field"><label>Aseguradora</label>
+                  <select value={newForm.aseguradora} onChange={e => setNewForm({ ...newForm, aseguradora: e.target.value })}>
+                    <option value="PRU">Prudential</option><option value="IL">Insignia Life</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div className="modal-foot">
+              <button className="btn-secondary" onClick={() => setNewForm(null)}>Cancelar</button>
+              <button className="btn-primary" disabled={saving} onClick={createProspecto}>{saving ? 'Guardando...' : 'Crear prospecto'}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="kb-board">
         {ETAPAS.map(etapa => {
@@ -197,6 +439,10 @@ export default function CrmPipelineView({ isAgency }) {
                 <span className="kb-dot" style={{ background: etapa.color }} />
                 <span className="kb-col-title">{etapa.label}</span>
                 <span className="kb-count">{items.length}</span>
+                <button title={`Agregar cliente en ${etapa.label}`} onClick={() => setNewForm({ nombre: '', telefono: '', ocupacion: '', etapa: etapa.id, origen: 'referido', aseguradora: 'PRU' })}
+                  style={{ border: 'none', background: 'none', cursor: 'pointer', color: C.textMuted, padding: 2, display: 'inline-flex' }}>
+                  <Plus size={14} />
+                </button>
               </div>
               <div className="kb-col-body">
                 {totalPrima > 0 && <div className="kb-col-total">Prima: {fmtMoney(totalPrima)}</div>}
@@ -208,6 +454,7 @@ export default function CrmPipelineView({ isAgency }) {
                     draggable
                     onDragStart={() => setDragId(c.id)}
                     onDragEnd={() => { setDragId(null); setOverCol(null); }}
+                    onClick={() => { if (!dragId) openDetail(c); }}
                   >
                     <div className="kb-card-name"><GripVertical size={12} style={{ color: C.textLight, flexShrink: 0 }} />{c.nombre}</div>
                     {(c.ocupacion || c.empresa) && <div className="kb-card-sub">{c.ocupacion}{c.empresa ? ` · ${c.empresa}` : ''}</div>}
@@ -222,7 +469,7 @@ export default function CrmPipelineView({ isAgency }) {
                       )}
                     </div>
                     {/* Móvil: mover con selector */}
-                    <select className="kb-move" value={c.etapa} onChange={e => moveClient(c.id, e.target.value)}>
+                    <select className="kb-move" value={c.etapa} onClick={e => e.stopPropagation()} onChange={e => moveClient(c.id, e.target.value)}>
                       {ETAPAS.map(et => <option key={et.id} value={et.id}>{et.label}</option>)}
                     </select>
                   </div>
