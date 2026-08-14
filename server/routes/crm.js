@@ -573,7 +573,7 @@ router.get('/cartera/resumen', async (req, res) => {
   if (!scope) return;
   try {
     const db = getDB();
-    const [policies, clients] = await Promise.all([
+    const [policies, clients, { data: pruPrimasAll }] = await Promise.all([
       fetchAllRows(() => {
         let q = db.from('crm_policies').select('id, agent_id, client_id, aseguradora, estatus, tipo, prima, moneda, fecha_emision, fecha_renovacion');
         if (scope.restricted) q = q.eq('agent_id', scope.agentId);
@@ -584,6 +584,11 @@ router.get('/cartera/resumen', async (req, res) => {
         if (scope.restricted) q = q.eq('agent_id', scope.agentId);
         return q.order('id');
       }),
+      scope.restricted
+        ? (scope.agent?.clave
+          ? db.from('crm_pru_primas').select('clave, anio, mes, prima_pagada_inicial, prima_pagada_renovacion').eq('clave', scope.agent.clave)
+          : Promise.resolve({ data: [] }))
+        : db.from('crm_pru_primas').select('clave, anio, mes, prima_pagada_inicial, prima_pagada_renovacion'),
     ]);
     const contenedores = new Set(clients.filter(c => c.origen === 'Prudential' || c.origen === 'Insignia').map(c => c.id));
     const clientesReales = clients.filter(c => !contenedores.has(c.id));
@@ -633,14 +638,26 @@ router.get('/cartera/resumen', async (req, res) => {
     }
 
     const vigentes = policies.filter(p => ['pagada', 'pendiente_pago'].includes(p.estatus));
+
+    /* Prima nueva / arrastre según la definición de Flavio: lo pagado inicial
+       en los CORTES Prudential de los últimos 12 meses (una póliza vendida de
+       ago-2025 a hoy). Las ventas recientes aún no aparecen en el índice de
+       conservación por fecha de emisión, así que la fuente es crm_pru_primas. */
+    const hace12m = new Date(hoy); hace12m.setMonth(hoy.getMonth() - 12);
+    const enVentana = (pr) => new Date(pr.anio, pr.mes - 1, 28) >= hace12m;
+    const cortes12m = (pruPrimasAll || []).filter(enVentana);
+    const arrastre12m = Math.round(cortes12m.reduce((s, p) => s + (Number(p.prima_pagada_inicial) || 0), 0) * 100) / 100;
+    const renovacion12m = Math.round(cortes12m.reduce((s, p) => s + (Number(p.prima_pagada_renovacion) || 0), 0) * 100) / 100;
+
     res.json({
       totales: {
         polizas: policies.length,
         vigentes: vigentes.length,
         canceladas: policies.filter(p => p.estatus === 'cancelada').length,
         clientes: clientesReales.length,
-        primaNueva: Math.round(policies.filter(p => bloqueDe(p) === 0).reduce((s, p) => s + (Number(p.prima) || 0), 0) * 100) / 100,
-        primaRenovacion: Math.round(policies.filter(p => typeof bloqueDe(p) === 'number' && bloqueDe(p) > 0).reduce((s, p) => s + (Number(p.prima) || 0), 0) * 100) / 100,
+        primaNueva: arrastre12m,
+        primaRenovacion: renovacion12m,
+        baseCarteraRenovacion: Math.round(policies.filter(p => typeof bloqueDe(p) === 'number' && bloqueDe(p) > 0).reduce((s, p) => s + (Number(p.prima) || 0), 0) * 100) / 100,
       },
       segmentos,
       serie: [...serie.values()].sort((a, b) => (a.anio - b.anio) || (a.mes - b.mes)),

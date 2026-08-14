@@ -457,11 +457,19 @@ export default function CrmDashboardView() {
   const [error, setError] = useState(null);
   const [drill, setDrill] = useState(null); // summary del asesor seleccionado
   const [tab, setTab] = useState('resumen'); // resumen | rendimiento (solo admins)
+  const [pir, setPir] = useState(null);     // motor PIR: índice real + bonos (ingresos)
+  const [promoIdx, setPromoIdx] = useState(null); // índice agregado de la promotoría
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
-    try { setData(await api.crmGetDashboard(anio)); }
-    catch (e) { setError(e.message); }
+    try {
+      const d = await api.crmGetDashboard(anio);
+      setData(d);
+      /* El índice de conservación y los bonos REALES vienen del Business
+         Review Prudential (motor PIR), no de las pólizas capturadas */
+      api.crmIngresosOverview().then(r => setPir(r.agentes || [])).catch(() => {});
+      if (d.porAgente.length > 1) api.crmIngresosPromotoria().then(setPromoIdx).catch(() => {});
+    } catch (e) { setError(e.message); }
     finally { setLoading(false); }
   }, [anio]);
 
@@ -473,9 +481,12 @@ export default function CrmDashboardView() {
 
   const single = data.porAgente.length === 1; // asesor viendo su propio tablero
   const g = data.global.kpis.totales;
-  const gc = data.global.kpis.conservacion;
-  const bonoTotal = data.porAgente.reduce((s, a) => s + a.bonos.bonoTrimestral.monto, 0);
+  const bonoTotal = pir ? pir.reduce((s, a) => s + (a.bonos?.total_trimestre || 0), 0) : null;
   const clientesTotal = data.porAgente.reduce((s, a) => s + a.clientes.total, 0);
+  /* Índice oficial: promotoría agregada (umbral 84%) o el del asesor (86%) */
+  const idxOficial = single
+    ? (pir && pir[0] ? { actual: pir[0].indice.actual, hoy: pir[0].indice.hoy?.actual, todo: pir[0].indice.conPendiente, umbral: 0.86 } : null)
+    : (promoIdx ? { actual: promoIdx.indice.actual, hoy: promoIdx.indice.hoy.actual, todo: promoIdx.indice.siCobraTodo, umbral: 0.84 } : null);
 
   const globalChart = data.global.kpis.months.map((m, i) => ({
     mes: MESES[i],
@@ -521,8 +532,18 @@ export default function CrmDashboardView() {
           <div><p className="stat-label">Cumplimiento meta</p><p className="stat-value">{fmtPct(g.cumplimiento)}</p></div>
         </div>
         <div className="stat-card">
-          <div className="stat-icon" style={{ background: C.greenBg, color: C.green }}><Shield size={20} /></div>
-          <div><p className="stat-label">Índice conservación</p><p className="stat-value">{fmtPct(gc.indiceProyectado, 1)}</p></div>
+          <div className="stat-icon" style={{ background: C.greenBg, color: idxOficial && idxOficial.actual >= idxOficial.umbral ? C.green : C.red }}><Shield size={20} /></div>
+          <div>
+            <p className="stat-label">Índice conservación {single ? '' : '(promotoría)'}</p>
+            <p className="stat-value" style={{ color: idxOficial ? (idxOficial.actual >= idxOficial.umbral ? C.green : C.red) : undefined }}>
+              {idxOficial ? fmtPct(idxOficial.actual, 1) : '…'}
+            </p>
+            {idxOficial && (
+              <p style={{ fontSize: 10.5, color: C.textMuted, margin: '2px 0 0' }}>
+                hoy {fmtPct(idxOficial.hoy, 1)} · cobrando todo {fmtPct(idxOficial.todo, 1)} · mín. {fmtPct(idxOficial.umbral, 0)}
+              </p>
+            )}
+          </div>
         </div>
         <div className="stat-card">
           <div className="stat-icon" style={{ background: '#EDE9FE', color: '#6D28D9' }}><Briefcase size={20} /></div>
@@ -530,7 +551,11 @@ export default function CrmDashboardView() {
         </div>
         <div className="stat-card">
           <div className="stat-icon" style={{ background: C.greenBg, color: C.green }}><Award size={20} /></div>
-          <div><p className="stat-label">Bonos estimados Q</p><p className="stat-value">{fmtMoney(bonoTotal)}</p></div>
+          <div>
+            <p className="stat-label">Bonos PIR del Q</p>
+            <p className="stat-value">{bonoTotal === null ? '…' : fmtMoney(bonoTotal)}</p>
+            <p style={{ fontSize: 10.5, color: C.textMuted, margin: '2px 0 0' }}>del Business Review Prudential</p>
+          </div>
         </div>
         {!single && (
           <div className="stat-card">

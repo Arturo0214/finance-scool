@@ -68,8 +68,8 @@ export default function CrmCarteraSection({ titulo = 'Cartera Prudential', compa
         <div className="crm-kpi-detail">
           <div className="crm-kpi-box"><div className="k-label">Pólizas</div><div className="k-value">{t.polizas}</div><div className="k-sub">{t.vigentes} vigentes · {t.canceladas} canceladas</div></div>
           <div className="crm-kpi-box"><div className="k-label">Clientes</div><div className="k-value">{t.clientes}</div><div className="k-sub">con nombre real</div></div>
-          <div className="crm-kpi-box"><div className="k-label">Prima nueva (arrastre 12m)</div><div className="k-value">{fmtMoney(t.primaNueva)}</div><div className="k-sub">emitidas ago 2025 → hoy</div></div>
-          <div className="crm-kpi-box"><div className="k-label">Prima en renovación</div><div className="k-value">{fmtMoney(t.primaRenovacion)}</div><div className="k-sub">bloques de 12+ meses</div></div>
+          <div className="crm-kpi-box"><div className="k-label">Prima nueva (arrastre 12m)</div><div className="k-value">{fmtMoney(t.primaNueva)}</div><div className="k-sub">pagada inicial en los cortes Prudential de los últimos 12 meses</div></div>
+          <div className="crm-kpi-box"><div className="k-label">Prima de renovación (12m)</div><div className="k-value">{fmtMoney(t.primaRenovacion)}</div><div className="k-sub">pagada en renovación en los cortes · cartera en renovación {fmtMoney(t.baseCarteraRenovacion)}</div></div>
         </div>
 
         {/* filtro por año/bloque */}
