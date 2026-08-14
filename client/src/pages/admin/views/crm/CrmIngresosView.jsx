@@ -48,6 +48,110 @@ function BonoCard({ icon: Icon, label, value, sub, color }) {
   );
 }
 
+/* ── Proyección de ingresos a 1/2/3 años ──
+   Modelo transparente con supuestos editables: la venta mensual crece g% al
+   año; cada generación de pólizas sobrevive con la tasa de conservación; el
+   ingreso del año = comisión de año 1 sobre la venta nueva + comisión de
+   renovación sobre la cartera viva + bonos PIR estimados. */
+function ProyeccionIngresos({ detail }) {
+  const ventaActual = Math.round((detail.primas.ubicacionQ || 0) / 3) || 10000;
+  const consDefault = Math.round(Math.min(0.97, Math.max(0.5, detail.indice.conPendiente || detail.indice.actual || 0.9)) * 100);
+  const bonoPctDefault = detail.primas.pagadaInicialQ > 0
+    ? Math.min(45, Math.round((detail.bonos.total_trimestre / detail.primas.pagadaInicialQ) * 100))
+    : 25;
+
+  const [venta, setVenta] = useState(String(ventaActual));
+  const [crecimiento, setCrecimiento] = useState('10');
+  const [conservacion, setConservacion] = useState(String(consDefault));
+  const [comInicial, setComInicial] = useState('30');
+  const [comRenov, setComRenov] = useState('5');
+  const [bonoPct, setBonoPct] = useState(String(Math.max(0, bonoPctDefault)));
+
+  const V = Number(venta) || 0, g = (Number(crecimiento) || 0) / 100, r = (Number(conservacion) || 0) / 100;
+  const c1 = (Number(comInicial) || 0) / 100, c2 = (Number(comRenov) || 0) / 100, bp = (Number(bonoPct) || 0) / 100;
+  const carteraActualAnual = (detail.primas.renovacionQ || 0) * 4; // renovación del Q anualizada
+
+  const anios = [1, 2, 3].map(n => {
+    const primaNueva = V * 12 * Math.pow(1 + g, n - 1);
+    // cartera en renovación del año n: generaciones previas vivas + cartera actual sobreviviente
+    let cartera = carteraActualAnual * Math.pow(r, n);
+    for (let k = 1; k < n; k++) cartera += (V * 12 * Math.pow(1 + g, k - 1)) * Math.pow(r, n - k);
+    const comisionNueva = primaNueva * c1;
+    const comisionRenov = cartera * c2;
+    const bonos = (r >= 0.86 ? primaNueva * bp : 0);
+    const total = comisionNueva + comisionRenov + bonos;
+    return { n, primaNueva, cartera, comisionNueva, comisionRenov, bonos, total, mensual: total / 12 };
+  });
+
+  const inp = (label, val, set, sufijo) => (
+    <div className="field" style={{ marginBottom: 0, minWidth: 150 }}>
+      <label>{label}</label>
+      <div style={{ position: 'relative' }}>
+        <input type="number" value={val} onChange={e => set(e.target.value)} />
+        {sufijo && <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: C.textMuted }}>{sufijo}</span>}
+      </div>
+    </div>
+  );
+
+  return (
+    <>
+      <div className="crm-chart-card">
+        <h3><TrendingUp size={16} style={{ verticalAlign: -2, color: C.gold }} /> ¿Cuánto estarías ganando en 1, 2 y 3 años? — {detail.agente.nombre}</h3>
+        <p className="sub">
+          Estimación con supuestos editables. Punto de partida: vendes ≈ {fmtMoneyFull(ventaActual)}/mes y tu cartera de renovación anualizada es {fmtMoneyFull(carteraActualAnual)}.
+          El secreto del ingreso a 3 años es la cartera: cada año que conservas se te apila encima de la venta nueva.
+        </p>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
+          {inp('Venta mensual (prima $)', venta, setVenta)}
+          {inp('Crecimiento anual', crecimiento, setCrecimiento, '%')}
+          {inp('Conservación', conservacion, setConservacion, '%')}
+          {inp('Comisión año 1', comInicial, setComInicial, '%')}
+          {inp('Comisión renovación', comRenov, setComRenov, '%')}
+          {inp('Bonos PIR s/ venta nueva', bonoPct, setBonoPct, '%')}
+        </div>
+
+        <div className="crm-kpi-detail">
+          {anios.map(a => (
+            <div key={a.n} className="crm-kpi-box" style={{ borderTop: `3px solid ${['#C1975B', '#003DA5', '#0E7C6B'][a.n - 1]}` }}>
+              <div className="k-label">En {a.n} año{a.n > 1 ? 's' : ''}</div>
+              <div className="k-value" style={{ color: C.green }}>{fmtMoneyFull(Math.round(a.mensual))}<span style={{ fontSize: 13, color: C.textMuted }}>/mes</span></div>
+              <div className="k-sub">{fmtMoneyFull(Math.round(a.total))} al año</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="tbl-wrap">
+          <table>
+            <thead><tr><th>Año</th><th>Venta nueva anual</th><th>Cartera en renovación</th><th>Comisión venta nueva</th><th>Comisión renovación</th><th>Bonos PIR</th><th>Ingreso anual</th><th>Ingreso mensual</th></tr></thead>
+            <tbody>
+              {anios.map(a => (
+                <tr key={a.n}>
+                  <td><b>Año {a.n}</b></td>
+                  <td style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(a.primaNueva)}</td>
+                  <td style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(a.cartera)}</td>
+                  <td style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(a.comisionNueva)}</td>
+                  <td style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(a.comisionRenov)}</td>
+                  <td style={{ fontVariantNumeric: 'tabular-nums', color: a.bonos ? C.green : C.red }}>{a.bonos ? fmtMoney(a.bonos) : 'sin banda'}</td>
+                  <td><b style={{ color: C.green }}>{fmtMoneyFull(Math.round(a.total))}</b></td>
+                  <td><b>{fmtMoneyFull(Math.round(a.mensual))}</b></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {r < 0.86 && (
+          <p className="sub" style={{ color: C.red, marginTop: 10 }}>
+            <AlertTriangle size={13} style={{ verticalAlign: -2 }} /> Con conservación debajo del 86% los bonos PIR se van a cero — sube la tasa de conservación en los supuestos para ver el efecto completo.
+          </p>
+        )}
+        <p style={{ fontSize: 11, color: C.textLight, margin: '10px 0 0' }}>
+          Estimación informativa: las comisiones reales dependen del producto y plazo (tabla de comisiones Prudential) y los bonos de tu cuaderno y banda de índice. Ajusta los supuestos a tu realidad.
+        </p>
+      </div>
+    </>
+  );
+}
+
 export default function CrmIngresosView({ isAgency }) {
   const [tab, setTab] = useState('tablero');
   const [overview, setOverview] = useState([]);
@@ -182,10 +286,15 @@ export default function CrmIngresosView({ isAgency }) {
         <button className={`crm-dtab${tab === 'tablero' ? ' active' : ''}`} onClick={() => setTab('tablero')}>Tablero PIR</button>
         <button className={`crm-dtab${tab === 'simulador' ? ' active' : ''}`} onClick={() => setTab('simulador')} disabled={!detail}>Simulador</button>
         <button className={`crm-dtab${tab === 'conciliacion' ? ' active' : ''}`} onClick={() => setTab('conciliacion')}>Comisiones CRM</button>
+        <button className={`crm-dtab${tab === 'proyeccion' ? ' active' : ''}`} onClick={() => setTab('proyeccion')} disabled={!detail}>Proyección 1–3 años</button>
       </div>
 
       {/* ═══════════ TAB CONCILIACIÓN (vista de comisiones existente) ═══════════ */}
       {tab === 'conciliacion' && <CrmCommissionsView isAgency={isAgency} />}
+
+      {/* ═══════════ TAB PROYECCIÓN DE INGRESOS A 1/2/3 AÑOS ═══════════ */}
+      {tab === 'proyeccion' && detail && <ProyeccionIngresos detail={detail} />}
+      {tab === 'proyeccion' && !detail && <p className="empty">Selecciona un agente en el Tablero PIR para proyectar sus ingresos.</p>}
 
       {/* ═══════════ TABLERO DE LA PROMOTORÍA (agregado, umbral 84%) ═══════════ */}
       {tab === 'tablero' && !selClave && isAgency && promo && (() => {
