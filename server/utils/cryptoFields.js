@@ -50,7 +50,7 @@ function decryptValue(stored) {
 const ENCRYPTED_FIELDS = {
   crm_clients: ['telefono', 'email', 'rfc', 'direccion', 'notas', 'fecha_nacimiento',
     'fecha_nacimiento_conyuge', 'hijos', 'motivo_no_compra'],
-  crm_policies: ['poliza', 'notas', 'motivo_compra'],
+  crm_policies: ['poliza', 'notas', 'motivo_compra', 'beneficiarios'],
   crm_reminders: ['descripcion'],
 };
 

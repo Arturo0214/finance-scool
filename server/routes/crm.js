@@ -451,6 +451,7 @@ router.post('/policies', async (req, res) => {
     fecha_pago: b.fecha_pago || null, fecha_renovacion: b.fecha_renovacion || null,
     estatus: b.estatus || 'en_tramite', moneda: b.moneda || 'MXN', notas: b.notas,
     aseguradora: b.aseguradora || 'PRU', motivo_compra: b.motivo_compra || null,
+    beneficiarios: b.beneficiarios || null,
     comision_pct: b.comision_pct || null, comision_monto: b.comision_monto || null,
     comision_estatus: b.comision_estatus || 'pendiente',
   }, 'crm_policies')]).select();
@@ -468,7 +469,7 @@ router.put('/policies/:id', async (req, res) => {
   if (scope.restricted && existing.agent_id !== scope.agentId) return res.status(403).json({ error: 'Sin acceso a esta póliza' });
   if (!(await canEditData(req))) return res.status(403).json({ error: 'No tienes permiso de edición. Pídeselo a tu administrador.' });
   const allowed = ['poliza', 'plan', 'tipo', 'prima', 'forma_pago', 'suma_asegurada', 'fecha_emision', 'fecha_pago', 'fecha_renovacion', 'estatus', 'moneda', 'notas',
-    'comision_pct', 'comision_monto', 'comision_estatus', 'comision_fecha', 'comision_notas', 'aseguradora', 'client_id', 'motivo_compra'];
+    'comision_pct', 'comision_monto', 'comision_estatus', 'comision_fecha', 'comision_notas', 'aseguradora', 'client_id', 'motivo_compra', 'beneficiarios'];
   const patch = {};
   for (const k of allowed) if (k in req.body) patch[k] = req.body[k] === '' ? null : req.body[k];
   if (patch.client_id) {

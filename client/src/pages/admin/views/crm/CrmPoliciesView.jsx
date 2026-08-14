@@ -340,6 +340,39 @@ export default function CrmPoliciesView({ isAgency }) {
                 <div className="field"><label>Fecha renovación</label><input type="date" value={form.fecha_renovacion ?? ''} onChange={e => setForm({ ...form, fecha_renovacion: e.target.value })} /></div>
                 <div className="field"><label>Estatus</label><select value={form.estatus} onChange={e => setForm({ ...form, estatus: e.target.value })}>{ESTATUS_POLIZA.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}</select></div>
               </div>
+              {/* ── Beneficiarios (alimentan la agenda de cumpleaños en Recordatorios) ── */}
+              {(() => {
+                let bens = [];
+                try { bens = JSON.parse(form.beneficiarios || '[]'); } catch { bens = []; }
+                const setBens = (arr) => setForm({ ...form, beneficiarios: JSON.stringify(arr) });
+                return (
+                  <div className="config-panel" style={{ marginBottom: 14 }}>
+                    <label style={{ fontSize: 12.5, fontWeight: 700, display: 'block', marginBottom: 8 }}>
+                      Beneficiarios ({bens.length}) — sus cumpleaños aparecen en la agenda de Recordatorios
+                    </label>
+                    {bens.map((b, i) => (
+                      <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 1.2fr 0.6fr 1.2fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+                        <input placeholder="Nombre" value={b.nombre || ''} onChange={e => setBens(bens.map((x, j) => j === i ? { ...x, nombre: e.target.value } : x))}
+                          style={{ padding: '7px 10px', border: '1px solid rgba(11,27,51,.14)', borderRadius: 8, fontSize: 12.5, fontFamily: 'inherit' }} />
+                        <select value={b.relacion || ''} onChange={e => setBens(bens.map((x, j) => j === i ? { ...x, relacion: e.target.value } : x))}
+                          style={{ padding: '7px 8px', border: '1px solid rgba(11,27,51,.14)', borderRadius: 8, fontSize: 12.5, fontFamily: 'inherit' }}>
+                          <option value="">Relación...</option>
+                          {['Esposo/a', 'Hijo/a', 'Padre', 'Madre', 'Hermano/a', 'Otro'].map(r => <option key={r}>{r}</option>)}
+                        </select>
+                        <input type="number" placeholder="%" title="Porcentaje" value={b.pct ?? ''} onChange={e => setBens(bens.map((x, j) => j === i ? { ...x, pct: e.target.value } : x))}
+                          style={{ padding: '7px 8px', border: '1px solid rgba(11,27,51,.14)', borderRadius: 8, fontSize: 12.5, fontFamily: 'inherit' }} />
+                        <input type="date" title="Fecha de nacimiento" value={b.fecha_nacimiento || ''} onChange={e => setBens(bens.map((x, j) => j === i ? { ...x, fecha_nacimiento: e.target.value } : x))}
+                          style={{ padding: '7px 8px', border: '1px solid rgba(11,27,51,.14)', borderRadius: 8, fontSize: 12.5, fontFamily: 'inherit' }} />
+                        <button className="crm-icon-btn del" title="Quitar" onClick={() => setBens(bens.filter((_, j) => j !== i))}><Trash2 size={13} /></button>
+                      </div>
+                    ))}
+                    <button className="btn-secondary" style={{ padding: '5px 12px', fontSize: 12 }}
+                      onClick={() => setBens([...bens, { nombre: '', relacion: '', pct: '', fecha_nacimiento: '' }])}>
+                      <Plus size={13} /> Agregar beneficiario
+                    </button>
+                  </div>
+                );
+              })()}
               <div className="field">
                 <label>¿Por qué compró? (motivo original — la herramienta para retener si un día quiere cancelar)</label>
                 <textarea rows={2} placeholder='Ej. "Quería un retiro de 4 MDP a los 65" — al querer cancelar, recuérdale su meta.' value={form.motivo_compra ?? ''} onChange={e => setForm({ ...form, motivo_compra: e.target.value })} />
