@@ -10,7 +10,7 @@ import { Search, Plus, X, Trash2, Upload, FileText, ExternalLink, Phone, Mail, P
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip as ReTooltip } from 'recharts';
 import {
   getCrmCSS, ETAPAS, etapaInfo, estatusPoliza, ESTATUS_POLIZA, PLANES,
-  TIPOS_RECORDATORIO, tipoRecordatorio, fmtMoney, fmtDate,
+  TIPOS_RECORDATORIO, tipoRecordatorio, fmtMoney, fmtDate, buildSugerencias,
 } from './crmShared';
 
 const EMPTY_CLIENT = { nombre: '', email: '', telefono: '', rfc: '', fecha_nacimiento: '', fecha_nacimiento_conyuge: '', hijos: '', motivo_no_compra: '', ocupacion: '', empresa: '', direccion: '', etapa: 'prospecto', origen: 'referido', notas: '', agent_id: '', aseguradora: 'PRU' };
@@ -582,6 +582,26 @@ export default function CrmClientsView({ isAgency, embedded }) {
               {/* ── Tab: Información ── */}
               {tab === 'info' && editForm && (
                 <>
+                  {/* Sugerencias por datos capturados: elegibilidad de hijos,
+                      ventanas de producto, cumpleaños actuarial, huecos */}
+                  {!esCartera(detail.client) && (() => {
+                    const sugs = buildSugerencias({ ...detail.client, ...editForm }, detail.policies || []);
+                    if (!sugs.length) return null;
+                    return (
+                      <div className="config-panel" style={{ marginBottom: 16, background: 'linear-gradient(180deg,#FFFDF8,#FDFAF3)', border: '1px solid rgba(193,151,91,.28)' }}>
+                        <label style={{ fontSize: 12.5, fontWeight: 700, display: 'block', marginBottom: 8 }}>💡 Sugerencias para llegar con producto</label>
+                        {sugs.map((s, i) => (
+                          <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '7px 0', borderTop: i ? '1px solid rgba(11,27,51,.06)' : 'none' }}>
+                            <span style={{ fontSize: 16, flexShrink: 0 }}>{s.icono}</span>
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontSize: 13, fontWeight: 600, color: C.ink }}>{s.titulo}</div>
+                              <div style={{ fontSize: 12, color: C.textMuted, lineHeight: 1.5 }}>{s.detalle}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
                   {inputRow(editForm, setEditForm, clientFields)}
                   <div className="field">
                     <label>¿Por qué NO ha comprado? (objeción principal — para trabajarla en el siguiente contacto)</label>

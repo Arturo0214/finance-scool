@@ -59,6 +59,131 @@ export const TIPOS_RECORDATORIO = [
 ];
 export const tipoRecordatorio = (id) => TIPOS_RECORDATORIO.find(t => t.id === id) || TIPOS_RECORDATORIO[4];
 
+/* ══ Sugerencias inteligentes por cliente ══
+   Lee los datos capturados (edad, cónyuge, hijos, beneficiarios, pólizas,
+   objeciones) y genera recomendaciones accionables para llegar con producto
+   en el momento correcto — p.ej. "su hijo ya cumplió 12: ya es elegible
+   para una póliza de vida, a los 7 no lo era". Motor de reglas local. */
+export const edadDe = (fecha) => {
+  const f = String(fecha || '').slice(0, 10);
+  if (!f) return null;
+  const e = Math.floor((Date.now() - new Date(`${f}T12:00:00`).getTime()) / 31557600000);
+  return e >= 0 && e < 120 ? e : null;
+};
+
+/* Extrae edades del texto libre de "hijos": acepta "12 años", "12a" o años
+   de nacimiento ("2014"). */
+const edadesEnTexto = (txt) => {
+  const out = [];
+  const s = String(txt || '');
+  for (const m of s.matchAll(/(\d{1,2})\s*(?:años|año|a[ñn]itos)\b/gi)) { const n = +m[1]; if (n > 0 && n < 30) out.push(n); }
+  const yNow = new Date().getFullYear();
+  for (const m of s.matchAll(/\b(19[7-9]\d|20[0-2]\d)\b/g)) { const e = yNow - +m[1]; if (e >= 0 && e < 30 && !out.includes(e)) out.push(e); }
+  return out;
+};
+
+const parseBeneficiarios = (raw) => {
+  if (!raw) return [];
+  try { const b = typeof raw === 'string' ? JSON.parse(raw) : raw; return Array.isArray(b) ? b : []; } catch { return []; }
+};
+
+export function buildSugerencias(client, policiesCliente = []) {
+  const sug = [];
+  const push = (icono, titulo, detalle, tipo = 'producto') => sug.push({ icono, titulo, detalle, tipo });
+  const low = (s) => String(s || '').toLowerCase();
+  const vigentes = policiesCliente.filter(p => p.estatus !== 'cancelada');
+  const planesTxt = vigentes.map(p => low(p.plan)).join(' ');
+  const tiene = (...kws) => kws.some(k => planesTxt.includes(k));
+  const edad = edadDe(client.fecha_nacimiento);
+  const edadCony = edadDe(client.fecha_nacimiento_conyuge);
+
+  /* Edades de hijos: texto libre de "hijos" + beneficiarios jóvenes con fecha */
+  const hijosEdades = edadesEnTexto(client.hijos);
+  for (const p of policiesCliente) {
+    for (const b of parseBeneficiarios(p.beneficiarios)) {
+      const e = edadDe(b.fecha_nacimiento);
+      const rel = low(b.relacion);
+      if (e !== null && (e < 25 || rel.includes('hij')) && !hijosEdades.includes(e)) hijosEdades.push(e);
+    }
+  }
+
+  /* ── Hijos: elegibilidad por edad ── */
+  for (const e of [...new Set(hijosEdades)].sort((a, b) => a - b)) {
+    if (e >= 12 && e < 18) {
+      push('👨‍👧', `Su hijo(a) de ${e} años ya es elegible para póliza de vida`,
+        `A los 12 ya se puede contratar vida/ahorro a nombre del menor (a los 7 no se podía). Llega con un plan que asegure universidad y arranque su patrimonio con prima baja — sube cada año que esperen.`);
+    } else if (e < 12) {
+      push('🎓', `Hijo(a) de ${e} años: momento ideal para plan educativo`,
+        `Antes de los 12 el producto indicado es el educativo/dotal: ${12 - e} año(s) de ventaja de acumulación antes de que sea elegible para vida.`);
+    } else if (e >= 18 && e <= 26) {
+      push('🚀', `Su hijo(a) de ${e} años ya puede ser titular de su propia póliza`,
+        `Es prospecto directo: primer PPR o vida con la prima más baja de su vida. Pide la referencia — es la venta natural de la cartera.`);
+    }
+  }
+
+  /* ── Momento de vida del titular ── */
+  if (edad !== null) {
+    if (edad >= 25 && edad <= 45 && !tiene('ppr', 'patrimonial', 'trasciende', 'retiro', 'dotal'))
+      push('🏦', `A sus ${edad} años, cada año sin PPR cuesta caro`,
+        `Está en la ventana de máxima acumulación para el retiro. Un PPR ahora vale mucho más que el mismo PPR a los ${edad + 10}. Además deduce impuestos (Art. 151 LISR).`, 'momento');
+    if (edad >= 46 && edad <= 60 && !tiene('gmm', 'médic', 'medic', 'salud'))
+      push('🏥', `${edad} años sin GMM: asegurable hoy, quizá no mañana`,
+        `Después de los 60 el GMM se encarece o se niega por padecimientos. Contratarlo ahora fija su asegurabilidad.`, 'momento');
+    if (edad >= 55 && vigentes.length > 0)
+      push('📜', 'Conversación de legado y beneficiarios',
+        'Revisa con él/ella beneficiarios y suma seguro con componente sucesorio: es la edad donde más se agradece y menos se ofrece.', 'momento');
+  } else {
+    push('📋', 'Captura su fecha de nacimiento',
+      'Sin edad no se pueden detectar ventanas de producto (PPR, GMM, prima por edad). Pídela en la siguiente llamada.', 'datos');
+  }
+
+  /* ── Cumpleaños próximo = cambio de edad actuarial ── */
+  if (client.fecha_nacimiento) {
+    const f = String(client.fecha_nacimiento).slice(0, 10);
+    const hoy = new Date();
+    const cumple = new Date(`${hoy.getFullYear()}-${f.slice(5)}T12:00:00`);
+    if (cumple < hoy) cumple.setFullYear(cumple.getFullYear() + 1);
+    const dias = Math.round((cumple - hoy) / 86400000);
+    if (dias <= 45 && edad !== null)
+      push('⏳', `Cumple ${edad + 1} años en ${dias} día(s): la prima sube`,
+        `Cualquier póliza nueva contratada antes de su cumpleaños se calcula con edad ${edad}. Es el mejor argumento de urgencia honesto que existe.`, 'momento');
+  }
+
+  /* ── Cónyuge ── */
+  if (client.fecha_nacimiento_conyuge && vigentes.length > 0)
+    push('💍', `Cónyuge${edadCony !== null ? ` de ${edadCony} años` : ''} sin proteger`,
+      'El titular ya confió en ti: proteger ambos ingresos duplica la protección familiar y tu prima — y los hogares con 2 pólizas casi no cancelan.');
+
+  /* ── Cross-sell por hueco de portafolio ── */
+  if (vigentes.length > 0) {
+    if (tiene('gmm', 'médic', 'medic', 'salud') && !tiene('vida', 'ordinario', 'temporal', 'trasciende'))
+      push('🛡️', 'Tiene GMM pero no vida', 'Ya entendió el valor de asegurarse: la conversación de vida es corta. Protege el ingreso, no solo la salud.');
+    if (tiene('vida', 'ordinario', 'temporal') && !tiene('gmm', 'médic', 'medic', 'salud'))
+      push('🏥', 'Tiene vida pero no GMM', 'Un evento médico mayor es el riesgo financiero más probable antes de los 65. Complemento natural de su vida.');
+    if ((client.aseguradora || 'PRU') === 'PRU' && !policiesCliente.some(p => p.aseguradora === 'IL'))
+      push('🔁', 'Solo tiene cartera Prudential', 'Evalúa si un producto Insignia Life complementa (o viceversa): el cliente multi-póliza retiene el doble.', 'producto');
+  }
+
+  /* ── Objeción registrada: re-abordaje ── */
+  if (client.motivo_no_compra)
+    push('🚧', 'Objeción registrada: úsala para re-abordar', `Dijo: "${client.motivo_no_compra}". Prepara la respuesta a ESA objeción antes de volver a llamar — no repitas el pitch general.`, 'abordaje');
+  const motivos = policiesCliente.map(p => p.motivo_compra).filter(Boolean);
+  if (motivos.length)
+    push('❤️', 'Ancla de retención: por qué compró', `"${motivos[0]}" — recuérdaselo en cada renovación o intento de cancelación; es su propio argumento.`, 'abordaje');
+
+  /* ── Higiene de datos que desbloquea sugerencias ── */
+  const faltan = [];
+  if (!client.telefono) faltan.push('teléfono');
+  if (!client.email) faltan.push('correo');
+  if (!client.hijos && hijosEdades.length === 0) faltan.push('hijos');
+  if (!client.ocupacion) faltan.push('ocupación');
+  if (faltan.length)
+    push('📋', `Completa su expediente: falta ${faltan.join(', ')}`,
+      'Cada dato nuevo genera sugerencias nuevas (elegibilidad de hijos, cumpleaños, perfil lookalike). Aprovecha la siguiente interacción para pedirlos.', 'datos');
+
+  return sug;
+}
+
 export const CUADERNOS = ['NOVEL', 'EN DESARROLLO', 'CONSOLIDADO'];
 export const PLANES = ['PPR Trasciende', 'PPR Patrimonial', 'Vida Ordinario', 'Vida Temporal', 'GMM Esencial', 'GMM Flex', 'GMM Premium', 'Otro'];
 

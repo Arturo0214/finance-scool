@@ -6,8 +6,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { api } from '../../../../utils/api';
 import { C } from '../../constants';
-import { Phone, GripVertical, RefreshCw, Search, Plus, X, CalendarCheck } from 'lucide-react';
-import { getCrmCSS, ETAPAS, BENCHMARK_SEMANAL, fmtMoney } from './crmShared';
+import { Phone, GripVertical, RefreshCw, Search, Plus, X, CalendarCheck, Filter, Sparkles } from 'lucide-react';
+import { getCrmCSS, ETAPAS, BENCHMARK_SEMANAL, fmtMoney, buildSugerencias } from './crmShared';
 
 /* ── Mis citas: conteo por periodo (semana/mes/trimestre/año) vs el periodo
    anterior, a partir de los recordatorios tipo "cita" (tienen fecha). ── */
@@ -167,6 +167,69 @@ function RitmoReport({ clients, titulo }) {
   );
 }
 
+/* ── Lookalike: perfil del cliente que sí compra, por asesor ──
+   A partir de los clientes ganados (emitida/post venta o con prima) se
+   perfila ocupación, origen, cartera, prima y edad promedio; cada lead
+   activo recibe un score de afinidad 0-100 contra ese perfil. Sirve para
+   vinculación en frío en redes: buscar perfiles parecidos a los que ya
+   compraron. Las razones del score se muestran en el expediente del lead. */
+const norm = (s) => String(s || '').trim().toLowerCase();
+const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+const ETAPAS_GANADAS = new Set(['emitida', 'postventa']);
+
+function buildLookalike(clientsAll, primaByClient) {
+  const ganados = clientsAll.filter(c => ETAPAS_GANADAS.has(c.etapa) || (primaByClient[c.id] || 0) > 0);
+  if (ganados.length < 3) return { listo: false, ganados: ganados.length, scores: new Map() };
+
+  const countBy = (arr, fn) => { const m = new Map(); for (const x of arr) { const k = fn(x); if (k) m.set(k, (m.get(k) || 0) + 1); } return m; };
+  const occWin = countBy(ganados, c => norm(c.ocupacion));
+  const origWin = countBy(ganados, c => norm(c.origen));
+  const asegWin = countBy(ganados, c => c.aseguradora || 'PRU');
+  const maxOcc = Math.max(1, ...occWin.values());
+  const maxOrig = Math.max(1, ...origWin.values());
+  const topAseg = [...asegWin.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || 'PRU';
+
+  const primas = ganados.map(c => primaByClient[c.id] || 0).filter(Boolean);
+  const primaProm = primas.length ? primas.reduce((a, b) => a + b, 0) / primas.length : 0;
+  const edades = ganados.map(c => {
+    const f = String(c.fecha_nacimiento || '').slice(0, 10);
+    if (!f) return null;
+    const e = (Date.now() - new Date(`${f}T12:00:00`).getTime()) / 31557600000;
+    return e > 15 && e < 90 ? e : null;
+  }).filter(Boolean);
+  const edadProm = edades.length ? Math.round(edades.reduce((a, b) => a + b, 0) / edades.length) : null;
+
+  const scores = new Map();
+  for (const c of clientsAll) {
+    if (ETAPAS_GANADAS.has(c.etapa) || c.etapa === 'inactivo' || (primaByClient[c.id] || 0) > 0) continue;
+    let score = 15; // base por estar activo en el pipeline
+    const razones = [];
+    const o = norm(c.ocupacion);
+    if (o && occWin.has(o)) {
+      const n = occWin.get(o);
+      score += Math.max(18, Math.round(40 * (n / maxOcc)));
+      razones.push(`ocupación "${cap(o)}" ya te compró (${n} cliente${n > 1 ? 's' : ''} ganado${n > 1 ? 's' : ''})`);
+    }
+    const g = norm(c.origen);
+    if (g && origWin.has(g)) {
+      const n = origWin.get(g);
+      score += Math.max(10, Math.round(25 * (n / maxOrig)));
+      razones.push(`el origen "${g}" convierte en tu cartera (${n} ganado${n > 1 ? 's' : ''})`);
+    }
+    if ((c.aseguradora || 'PRU') === topAseg) { score += 10; razones.push(`cartera ${topAseg === 'IL' ? 'Insignia Life' : 'Prudential'}, donde más cierras`); }
+    if (c.telefono) { score += 10; razones.push('tiene datos de contacto para dar seguimiento'); }
+    score = Math.min(100, score);
+    scores.set(c.id, { score, razones, tier: score >= 70 ? 'alta' : score >= 45 ? 'media' : null });
+  }
+
+  return {
+    listo: true, ganados: ganados.length, scores,
+    ocupaciones: [...occWin.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([k, n]) => ({ label: cap(k), n })),
+    origenes: [...origWin.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, n]) => ({ label: k, n })),
+    aseguradora: topAseg, primaProm, edadProm,
+  };
+}
+
 const KANBAN_CSS = `
   .kb-board { display:flex; gap:14px; overflow-x:auto; padding-bottom:16px; align-items:flex-start; -webkit-overflow-scrolling:touch; }
   .kb-col { min-width:238px; width:238px; flex-shrink:0; background:linear-gradient(180deg,rgba(255,255,255,.72),rgba(246,248,251,.92)); border-radius:16px; border:1px solid rgba(11,27,51,.08); display:flex; flex-direction:column; max-height:calc(100vh - 300px); box-shadow:0 1px 2px rgba(11,27,51,.03); }
@@ -187,6 +250,11 @@ const KANBAN_CSS = `
   .kb-prima { font-size:11.5px; font-weight:700; color:${C.green}; font-variant-numeric:tabular-nums; }
   .kb-move { display:none; }
   .kb-empty { font-size:11.5px; color:${C.textLight}; text-align:center; padding:16px 6px; border:1.5px dashed rgba(11,27,51,.15); border-radius:10px; font-style:italic; }
+  .kb-afin { font-size:10px; font-weight:800; padding:2px 8px; border-radius:10px; margin-left:auto; flex-shrink:0; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .kb-afin.alta { background:#ECFDF5; color:#059669; border:1px solid rgba(5,150,105,.25); }
+  .kb-afin.media { background:#FFFBEB; color:#B45309; border:1px solid rgba(180,83,9,.25); }
+  .kb-lk-chip { display:inline-flex; align-items:center; gap:7px; padding:7px 12px; border:1px solid rgba(11,27,51,.1); border-radius:12px; background:linear-gradient(180deg,#fff,#FDFDFB); cursor:pointer; font-size:12.5px; font-weight:600; color:${C.ink}; transition:all .2s; }
+  .kb-lk-chip:hover { border-color:${C.gold}; transform:translateY(-1px); box-shadow:0 8px 18px -12px rgba(11,27,51,.4); }
   @media(max-width:768px){
     .kb-col { min-width:78vw; width:78vw; max-height:none; }
     .kb-board { scroll-snap-type:x mandatory; }
@@ -208,6 +276,10 @@ export default function CrmPipelineView({ isAgency }) {
   const [reminders, setReminders] = useState([]);
   const [fDesde, setFDesde] = useState('');
   const [fHasta, setFHasta] = useState('');
+  const [fOcupacion, setFOcupacion] = useState('');
+  const [fOrigen, setFOrigen] = useState('');
+  const [fAseg, setFAseg] = useState('');
+  const [fAfinidad, setFAfinidad] = useState('');
   const [embudoEtapa, setEmbudoEtapa] = useState(null); // etapa expandida en el embudo
   const [newForm, setNewForm] = useState(null); // alta manual de prospecto desde el pipeline
   const [saving, setSaving] = useState(false);
@@ -271,9 +343,36 @@ export default function CrmPipelineView({ isAgency }) {
     return m;
   }, [policies]);
 
+  /* Clientes del asesor seleccionado (sin filtros de búsqueda/fecha):
+     base del lookalike y de las opciones de los filtros */
+  const agentClients = useMemo(
+    () => clients.filter(c => !isAgency || !agentFilter || String(c.agent_id) === agentFilter),
+    [clients, isAgency, agentFilter]);
+
+  const lookalike = useMemo(() => buildLookalike(agentClients, primaByClient), [agentClients, primaByClient]);
+
+  const ocupaciones = useMemo(() => {
+    const m = new Map();
+    for (const c of agentClients) { const o = norm(c.ocupacion); if (o) m.set(o, (m.get(o) || 0) + 1); }
+    return [...m.entries()].sort((a, b) => b[1] - a[1]);
+  }, [agentClients]);
+  const origenes = useMemo(() => {
+    const m = new Map();
+    for (const c of agentClients) { const o = norm(c.origen); if (o) m.set(o, (m.get(o) || 0) + 1); }
+    return [...m.entries()].sort((a, b) => b[1] - a[1]);
+  }, [agentClients]);
+
   const visible = clients.filter(c => {
     if (isAgency && agentFilter && String(c.agent_id) !== agentFilter) return false;
-    if (search && !(c.nombre || '').toLowerCase().includes(search.toLowerCase())) return false;
+    if (search && !`${c.nombre || ''} ${c.telefono || ''} ${c.empresa || ''} ${c.ocupacion || ''}`.toLowerCase().includes(search.toLowerCase())) return false;
+    if (fOcupacion && norm(c.ocupacion) !== fOcupacion) return false;
+    if (fOrigen && norm(c.origen) !== fOrigen) return false;
+    if (fAseg && (c.aseguradora || 'PRU') !== fAseg) return false;
+    if (fAfinidad) {
+      const s = lookalike.scores.get(c.id);
+      if (fAfinidad === 'alta' && s?.tier !== 'alta') return false;
+      if (fAfinidad === 'media' && !s?.tier) return false;
+    }
     /* Filtro de fechas: leads dados de alta en el rango — con un mes o una
        semana seleccionada se ve en qué estatus quedó cada lead de ese periodo */
     const alta = String(c.created_at || '').slice(0, 10);
@@ -281,6 +380,7 @@ export default function CrmPipelineView({ isAgency }) {
     if (fHasta && alta && alta > fHasta) return false;
     return true;
   });
+  const hayFiltros = search || fOcupacion || fOrigen || fAseg || fAfinidad || fDesde || fHasta;
   const currentAgent = agents.find(a => String(a.id) === agentFilter);
 
   const moveClient = async (clientId, etapa) => {
@@ -305,10 +405,6 @@ export default function CrmPipelineView({ isAgency }) {
           </p>
         </div>
         <div className="crm-toolbar-right">
-          <div className="crm-search-wrap">
-            <Search size={15} />
-            <input className="crm-search" placeholder="Buscar cliente..." value={search} onChange={e => setSearch(e.target.value)} />
-          </div>
           {isAgency && (
             <select className="crm-select" value={agentFilter} onChange={e => setAgentFilter(e.target.value)}>
               {agents.map(a => <option key={a.id} value={a.id}>{a.nombre} ({a.clave})</option>)}
@@ -382,6 +478,121 @@ export default function CrmPipelineView({ isAgency }) {
           verse abajo del benchmark (acuerdo reunión 30-jul-2026) */}
       {isAgency && <RitmoReport clients={visible} titulo={!agentFilter ? 'Promotoría' : (currentAgent?.nombre || 'Pipeline')} />}
 
+      {/* ══ Lookalike: perfil que sí compra + prospección en frío en redes ══ */}
+      <div className="crm-chart-card" style={{ marginBottom: 20 }}>
+        <h3><Sparkles size={16} style={{ verticalAlign: -2, color: C.gold }} /> Lookalike — el perfil que te compra{isAgency ? ` (${!agentFilter ? 'Promotoría' : currentAgent?.nombre || ''})` : ''}</h3>
+        {!lookalike.listo ? (
+          <p className="sub" style={{ marginBottom: 0 }}>
+            Con al menos 3 clientes ganados (emitida/post venta) se perfila automáticamente qué ocupación, origen y edad convierten mejor
+            {lookalike.ganados > 0 ? ` — llevas ${lookalike.ganados}.` : '.'} Mientras tanto, prospecta con el benchmark de 15 contactos nuevos por semana.
+          </p>
+        ) : (
+          <>
+            <p className="sub">
+              Basado en tus {lookalike.ganados} clientes ganados. Para <b>vinculación en frío en redes sociales</b>, busca perfiles como estos
+              — cada lead del tablero trae su % de afinidad contra este perfil.
+            </p>
+            <div className="crm-kpi-detail">
+              <div className="crm-kpi-box">
+                <div className="k-label">Ocupaciones que te compran</div>
+                {lookalike.ocupaciones.length === 0 && <div className="k-sub">captura la ocupación de tus clientes para afinar el perfil</div>}
+                {lookalike.ocupaciones.map(o => (
+                  <div key={o.label} style={{ fontSize: 13, display: 'flex', justifyContent: 'space-between', padding: '2px 0' }}>
+                    <span>{o.label}</span><b style={{ fontVariantNumeric: 'tabular-nums' }}>{o.n}</b>
+                  </div>
+                ))}
+              </div>
+              <div className="crm-kpi-box">
+                <div className="k-label">Origen que convierte</div>
+                {lookalike.origenes.map(o => (
+                  <div key={o.label} style={{ fontSize: 13, display: 'flex', justifyContent: 'space-between', padding: '2px 0', textTransform: 'capitalize' }}>
+                    <span>{o.label}</span><b style={{ fontVariantNumeric: 'tabular-nums' }}>{o.n}</b>
+                  </div>
+                ))}
+              </div>
+              <div className="crm-kpi-box">
+                <div className="k-label">Tu cliente ideal</div>
+                <div className="k-value" style={{ fontSize: 17 }}>
+                  {lookalike.edadProm ? `~${lookalike.edadProm} años` : cap(lookalike.ocupaciones[0]?.label || '—')}
+                </div>
+                <div className="k-sub">cartera {lookalike.aseguradora === 'IL' ? 'Insignia Life' : 'Prudential'}{lookalike.primaProm ? ` · prima prom. ${fmtMoney(lookalike.primaProm)}` : ''}</div>
+              </div>
+              <div className="crm-kpi-box">
+                <div className="k-label">Guion para redes</div>
+                <div className="k-sub" style={{ fontSize: 12, lineHeight: 1.5 }}>
+                  Busca {lookalike.ocupaciones.slice(0, 2).map(o => o.label.toLowerCase()).join(', ') || 'perfiles similares a tu cartera'}
+                  {lookalike.edadProm ? ` de ${Math.max(20, lookalike.edadProm - 6)}–${lookalike.edadProm + 6} años` : ''} en LinkedIn/Facebook
+                  y pide referidos a tus ganados: es tu origen que más cierra.
+                </div>
+              </div>
+            </div>
+            {(() => {
+              const topAfines = [...lookalike.scores.entries()]
+                .filter(([, s]) => s.tier)
+                .sort((a, b) => b[1].score - a[1].score).slice(0, 6)
+                .map(([id, s]) => ({ c: agentClients.find(x => x.id === id), s }))
+                .filter(x => x.c);
+              if (!topAfines.length) return null;
+              return (
+                <div>
+                  <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 1.3, color: C.textMuted, fontWeight: 700, margin: '4px 0 8px' }}>
+                    🎯 Tus prospectos más afines — llámalos primero
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {topAfines.map(({ c, s }) => (
+                      <button key={c.id} className="kb-lk-chip" onClick={() => openDetail(c)}>
+                        <span className={`kb-afin ${s.tier}`} style={{ marginLeft: 0 }}>{s.score}%</span>
+                        {c.nombre}
+                        <span style={{ color: C.textMuted, fontWeight: 400 }}>{cap(norm(c.ocupacion)) || ''}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+          </>
+        )}
+      </div>
+
+      {/* ══ Filtros del tablero: búsqueda, ocupación, origen, cartera y afinidad ══ */}
+      <div className="crm-chart-card" style={{ marginBottom: 20, padding: '13px 18px' }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Filter size={15} style={{ color: C.textMuted, flexShrink: 0 }} />
+          <div className="crm-search-wrap">
+            <Search size={15} />
+            <input className="crm-search" style={{ minWidth: 190 }} placeholder="Buscar nombre, teléfono, empresa..."
+              value={search} onChange={e => setSearch(e.target.value)} />
+          </div>
+          <select className="crm-select" value={fOcupacion} onChange={e => setFOcupacion(e.target.value)}>
+            <option value="">Ocupación: todas</option>
+            {ocupaciones.map(([o, n]) => <option key={o} value={o}>{cap(o)} ({n})</option>)}
+          </select>
+          <select className="crm-select" value={fOrigen} onChange={e => setFOrigen(e.target.value)}>
+            <option value="">Origen: todos</option>
+            {origenes.map(([o, n]) => <option key={o} value={o}>{cap(o)} ({n})</option>)}
+          </select>
+          <select className="crm-select" value={fAseg} onChange={e => setFAseg(e.target.value)}>
+            <option value="">Cartera: ambas</option>
+            <option value="PRU">Prudential</option>
+            <option value="IL">Insignia Life</option>
+          </select>
+          <select className="crm-select" value={fAfinidad} onChange={e => setFAfinidad(e.target.value)} disabled={!lookalike.listo}
+            title={lookalike.listo ? 'Filtra por afinidad al perfil lookalike' : 'Se activa con 3+ clientes ganados'}>
+            <option value="">Afinidad: todas</option>
+            <option value="alta">🎯 Perfil ideal (70%+)</option>
+            <option value="media">Afines (45%+)</option>
+          </select>
+          {hayFiltros && (
+            <button className="f-tab" onClick={() => { setSearch(''); setFOcupacion(''); setFOrigen(''); setFAseg(''); setFAfinidad(''); setFDesde(''); setFHasta(''); }}>
+              ✕ Limpiar
+            </button>
+          )}
+          <span style={{ marginLeft: 'auto', fontSize: 12, color: C.textMuted, fontVariantNumeric: 'tabular-nums' }}>
+            {visible.length} de {agentClients.length} leads
+          </span>
+        </div>
+      </div>
+
       {/* ══ Detalle de la tarjeta: datos del cliente + notas por etapa ══ */}
       {detail && (() => {
         const etapa = ETAPAS.find(e => e.id === detail.etapa) || ETAPAS[0];
@@ -413,12 +624,49 @@ export default function CrmPipelineView({ isAgency }) {
                   <div className="crm-kpi-box"><div className="k-label">Origen / Cartera</div><div style={{ fontSize: 13.5, textTransform: 'capitalize' }}>{detail.origen || '—'} · {detail.aseguradora === 'IL' ? 'Insignia Life' : 'Prudential'}</div></div>
                   {primaByClient[detail.id] > 0 && <div className="crm-kpi-box"><div className="k-label">Prima en pólizas</div><div style={{ fontSize: 13.5, fontWeight: 700, color: C.green }}>{fmtMoney(primaByClient[detail.id])}</div></div>}
                 </div>
+                {(() => {
+                  const s = lookalike.scores.get(detail.id);
+                  if (!s) return null;
+                  return (
+                    <div className="info-box" style={{ marginBottom: 12, background: s.tier === 'alta' ? '#ECFDF5' : s.tier === 'media' ? '#FFFBEB' : 'rgba(11,27,51,.03)', borderColor: 'rgba(11,27,51,.08)' }}>
+                      <p style={{ margin: 0 }}>
+                        🎯 <b>Afinidad lookalike: {s.score}%</b>{s.tier === 'alta' ? ' — perfil ideal, priorízalo' : s.tier === 'media' ? ' — perfil afín' : ''}
+                      </p>
+                      {s.razones.length > 0 && (
+                        <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 12.5, color: C.textMuted }}>
+                          {s.razones.map((r, i) => <li key={i}>{r}</li>)}
+                        </ul>
+                      )}
+                    </div>
+                  );
+                })()}
                 {detail.motivo_no_compra && (
                   <div className="info-box" style={{ marginBottom: 12, background: C.amberBg, borderColor: `${C.amber}40` }}>
                     <p>🚧 <b>Objeción registrada:</b> {detail.motivo_no_compra}</p>
                   </div>
                 )}
                 {detail.notas && <p style={{ fontSize: 12.5, color: C.textMuted, marginBottom: 14 }}>📄 {detail.notas}</p>}
+
+                {/* Sugerencias por datos del cliente: hijos elegibles, ventanas
+                    de producto, cumpleaños actuarial, huecos de portafolio */}
+                {(() => {
+                  const sugs = buildSugerencias(detail, policies.filter(p => p.client_id === detail.id));
+                  if (!sugs.length) return null;
+                  return (
+                    <div style={{ marginBottom: 14 }}>
+                      <h3 style={{ fontSize: 14, margin: '0 0 8px' }}>💡 Sugerencias para llegar con producto</h3>
+                      {sugs.map((s, i) => (
+                        <div key={i} className="crm-file-row" style={{ alignItems: 'flex-start' }}>
+                          <span style={{ fontSize: 17, flexShrink: 0 }}>{s.icono}</span>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div className="fname" style={{ wordBreak: 'normal' }}>{s.titulo}</div>
+                            <div className="fmeta" style={{ fontSize: 12, marginTop: 2, lineHeight: 1.5 }}>{s.detalle}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
 
                 {/* Notas por etapa */}
                 <h3 style={{ fontSize: 14, margin: '0 0 8px' }}>Notas de seguimiento</h3>
@@ -516,7 +764,14 @@ export default function CrmPipelineView({ isAgency }) {
                     onDragEnd={() => { setDragId(null); setOverCol(null); }}
                     onClick={() => { if (!dragId) openDetail(c); }}
                   >
-                    <div className="kb-card-name"><GripVertical size={12} style={{ color: C.textLight, flexShrink: 0 }} />{c.nombre}</div>
+                    <div className="kb-card-name">
+                      <GripVertical size={12} style={{ color: C.textLight, flexShrink: 0 }} />
+                      <span style={{ minWidth: 0 }}>{c.nombre}</span>
+                      {(() => {
+                        const s = lookalike.scores.get(c.id);
+                        return s?.tier ? <span className={`kb-afin ${s.tier}`} title={`Afinidad lookalike ${s.score}% — ${s.razones.join(' · ')}`}>🎯 {s.score}%</span> : null;
+                      })()}
+                    </div>
                     {(c.ocupacion || c.empresa) && <div className="kb-card-sub">{c.ocupacion}{c.empresa ? ` · ${c.empresa}` : ''}</div>}
                     {isAgency && !agentFilter && c.crm_agents?.nombre && <div className="kb-card-sub">👤 {c.crm_agents.nombre}</div>}
                     <div className="kb-card-meta">
