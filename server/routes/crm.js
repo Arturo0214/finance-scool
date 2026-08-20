@@ -2046,7 +2046,9 @@ router.get('/ingresos/poliza/:id/expediente', async (req, res) => {
         .eq('client_id', policy.crm_clients.id).order('created_at', { ascending: false });
       notes = (n || []).filter(x => String(x.texto || '').includes(`[Póliza ${numero}]`));
     }
-    res.json({ indice: ctx.pol, numero, policy, notes });
+    const personalizaPlanes = await getPersonalizaPlanes();
+    const rehab = clasificarRehabilitacion(ctx.pol, new Date(), compilePersonaliza(personalizaPlanes));
+    res.json({ indice: ctx.pol, numero, policy, notes, rehab });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

@@ -129,6 +129,23 @@ function RehabPanel({ data, isAgency, busy, onReload, openExpediente }) {
   const [cfgOpen, setCfgOpen] = useState(false);
   const [alertMsg, setAlertMsg] = useState('');
   const [sending, setSending] = useState(false);
+  /* Filtros por columna */
+  const [fAsesor, setFAsesor] = useState('');
+  const [fPoliza, setFPoliza] = useState('');
+  const [fEtapa, setFEtapa] = useState('');
+  const [fUrg, setFUrg] = useState('');
+  const [actId, setActId] = useState(null);
+
+  const marcar = async (r, accion) => {
+    const txt = accion === 'rehabilitar'
+      ? `¿Marcar la póliza ${r.poliza} (${r.agente}) como rehabilitada?`
+      : `¿Registrar el cobro de la póliza ${r.poliza} (${r.agente})?`;
+    if (!window.confirm(txt)) return;
+    setActId(r.id);
+    try { await api.crmIngresosPoliza(r.id, accion); await onReload(); }
+    catch (e) { alert(e.message); }
+    finally { setActId(null); }
+  };
 
   const enviarAlertas = async () => {
     if (!window.confirm('¿Enviar por correo las rehabilitaciones urgentes a cada asesor y el digest a la promotoría?')) return;
@@ -140,7 +157,13 @@ function RehabPanel({ data, isAgency, busy, onReload, openExpediente }) {
     finally { setSending(false); }
   };
 
-  const grupos = ORDEN_URG.map(u => ({ u, items: rehabilitables.filter(r => r.urgencia === u) })).filter(g => g.items.length);
+  const filtrados = rehabilitables.filter(r =>
+    (!fAsesor || String(r.agente || '').toLowerCase().includes(fAsesor.toLowerCase())) &&
+    (!fPoliza || `${r.poliza} ${r.plan_id || ''}`.toLowerCase().includes(fPoliza.toLowerCase())) &&
+    (!fEtapa || r.etapa === fEtapa) &&
+    (!fUrg || r.urgencia === fUrg)
+  );
+  const hayFiltro = fAsesor || fPoliza || fEtapa || fUrg;
 
   return (
     <div>
@@ -178,39 +201,60 @@ function RehabPanel({ data, isAgency, busy, onReload, openExpediente }) {
 
       {rehabilitables.length === 0 && <p className="empty">No hay canceladas rehabilitables. 🎉</p>}
 
-      {grupos.map(({ u, items }) => (
-        <div key={u} style={{ marginBottom: 18 }}>
-          <h4 style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '0 0 6px' }}>
-            <UrgBadge u={u} /> <span style={{ fontSize: 12.5, color: C.ink, opacity: 0.6 }}>{items.length} póliza(s) · {fmtMoney(items.reduce((s, r) => s + r.monto, 0))}</span>
-          </h4>
+      {rehabilitables.length > 0 && (
+        <>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '0 0 6px' }}>
+            <span className="sub">{filtrados.length} de {rehabilitables.length} · {fmtMoney(filtrados.reduce((s, r) => s + r.monto, 0))}</span>
+            {hayFiltro && <button className="f-tab" style={{ fontSize: 11 }} onClick={() => { setFAsesor(''); setFPoliza(''); setFEtapa(''); setFUrg(''); }}>Limpiar filtros</button>}
+          </div>
           <table>
             <thead>
               <tr>
                 {data.scope !== 'asesor' && <th style={{ textAlign: 'left' }}>Asesor</th>}
                 <th style={{ textAlign: 'left' }}>Póliza</th>
-                <th style={{ textAlign: 'left' }}>Etapa / método</th>
+                <th style={{ textAlign: 'left' }}>Etapa</th>
+                <th style={{ textAlign: 'left' }}>Urgencia</th>
                 <th style={{ textAlign: 'right' }}>Cancelada hace</th>
                 <th style={{ textAlign: 'right' }}>Vence etapa</th>
                 <th style={{ textAlign: 'right' }}>Monto</th>
+                {isAgency && <th></th>}
+              </tr>
+              {/* Fila de filtros por columna */}
+              <tr>
+                {data.scope !== 'asesor' && <th><input className="crm-input" style={{ padding: '4px 7px', fontSize: 11.5, fontWeight: 400 }} placeholder="filtrar…" value={fAsesor} onChange={e => setFAsesor(e.target.value)} /></th>}
+                <th><input className="crm-input" style={{ padding: '4px 7px', fontSize: 11.5, fontWeight: 400 }} placeholder="póliza/plan…" value={fPoliza} onChange={e => setFPoliza(e.target.value)} /></th>
+                <th><select className="crm-input" style={{ padding: '4px 7px', fontSize: 11.5, fontWeight: 400 }} value={fEtapa} onChange={e => setFEtapa(e.target.value)}>
+                  <option value="">todas</option><option value="AUTOMATICA">Automática</option><option value="CORREO">Con correo</option><option value="FIRMA">Con firma</option>
+                </select></th>
+                <th><select className="crm-input" style={{ padding: '4px 7px', fontSize: 11.5, fontWeight: 400 }} value={fUrg} onChange={e => setFUrg(e.target.value)}>
+                  <option value="">todas</option><option value="EXTREMA">Extrema</option><option value="ALTA">Alta</option><option value="MEDIA">Media</option><option value="BAJA">Baja</option>
+                </select></th>
+                <th></th><th></th><th></th>{isAgency && <th></th>}
               </tr>
             </thead>
             <tbody>
-              {items.map(r => (
-                <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => openExpediente(r.id)} title="Ver expediente">
-                  {data.scope !== 'asesor' && <td style={{ fontSize: 12 }}>{r.agente}</td>}
-                  <td style={{ fontFamily: 'monospace', fontSize: 12.5 }}>{r.poliza} <span style={{ opacity: 0.5 }}>{r.plan_id}</span></td>
-                  <td><EtapaBadge e={r.etapa} /><div className="sub" style={{ fontSize: 10.5 }}>{r.metodo}</div></td>
+              {filtrados.map(r => (
+                <tr key={r.id}>
+                  {data.scope !== 'asesor' && <td style={{ fontSize: 12, cursor: 'pointer' }} onClick={() => openExpediente(r.id)}>{r.agente}</td>}
+                  <td style={{ fontFamily: 'monospace', fontSize: 12.5, cursor: 'pointer' }} onClick={() => openExpediente(r.id)}>{r.poliza} <span style={{ opacity: 0.5 }}>{r.plan_id}</span></td>
+                  <td style={{ cursor: 'pointer' }} onClick={() => openExpediente(r.id)}><EtapaBadge e={r.etapa} /></td>
+                  <td><UrgBadge u={r.urgencia} /></td>
                   <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{r.dias_desde_cancelacion}d</td>
-                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: r.dias_para_vencer_etapa <= 7 ? C.red : r.dias_para_vencer_etapa <= 20 ? '#B45309' : C.ink }}>
-                    {r.dias_para_vencer_etapa}d
-                  </td>
+                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: r.dias_para_vencer_etapa <= 7 ? C.red : r.dias_para_vencer_etapa <= 20 ? '#B45309' : C.ink }}>{r.dias_para_vencer_etapa}d</td>
                   <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(r.monto)}</td>
+                  {isAgency && (
+                    <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <button className="btn-secondary" style={{ padding: '4px 8px', fontSize: 11 }} disabled={actId === r.id} title="Marcar rehabilitada"
+                        onClick={() => marcar(r, 'rehabilitar')}><RotateCcw size={13} /> {actId === r.id ? '…' : 'Rehabilitar'}</button>
+                    </td>
+                  )}
                 </tr>
               ))}
+              {filtrados.length === 0 && <tr><td colSpan={8}><p className="empty" style={{ margin: 8 }}>Ninguna coincide con los filtros.</p></td></tr>}
             </tbody>
           </table>
-        </div>
-      ))}
+        </>
+      )}
 
       {cfgOpen && <RehabConfigEditor onClose={() => setCfgOpen(false)} onSaved={onReload} />}
     </div>
@@ -371,6 +415,46 @@ export default function CrmIngresosView({ isAgency }) {
     } catch (e) { alert(e.message); }
   };
 
+  /* Nota automática que deja registro de la cancelación (fecha + etapa) */
+  const addCancelNote = async () => {
+    const d = polExp?.data;
+    if (!d?.policy?.crm_clients?.id) { alert('Esta póliza aún no tiene expediente en el CRM (carga el reporte de pólizas).'); return; }
+    const r = d.rehab;
+    const fecha = d.indice.fecha_ultima_cancelacion;
+    const txt = `Cancelada el ${fecha ? fmtDate(fecha) : 's/f'}${r ? ` · rehabilitación ${r.etapa_label.toLowerCase()} (${r.metodo}) · quedan ${r.dias_para_vencer_etapa} días de esta etapa` : ''}.`;
+    try {
+      await api.crmCreateNote({ client_id: d.policy.crm_clients.id, tipo: 'nota', texto: `[Póliza ${d.numero}] ${txt}` });
+      const nd = await api.crmIngresosPolizaExpediente(polExp.id);
+      setPolExp(p => ({ ...p, data: nd }));
+    } catch (e) { alert(e.message); }
+  };
+
+  /* Marcar pagada / rehabilitada desde el modal (agencia): avanza el índice y
+     deja nota automática. Refresca la lista de donde se abrió. */
+  const polAccion = async (accion) => {
+    const d = polExp?.data;
+    if (!d) return;
+    const txt = accion === 'pago'
+      ? `¿Registrar el cobro de la póliza ${d.numero}? Su "pagada hasta" avanza un periodo y sube tu índice.`
+      : `¿Marcar la póliza ${d.numero} como rehabilitada? Vuelve a Vigente, avanza un periodo y sube tu índice.`;
+    if (!window.confirm(txt)) return;
+    setPolExp(p => ({ ...p, actioning: true }));
+    try {
+      await api.crmIngresosPoliza(polExp.id, accion);
+      if (d.policy?.crm_clients?.id) {
+        await api.crmCreateNote({
+          client_id: d.policy.crm_clients.id, tipo: 'nota',
+          texto: `[Póliza ${d.numero}] ${accion === 'pago' ? 'Cobro registrado' : 'Rehabilitación registrada'} el ${new Date().toLocaleDateString('es-MX')} desde el CRM.`,
+        });
+      }
+      const nd = await api.crmIngresosPolizaExpediente(polExp.id);
+      setPolExp(p => ({ ...p, actioning: false, data: nd }));
+      if (selClave) api.crmIngresosAgent(selClave).then(setDetail).catch(() => {});
+      else api.crmIngresosPromotoria().then(setPromo).catch(() => {});
+      loadRehab();
+    } catch (e) { alert(e.message); setPolExp(p => ({ ...p, actioning: false })); }
+  };
+
   /* Trayectoria a 15 meses */
   const [tray, setTray] = useState(null);
   const [trayBusy, setTrayBusy] = useState(false);
@@ -511,26 +595,17 @@ export default function CrmIngresosView({ isAgency }) {
             {polExp.loading ? (
               <div className="loading-wrap" style={{ minHeight: 160 }}><div className="spinner" /></div>
             ) : (() => {
-              const { indice, numero, policy, notes } = polExp.data;
+              const { indice, numero, policy, notes, rehab } = polExp.data;
               const cancelada = String(indice.estatus_calculo || '').toUpperCase() !== 'VIGENTE';
-              const limite = indice.fecha_ultima_cancelacion ? new Date(indice.fecha_ultima_cancelacion) : null;
-              if (limite) limite.setMonth(limite.getMonth() + 6);
-              const diasRestantes = limite ? Math.round((limite - new Date()) / 86400000) : null;
               const cliente = policy?.crm_clients;
+              const urgColor = rehab ? (URG_META[rehab.urgencia] || URG_META.BAJA).color : C.ink;
               return (
                 <>
                   <div className="modal-head">
                     <div>
                       <h2>Póliza {numero}</h2>
                       <div style={{ display: 'flex', gap: 8, marginTop: 5, alignItems: 'center', flexWrap: 'wrap' }}>
-                        {cancelada
-                          ? <span className="badge" style={{ background: C.redBg, color: C.red }}>Cancelada{indice.fecha_ultima_cancelacion ? ` el ${fmtDate(indice.fecha_ultima_cancelacion)}` : ''}</span>
-                          : <span className="badge" style={{ background: C.amberBg, color: C.amber }}>Pendiente de pago</span>}
-                        {cancelada && diasRestantes !== null && (
-                          <span className="badge" style={{ background: diasRestantes <= 30 ? C.redBg : C.greenBg, color: diasRestantes <= 30 ? C.red : C.green }}>
-                            {diasRestantes <= 0 ? 'ya no rehabilitable' : `♻️ rehabilitable ${diasRestantes} días más`}
-                          </span>
-                        )}
+                        {!cancelada && <span className="badge" style={{ background: C.amberBg, color: C.amber }}>Pendiente de pago</span>}
                         {cliente?.telefono && (
                           <a href={`https://wa.me/${String(cliente.telefono).replace(/\D/g, '')}`} target="_blank" rel="noreferrer"
                             style={{ color: '#25D366', fontWeight: 600, textDecoration: 'none', fontSize: 12.5 }}>WhatsApp ↗</a>
@@ -540,6 +615,40 @@ export default function CrmIngresosView({ isAgency }) {
                     <button className="close-btn" onClick={() => setPolExp(null)}><X size={20} /></button>
                   </div>
                   <div className="modal-body">
+                    {/* Banner de cancelación / rehabilitación — grande y visible */}
+                    {cancelada && (
+                      <div style={{ border: `1px solid ${urgColor}55`, background: `${urgColor}10`, borderRadius: 12, padding: '12px 14px', marginBottom: 14 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+                          <div>
+                            <div style={{ fontSize: 15, fontWeight: 700, color: urgColor, display: 'flex', alignItems: 'center', gap: 7 }}>
+                              <AlertTriangle size={16} /> Cancelada el {indice.fecha_ultima_cancelacion ? fmtDate(indice.fecha_ultima_cancelacion) : 'fecha no disponible'}
+                            </div>
+                            {rehab
+                              ? <div style={{ fontSize: 13, marginTop: 4, color: C.ink }}>
+                                  Hace <b>{rehab.dias_desde_cancelacion} días</b> · {rehab.etapa_label}: <b>{rehab.metodo}</b>
+                                  {rehab.rehabilitable
+                                    ? <> · quedan <b style={{ color: rehab.dias_para_vencer_etapa <= 7 ? C.red : rehab.dias_para_vencer_etapa <= 20 ? '#B45309' : C.ink }}>{rehab.dias_para_vencer_etapa} días</b> de esta etapa</>
+                                    : <> · <b style={{ color: C.red }}>ya no es rehabilitable</b></>}
+                                </div>
+                              : <div style={{ fontSize: 13, marginTop: 4, color: C.ink }}>Sin fecha de cancelación registrada en el corte.</div>}
+                          </div>
+                          {rehab && <UrgBadge u={rehab.urgencia} />}
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+                          {isAgency && rehab?.rehabilitable && (
+                            <button className="btn-primary" disabled={polExp.actioning} onClick={() => polAccion('rehabilitar')}>
+                              <RotateCcw size={14} /> {polExp.actioning ? 'Procesando…' : 'Marcar rehabilitada'}
+                            </button>
+                          )}
+                          {isAgency && (
+                            <button className="btn-secondary" disabled={polExp.actioning} onClick={() => polAccion('pago')}>
+                              <HandCoins size={14} /> Marcar pagada
+                            </button>
+                          )}
+                          <button className="btn-secondary" onClick={addCancelNote}><Plus size={14} /> Registrar nota de cancelación</button>
+                        </div>
+                      </div>
+                    )}
                     <div className="crm-kpi-detail" style={{ marginBottom: 14 }}>
                       <div className="crm-kpi-box"><div className="k-label">Cliente</div><div style={{ fontSize: 13.5, fontWeight: 600 }}>{cliente?.nombre || '—'}</div><div className="k-sub">{cliente?.telefono || 'sin teléfono'}</div></div>
                       <div className="crm-kpi-box"><div className="k-label">Plan</div><div style={{ fontSize: 13.5 }}>{indice.plan_id || policy?.plan || '—'}</div><div className="k-sub">{indice.frecuencia_pago || policy?.forma_pago || ''}</div></div>
@@ -633,6 +742,14 @@ export default function CrmIngresosView({ isAgency }) {
             {d <= 0 ? 'vence hoy' : `quedan ${d} días`}
           </span>
         );
+        const accionPromo = async (p, accion) => {
+          const txt = accion === 'rehabilitar'
+            ? `¿Marcar la póliza ${p.poliza} (${p.agente}) como rehabilitada? Sube el índice.`
+            : `¿Registrar el cobro de la póliza ${p.poliza} (${p.agente})? Sube el índice.`;
+          if (!window.confirm(txt)) return;
+          try { await api.crmIngresosPoliza(p.id, accion); const np = await api.crmIngresosPromotoria(); setPromo(np); }
+          catch (e) { alert(e.message); }
+        };
         const fila = (p, tipo) => (
           <div key={`${tipo}${p.id}`} className="crm-mc-row" style={{ borderBottom: '1px solid rgba(11,27,51,.06)', padding: '7px 0', gap: 8 }}>
             <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
@@ -645,9 +762,15 @@ export default function CrmIngresosView({ isAgency }) {
                 <br /><span style={{ fontSize: 11, color: C.textMuted, cursor: 'pointer', textDecoration: 'underline' }} onClick={() => setSelClave(p.clave)} title="Abrir el tablero de este asesor">{p.agente}</span>
               </span>
             </span>
-            <span style={{ textAlign: 'right', flexShrink: 0 }}>
-              <b>{fmtMoney(p.monto)}</b> <span style={{ color: C.green, fontSize: 11 }}>+{pct(p.impacto_indice, 2)}</span>
-              {tipo === 'r' && <><br />{diasBadge(p.dias_restantes)}</>}
+            <span style={{ textAlign: 'right', flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3 }}>
+              <span><b>{fmtMoney(p.monto)}</b> <span style={{ color: C.green, fontSize: 11 }}>+{pct(p.impacto_indice, 2)}</span></span>
+              {tipo === 'r' && diasBadge(p.dias_restantes)}
+              {isAgency && (
+                <button className="btn-secondary" style={{ padding: '3px 8px', fontSize: 10.5 }}
+                  onClick={() => accionPromo(p, tipo === 'r' ? 'rehabilitar' : 'pago')}>
+                  {tipo === 'r' ? <><RotateCcw size={11} /> Rehabilitar</> : <><HandCoins size={11} /> Cobrar</>}
+                </button>
+              )}
             </span>
           </div>
         );
