@@ -39,9 +39,10 @@ function IndiceBar({ actual, operativo, marks = [0.86, 0.90, 0.94] }) {
   );
 }
 
-function BonoCard({ icon: Icon, label, value, sub, color }) {
+function BonoCard({ icon: Icon, label, value, sub, color, onClick, active }) {
   return (
-    <div className="crm-kpi-box">
+    <div className="crm-kpi-box" onClick={onClick}
+      style={onClick ? { cursor: 'pointer', boxShadow: active ? `inset 0 0 0 2px ${color || C.gold}` : undefined, transition: 'box-shadow .15s' } : undefined}>
       <div className="k-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Icon size={13} color={color || C.gold} /> {label}</div>
       <div className="k-value">{value}</div>
       {sub && <div className="k-sub">{sub}</div>}
@@ -126,102 +127,169 @@ function RehabConfigEditor({ onClose, onSaved }) {
 
 function RehabPanel({ data, isAgency, busy, onReload, openExpediente }) {
   const { resumen, rehabilitables, vencidas, personaliza_configurado } = data;
+  const perAsesor = data.scope === 'asesor';
   const [cfgOpen, setCfgOpen] = useState(false);
   const [alertMsg, setAlertMsg] = useState('');
   const [sending, setSending] = useState(false);
-  /* Filtros por columna */
-  const [fAsesor, setFAsesor] = useState('');
+  const [grupo, setGrupo] = useState('todas');   // todas | auto | urgentes | vencidas
+  const [fAsesor, setFAsesor] = useState('');     // clave
   const [fPoliza, setFPoliza] = useState('');
   const [fEtapa, setFEtapa] = useState('');
   const [fUrg, setFUrg] = useState('');
   const [actId, setActId] = useState(null);
+  const [emailTo, setEmailTo] = useState('');
+  const [emailMsg, setEmailMsg] = useState('');
+  const [emailBusy, setEmailBusy] = useState(false);
+
+  const esVencidas = grupo === 'vencidas';
+  const agentesLista = [...new Map([...rehabilitables, ...vencidas.lista].map(r => [r.clave, r.agente])).entries()]
+    .map(([clave, agente]) => ({ clave, agente })).sort((a, b) => String(a.agente).localeCompare(String(b.agente)));
+  const agenteSel = agentesLista.find(a => a.clave === fAsesor);
+
+  const base = esVencidas ? vencidas.lista
+    : grupo === 'auto' ? rehabilitables.filter(r => r.automatizable)
+      : grupo === 'urgentes' ? rehabilitables.filter(r => r.urgencia === 'EXTREMA' || r.urgencia === 'ALTA')
+        : rehabilitables;
+  const filtrados = base.filter(r =>
+    (!fAsesor || r.clave === fAsesor) &&
+    (!fPoliza || `${r.poliza} ${r.plan_id || ''}`.toLowerCase().includes(fPoliza.toLowerCase())) &&
+    (!fEtapa || r.etapa === fEtapa) &&
+    (!fUrg || r.urgencia === fUrg));
+  const sum = {
+    total: filtrados.length, monto: filtrados.reduce((s, r) => s + r.monto, 0),
+    auto: filtrados.filter(r => r.etapa === 'AUTOMATICA').length,
+    correo: filtrados.filter(r => r.etapa === 'CORREO').length,
+    firma: filtrados.filter(r => r.etapa === 'FIRMA').length,
+    extremas: filtrados.filter(r => r.urgencia === 'EXTREMA').length,
+    altas: filtrados.filter(r => r.urgencia === 'ALTA').length,
+  };
+  const hayFiltro = fPoliza || fEtapa || fUrg;
 
   const marcar = async (r, accion) => {
-    const txt = accion === 'rehabilitar'
-      ? `¿Marcar la póliza ${r.poliza} (${r.agente}) como rehabilitada?`
-      : `¿Registrar el cobro de la póliza ${r.poliza} (${r.agente})?`;
-    if (!window.confirm(txt)) return;
+    if (!window.confirm(`¿Marcar la póliza ${r.poliza} (${r.agente}) como rehabilitada?`)) return;
     setActId(r.id);
     try { await api.crmIngresosPoliza(r.id, accion); await onReload(); }
-    catch (e) { alert(e.message); }
-    finally { setActId(null); }
+    catch (e) { alert(e.message); } finally { setActId(null); }
   };
 
   const enviarAlertas = async () => {
-    if (!window.confirm('¿Enviar por correo las rehabilitaciones urgentes a cada asesor y el digest a la promotoría?')) return;
+    if (!window.confirm('¿Enviar por correo el resumen de rehabilitaciones (PDF con logo) a cada asesor + digest a la promotoría?')) return;
     setSending(true); setAlertMsg('');
     try {
       const r = await api.crmIngresosRehabAlerts();
-      setAlertMsg(r.ok ? `✅ Enviado: ${r.enviados.length} asesor(es), digest a ${r.digestDestinatarios} destinatario(s), ${r.accionablesTotales} accionables.${r.fallidos?.length ? ` Fallidos: ${r.fallidos.length} (¿EMAIL_USER/PASS configurados?).` : ''}` : `Omitido: ${r.skipped}`);
+      setAlertMsg(r.ok ? `✅ Enviado: ${r.enviados.length} asesor(es), digest a ${r.digestDestinatarios}.${r.fallidos?.length ? ` Fallidos: ${r.fallidos.length} (¿EMAIL_USER/PASS en Railway?).` : ''}` : `Omitido: ${r.skipped}`);
     } catch (e) { setAlertMsg('Error: ' + e.message); }
     finally { setSending(false); }
   };
 
-  const filtrados = rehabilitables.filter(r =>
-    (!fAsesor || String(r.agente || '').toLowerCase().includes(fAsesor.toLowerCase())) &&
-    (!fPoliza || `${r.poliza} ${r.plan_id || ''}`.toLowerCase().includes(fPoliza.toLowerCase())) &&
-    (!fEtapa || r.etapa === fEtapa) &&
-    (!fUrg || r.urgencia === fUrg)
-  );
-  const hayFiltro = fAsesor || fPoliza || fEtapa || fUrg;
+  const enviarResumen = async () => {
+    if (!fAsesor) return;
+    const dest = emailTo.trim();
+    if (!window.confirm(`¿Enviar el resumen ejecutivo (PDF) de ${agenteSel?.agente} — ${sum.total} pólizas · ${fmtMoney(sum.monto)}${dest ? ` a ${dest}` : ' al correo del asesor'}?`)) return;
+    setEmailBusy(true); setEmailMsg('');
+    try {
+      const r = await api.crmIngresosRehabAlerts({ clave: fAsesor, incluirTodas: true, ...(dest ? { to: dest } : {}) });
+      setEmailMsg(r.ok
+        ? (r.enviados.length ? `✅ Resumen enviado.` : `No se envió: ${(r.sinAccionOSinCorreo || []).join(', ') || 'sin correo/pólizas'}${r.fallidos?.length ? ' · ' + r.fallidos.join('; ') : ''}`)
+        : `Omitido: ${r.skipped}`);
+    } catch (e) { setEmailMsg('Error: ' + e.message); }
+    finally { setEmailBusy(false); }
+  };
+
+  const verPDF = async () => {
+    if (!fAsesor) return;
+    try { window.open(await api.crmIngresosRehabPdfUrl(fAsesor), '_blank'); }
+    catch (e) { alert(e.message); }
+  };
+
+  const cards = [
+    { g: 'todas', icon: RotateCcw, label: 'Rehabilitables', value: resumen.total, sub: fmtMoney(resumen.monto) + ' en riesgo', color: C.gold },
+    { g: 'auto', icon: Zap, label: 'Automáticas (0–30d)', value: resumen.automatizables, sub: 'sin trámite del cliente', color: C.green },
+    { g: 'urgentes', icon: AlertTriangle, label: 'Extremas + urgentes', value: (resumen.por_urgencia.EXTREMA || 0) + (resumen.por_urgencia.ALTA || 0), sub: `${resumen.por_urgencia.EXTREMA || 0} extremas · ${resumen.por_urgencia.ALTA || 0} urgentes`, color: C.red },
+    { g: 'vencidas', icon: X, label: 'Vencidas (+180d)', value: vencidas.total, sub: fmtMoney(vencidas.monto) + ' perdidas', color: C.ink },
+  ];
 
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 6 }}>
         <div>
-          <h3 style={{ margin: '0 0 2px' }}><RotateCcw size={17} style={{ verticalAlign: -3, color: C.gold }} /> Rehabilitaciones {data.scope === 'asesor' ? '(tu cartera)' : '(promotoría)'}</h3>
+          <h3 style={{ margin: '0 0 2px' }}><RotateCcw size={17} style={{ verticalAlign: -3, color: C.gold }} /> Rehabilitaciones {perAsesor ? '(tu cartera)' : '(promotoría)'}</h3>
           <p className="sub" style={{ margin: 0 }}>El plazo corre desde la cancelación: <b>0–30d</b> automática · <b>30–90d</b> con correo · <b>90–180d</b> con firma · <b>+180d</b> se pierde.</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           {isAgency && <button className="btn-secondary" onClick={() => setCfgOpen(true)}><Settings size={15} /> PERSONALIZA</button>}
-          {isAgency && <button className="btn-secondary" onClick={enviarAlertas} disabled={sending}><Send size={15} /> {sending ? 'Enviando…' : 'Enviar alertas'}</button>}
+          {isAgency && <button className="btn-secondary" onClick={enviarAlertas} disabled={sending}><Send size={15} /> {sending ? 'Enviando…' : 'Enviar a todos'}</button>}
           <button className="btn-secondary" onClick={onReload} disabled={busy}><RefreshCw size={15} /></button>
         </div>
       </div>
 
       {!personaliza_configurado && isAgency && (
         <div className="info-box" style={{ background: '#FEF3C7', borderColor: '#F59E0B40', color: '#92400E', margin: '8px 0' }}>
-          <p style={{ margin: 0 }}><AlertTriangle size={14} style={{ verticalAlign: -2 }} /> No has configurado los planes <b>PERSONALIZA</b> (ventana de solo 30 días). Hasta hacerlo, esas pólizas se tratan con la regla general de 180 días. Configúralos con el botón <b>PERSONALIZA</b>.</p>
+          <p style={{ margin: 0 }}><AlertTriangle size={14} style={{ verticalAlign: -2 }} /> No has configurado los planes <b>PERSONALIZA</b> (ventana de 30 días). Configúralos con el botón <b>PERSONALIZA</b>.</p>
         </div>
       )}
       {alertMsg && <div className="info-box" style={{ margin: '8px 0' }}><p style={{ margin: 0 }}>{alertMsg}</p></div>}
 
+      {/* Tarjetas clicables → filtran la tabla */}
       <div className="crm-kpi-detail" style={{ margin: '12px 0' }}>
-        <BonoCard icon={RotateCcw} label="Rehabilitables" value={resumen.total} sub={fmtMoney(resumen.monto) + ' en riesgo'} />
-        <BonoCard icon={Zap} label="Automáticas (0–30d)" value={resumen.automatizables} sub="sin trámite del cliente" color={C.green} />
-        <BonoCard icon={AlertTriangle} label="Extremas + urgentes" value={(resumen.por_urgencia.EXTREMA || 0) + (resumen.por_urgencia.ALTA || 0)} sub={`${resumen.por_urgencia.EXTREMA || 0} extremas · ${resumen.por_urgencia.ALTA || 0} urgentes`} color={C.red} />
-        <BonoCard icon={X} label="Vencidas (+180d)" value={vencidas.total} sub={fmtMoney(vencidas.monto) + ' perdidas'} color={C.ink} />
+        {cards.map(c => (
+          <BonoCard key={c.g} icon={c.icon} label={c.label} value={c.value} sub={c.sub} color={c.color}
+            active={grupo === c.g} onClick={() => setGrupo(c.g)} />
+        ))}
       </div>
 
-      <div className="sub" style={{ display: 'flex', gap: 14, flexWrap: 'wrap', margin: '4px 0 12px' }}>
-        <span><Zap size={12} style={{ verticalAlign: -1, color: C.green }} /> Automática: {resumen.por_etapa.AUTOMATICA}</span>
-        <span><Mail size={12} style={{ verticalAlign: -1 }} /> Con correo: {resumen.por_etapa.CORREO}</span>
-        <span><PenTool size={12} style={{ verticalAlign: -1 }} /> Con firma: {resumen.por_etapa.FIRMA}</span>
-      </div>
+      {/* Selector de asesor + resumen ejecutivo + envío */}
+      {!perAsesor && (
+        <div className="crm-chart-card" style={{ marginBottom: 14 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            <div style={{ minWidth: 240 }}>
+              <label className="sub" style={{ display: 'block', marginBottom: 4, fontWeight: 600 }}>Asesor</label>
+              <select className="crm-select" value={fAsesor} onChange={e => { setFAsesor(e.target.value); setEmailMsg(''); }} style={{ minWidth: 260 }}>
+                <option value="">Todos los asesores</option>
+                {agentesLista.map(a => <option key={a.clave} value={a.clave}>{a.agente} ({a.clave})</option>)}
+              </select>
+            </div>
+            <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', fontSize: 12.5 }}>
+              <span><b style={{ fontSize: 18, color: C.ink }}>{sum.total}</b> pólizas</span>
+              <span><b style={{ fontSize: 18, color: C.ink }}>{fmtMoney(sum.monto)}</b> en riesgo</span>
+              <span style={{ alignSelf: 'center' }}><Zap size={12} color={C.green} /> {sum.auto} · <Mail size={12} /> {sum.correo} · <PenTool size={12} /> {sum.firma}</span>
+              {(sum.extremas + sum.altas > 0) && <span style={{ alignSelf: 'center', color: C.red, fontWeight: 700 }}>{sum.extremas} extremas · {sum.altas} altas</span>}
+            </div>
+          </div>
+          {fAsesor && (
+            <div style={{ marginTop: 12, borderTop: '1px solid rgba(11,27,51,.08)', paddingTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <span className="sub" style={{ marginRight: 4 }}>Resumen ejecutivo de <b>{agenteSel?.agente}</b>:</span>
+              <button className="btn-secondary" onClick={verPDF}><PenTool size={14} /> Ver PDF</button>
+              <input className="crm-input" style={{ maxWidth: 260, padding: '7px 10px' }} placeholder="correo destino (opcional; por defecto el del asesor)" value={emailTo} onChange={e => setEmailTo(e.target.value)} />
+              {isAgency && <button className="btn-primary" onClick={enviarResumen} disabled={emailBusy}><Send size={14} /> {emailBusy ? 'Enviando…' : 'Enviar resumen (PDF)'}</button>}
+              {emailMsg && <span className="sub" style={{ color: emailMsg.startsWith('✅') ? C.green : C.red }}>{emailMsg}</span>}
+            </div>
+          )}
+        </div>
+      )}
 
-      {rehabilitables.length === 0 && <p className="empty">No hay canceladas rehabilitables. 🎉</p>}
+      {base.length === 0 && <p className="empty">{esVencidas ? 'Sin pólizas vencidas.' : 'No hay canceladas rehabilitables. 🎉'}</p>}
 
-      {rehabilitables.length > 0 && (
+      {base.length > 0 && (
         <>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '0 0 6px' }}>
-            <span className="sub">{filtrados.length} de {rehabilitables.length} · {fmtMoney(filtrados.reduce((s, r) => s + r.monto, 0))}</span>
-            {hayFiltro && <button className="f-tab" style={{ fontSize: 11 }} onClick={() => { setFAsesor(''); setFPoliza(''); setFEtapa(''); setFUrg(''); }}>Limpiar filtros</button>}
+            <span className="sub">{filtrados.length} de {base.length} · {fmtMoney(filtrados.reduce((s, r) => s + r.monto, 0))}{esVencidas ? ' (perdidas)' : ''}</span>
+            {(hayFiltro || fAsesor || grupo !== 'todas') && <button className="f-tab" style={{ fontSize: 11 }} onClick={() => { setFAsesor(''); setFPoliza(''); setFEtapa(''); setFUrg(''); setGrupo('todas'); }}>Limpiar filtros</button>}
           </div>
           <table>
             <thead>
               <tr>
-                {data.scope !== 'asesor' && <th style={{ textAlign: 'left' }}>Asesor</th>}
+                {!perAsesor && <th style={{ textAlign: 'left' }}>Asesor</th>}
                 <th style={{ textAlign: 'left' }}>Póliza</th>
                 <th style={{ textAlign: 'left' }}>Etapa</th>
                 <th style={{ textAlign: 'left' }}>Urgencia</th>
                 <th style={{ textAlign: 'right' }}>Cancelada hace</th>
-                <th style={{ textAlign: 'right' }}>Vence etapa</th>
+                <th style={{ textAlign: 'right' }}>{esVencidas ? '' : 'Vence etapa'}</th>
                 <th style={{ textAlign: 'right' }}>Monto</th>
-                {isAgency && <th></th>}
+                {isAgency && !esVencidas && <th></th>}
               </tr>
-              {/* Fila de filtros por columna */}
               <tr>
-                {data.scope !== 'asesor' && <th><input className="crm-input" style={{ padding: '4px 7px', fontSize: 11.5, fontWeight: 400 }} placeholder="filtrar…" value={fAsesor} onChange={e => setFAsesor(e.target.value)} /></th>}
+                {!perAsesor && <th style={{ fontSize: 11, color: C.textMuted, fontWeight: 400 }}>{fAsesor ? (agenteSel?.agente || '') : 'todos'}</th>}
                 <th><input className="crm-input" style={{ padding: '4px 7px', fontSize: 11.5, fontWeight: 400 }} placeholder="póliza/plan…" value={fPoliza} onChange={e => setFPoliza(e.target.value)} /></th>
                 <th><select className="crm-input" style={{ padding: '4px 7px', fontSize: 11.5, fontWeight: 400 }} value={fEtapa} onChange={e => setFEtapa(e.target.value)}>
                   <option value="">todas</option><option value="AUTOMATICA">Automática</option><option value="CORREO">Con correo</option><option value="FIRMA">Con firma</option>
@@ -229,20 +297,20 @@ function RehabPanel({ data, isAgency, busy, onReload, openExpediente }) {
                 <th><select className="crm-input" style={{ padding: '4px 7px', fontSize: 11.5, fontWeight: 400 }} value={fUrg} onChange={e => setFUrg(e.target.value)}>
                   <option value="">todas</option><option value="EXTREMA">Extrema</option><option value="ALTA">Alta</option><option value="MEDIA">Media</option><option value="BAJA">Baja</option>
                 </select></th>
-                <th></th><th></th><th></th>{isAgency && <th></th>}
+                <th></th><th></th><th></th>{isAgency && !esVencidas && <th></th>}
               </tr>
             </thead>
             <tbody>
               {filtrados.map(r => (
                 <tr key={r.id}>
-                  {data.scope !== 'asesor' && <td style={{ fontSize: 12, cursor: 'pointer' }} onClick={() => openExpediente(r.id)}>{r.agente}</td>}
+                  {!perAsesor && <td style={{ fontSize: 12, cursor: 'pointer' }} onClick={() => openExpediente(r.id)}>{r.agente}</td>}
                   <td style={{ fontFamily: 'monospace', fontSize: 12.5, cursor: 'pointer' }} onClick={() => openExpediente(r.id)}>{r.poliza} <span style={{ opacity: 0.5 }}>{r.plan_id}</span></td>
-                  <td style={{ cursor: 'pointer' }} onClick={() => openExpediente(r.id)}><EtapaBadge e={r.etapa} /></td>
+                  <td style={{ cursor: 'pointer' }} onClick={() => openExpediente(r.id)}>{esVencidas ? <span className="sub">Vencida</span> : <EtapaBadge e={r.etapa} />}</td>
                   <td><UrgBadge u={r.urgencia} /></td>
                   <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{r.dias_desde_cancelacion}d</td>
-                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: r.dias_para_vencer_etapa <= 7 ? C.red : r.dias_para_vencer_etapa <= 20 ? '#B45309' : C.ink }}>{r.dias_para_vencer_etapa}d</td>
+                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: r.dias_para_vencer_etapa <= 7 ? C.red : r.dias_para_vencer_etapa <= 20 ? '#B45309' : C.ink }}>{esVencidas ? '—' : `${r.dias_para_vencer_etapa}d`}</td>
                   <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(r.monto)}</td>
-                  {isAgency && (
+                  {isAgency && !esVencidas && (
                     <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                       <button className="btn-secondary" style={{ padding: '4px 8px', fontSize: 11 }} disabled={actId === r.id} title="Marcar rehabilitada"
                         onClick={() => marcar(r, 'rehabilitar')}><RotateCcw size={13} /> {actId === r.id ? '…' : 'Rehabilitar'}</button>
@@ -250,7 +318,7 @@ function RehabPanel({ data, isAgency, busy, onReload, openExpediente }) {
                   )}
                 </tr>
               ))}
-              {filtrados.length === 0 && <tr><td colSpan={8}><p className="empty" style={{ margin: 8 }}>Ninguna coincide con los filtros.</p></td></tr>}
+              {filtrados.length === 0 && <tr><td colSpan={9}><p className="empty" style={{ margin: 8 }}>Ninguna coincide con los filtros.</p></td></tr>}
             </tbody>
           </table>
         </>

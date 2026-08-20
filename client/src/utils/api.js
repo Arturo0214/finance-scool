@@ -229,7 +229,15 @@ export const api = {
   crmIngresosRehabilitaciones: () => request('/crm/ingresos/rehabilitaciones'),
   crmIngresosRehabConfig: () => request('/crm/ingresos/rehab-config'),
   crmIngresosRehabConfigSave: (planes) => request('/crm/ingresos/rehab-config', { method: 'PUT', body: JSON.stringify({ personaliza_planes: planes }) }),
-  crmIngresosRehabAlerts: () => request('/crm/ingresos/rehab-alerts', { method: 'POST', body: '{}' }),
+  crmIngresosRehabAlerts: (opts = {}) => request('/crm/ingresos/rehab-alerts', { method: 'POST', body: JSON.stringify(opts) }),
+  crmIngresosRehabPdfUrl: async (clave) => {
+    const res = await fetch(`${API}/crm/ingresos/rehab-pdf/${encodeURIComponent(clave)}`, {
+      credentials: 'include',
+      headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {},
+    });
+    if (!res.ok) throw new Error('No se pudo generar el PDF');
+    return URL.createObjectURL(await res.blob());
+  },
   crmPortalData: (t) => request(`/crm/portal?t=${encodeURIComponent(t)}`),
 
   crmUploadFile: async (file, { client_id, policy_id, categoria } = {}) => {

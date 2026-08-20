@@ -1803,7 +1803,8 @@ router.post('/ingresos/rehab-alerts', async (req, res) => {
     return res.json({ ok: false, skipped: 'CRM_REHAB_ALERTS_ENABLED != true' });
   }
   try {
-    const { sendMail } = require('../utils/crmMailer');
+    const { sendMail, sendMailWithPdf } = require('../utils/crmMailer');
+    const { buildRehabPDFBuffer } = require('../utils/rehabReport');
     const db = getDB();
     const [pir, personalizaPlanes, { agentes, primas, polizas }] = await Promise.all([getPirTablas(), getPersonalizaPlanes(), fetchIngresosData(null)]);
     const { data: crmAgents } = await db.from('crm_agents').select('clave, email, nombre, activo_fsc');
@@ -1813,45 +1814,63 @@ router.post('/ingresos/rehab-alerts', async (req, res) => {
     const urg = (u) => u === 'EXTREMA' ? '⚠️ EXTREMADAMENTE URGENTE' : u === 'ALTA' ? '⚠️ Urgente' : '';
     const lineaPoliza = (p) => `  · Póliza ${p.poliza} (${p.plan_id || ''}) — ${money(p.monto)} · ${p.etapa_label}: ${p.metodo} · quedan ${p.dias_para_vencer_etapa} días de esta etapa${urg(p.urgencia) ? ' · ' + urg(p.urgencia) : ''}`;
 
+    /* Modos:
+       - clave: enviar SOLO a ese asesor (resumen ejecutivo con TODAS sus rehabilitables).
+       - incluirTodas: incluir todas (no solo urgentes). Automático si hay clave.
+       - to: correo destino alterno (ej. el promotor quiere recibirlo él). */
+    const soloClave = String(req.body.clave || '').toUpperCase() || null;
+    const incluirTodas = soloClave ? true : !!req.body.incluirTodas;
+    const overrideTo = (req.body.to && String(req.body.to).trim()) || null;
+
     const sent = [], skipped = [], failed = [];
     const digest = []; // acumula lo urgente de toda la promotoría
 
     for (const a of agentes) {
+      if (soloClave && a.clave !== soloClave) continue;
       const r = computeIngresos({ agente: a, primas: primas.filter(p => p.clave === a.clave), polizas: polizas.filter(p => p.clave === a.clave), pir, personalizaPlanes });
       const rehab = r.accionables.rehabilitables;
-      // "Accionable ya": auto-rehab (0-30) o urgencia alta/extrema (por vencer etapa)
-      const accionables = rehab.filter(p => p.automatizable || p.urgencia === 'EXTREMA' || p.urgencia === 'ALTA');
-      if (!accionables.length) { skipped.push(a.clave); continue; }
-      digest.push(...accionables.map(p => ({ ...p, clave: a.clave, agente: a.nombre })));
+      const urgentes = rehab.filter(p => p.automatizable || p.urgencia === 'EXTREMA' || p.urgencia === 'ALTA');
+      const lista = incluirTodas ? rehab : urgentes;
+      if (!lista.length) { skipped.push(a.clave); continue; }
+      digest.push(...urgentes.map(p => ({ ...p, clave: a.clave, agente: a.nombre })));
 
       const dest = emailPorClave.get(a.clave);
-      if (!dest) { skipped.push(a.clave + ' (sin correo)'); continue; }
-      const auto = accionables.filter(p => p.automatizable);
-      const porVencer = accionables.filter(p => !p.automatizable);
+      const to = overrideTo || dest?.email;
+      if (!to) { skipped.push(a.clave + ' (sin correo)'); continue; }
+      const monto = lista.reduce((s, p) => s + p.monto, 0);
+      const por = { auto: lista.filter(p => p.etapa === 'AUTOMATICA').length, correo: lista.filter(p => p.etapa === 'CORREO').length, firma: lista.filter(p => p.etapa === 'FIRMA').length };
+      const extremas = lista.filter(p => p.urgencia === 'EXTREMA').length;
       const cuerpo = [
-        `Hola ${String(dest.nombre || '').split(' ')[0]},`,
-        '',
-        `Tienes ${accionables.length} póliza(s) cancelada(s) que puedes rehabilitar YA — el plazo corre desde la cancelación y al vencer cada etapa el trámite se endurece (o se pierde).`,
-        '',
-        auto.length ? `✅ REHABILITACIÓN AUTOMÁTICA (menos de 30 días — sin trámite del cliente):` : null,
-        ...auto.map(lineaPoliza),
-        auto.length ? '' : null,
-        porVencer.length ? `⏳ POR VENCER ETAPA (atiéndelas ya):` : null,
-        ...porVencer.map(lineaPoliza),
-        '',
-        `Rehabilítalas en Prudential/Zeus. Revisa el detalle y simula tu índice en el CRM → Ingresos → Rehabilitaciones.`,
-        '',
+        `RESUMEN EJECUTIVO — REHABILITACIONES`,
+        `Asesor: ${a.nombre} (${a.clave})`,
+        `Índice de conservación hoy: ${((r.indice.hoy?.actual ?? r.indice.actual) * 100).toFixed(2)}% (mínimo para bonos: 86%).`,
+        ``,
+        `${lista.length} póliza(s) rehabilitable(s) · ${money(monto)} en riesgo${extremas ? ` · ${extremas} EXTREMADAMENTE URGENTE(S)` : ''}.`,
+        `Por etapa:  ${por.auto} automática(s) (0-30d)  ·  ${por.correo} con correo (30-90d)  ·  ${por.firma} con firma (90-180d).`,
+        `El plazo corre desde la cancelación: al vencer cada etapa el trámite se endurece (o se pierde para siempre).`,
+        ``,
+        `DETALLE (ordenado por urgencia):`,
+        ...lista.slice(0, 40).map(lineaPoliza),
+        lista.length > 40 ? `  …y ${lista.length - 40} más (ver CRM → Ingresos → Rehabilitaciones).` : null,
+        ``,
+        `Acción: rehabilítalas en Prudential/Zeus. Cada rehabilitación sube tu índice y cuenta para tus bonos PIR.`,
+        ``,
         '— Incubadora S-COOL',
       ].filter(l => l !== null);
       try {
-        await sendMail({ to: dest.email, subject: `♻️ ${accionables.length} rehabilitación(es) urgente(s) — ${a.nombre}`, text: cuerpo.join('\n') });
+        const pdf = await buildRehabPDFBuffer({ agentName: a.nombre, clave: a.clave, indiceHoy: r.indice.hoy?.actual ?? r.indice.actual, lista });
+        await sendMailWithPdf({
+          to, subject: `♻️ Resumen de rehabilitaciones — ${a.nombre} (${lista.length} pólizas · ${money(monto)})`,
+          text: cuerpo.join('\n'),
+          filename: `Rehabilitaciones-${a.clave}-${new Date().toISOString().slice(0, 10)}.pdf`, buffer: pdf,
+        });
         sent.push(a.clave);
       } catch (e) { failed.push(`${a.clave}: ${e.message}`); }
     }
 
-    // Digest a la promotoría (admins de agencia)
+    // Digest a la promotoría (admins de agencia) — solo en envío masivo
     let digestSent = 0;
-    if (digest.length) {
+    if (!soloClave && digest.length) {
       const { data: admins } = await db.from('users').select('email, role').in('role', ['superadmin', 'agencia', 'admin']);
       const to = [...new Set((admins || []).map(u => u.email).filter(Boolean))];
       if (to.length) {
@@ -1873,6 +1892,25 @@ router.post('/ingresos/rehab-alerts', async (req, res) => {
 
     logActivity(req, 'enviar', 'rehab-alerts', null, `${sent.length} asesores, digest ${digestSent}`);
     res.json({ ok: true, enviados: sent, sinAccionOSinCorreo: skipped, fallidos: failed, digestDestinatarios: digestSent, accionablesTotales: digest.length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* Descarga/preview del PDF de rehabilitaciones de un asesor (branded, con logo) */
+router.get('/ingresos/rehab-pdf/:clave', async (req, res) => {
+  try {
+    const scope = await resolveClaveScope(req, res);
+    if (!scope) return;
+    const clave = String(req.params.clave).toUpperCase();
+    if (scope.restricted && scope.clave !== clave) return res.status(403).json({ error: 'Solo puedes descargar tu propia clave' });
+    const [pir, personalizaPlanes, { agentes, primas, polizas }] = await Promise.all([getPirTablas(), getPersonalizaPlanes(), fetchIngresosData(clave)]);
+    if (!agentes.length) return res.status(404).json({ error: `No hay data Prudential para la clave ${clave}` });
+    const a = agentes[0];
+    const r = computeIngresos({ agente: a, primas, polizas, pir, personalizaPlanes });
+    const { buildRehabPDFBuffer } = require('../utils/rehabReport');
+    const pdf = await buildRehabPDFBuffer({ agentName: a.nombre, clave: a.clave, indiceHoy: r.indice.hoy?.actual ?? r.indice.actual, lista: r.accionables.rehabilitables });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="Rehabilitaciones-${clave}.pdf"`);
+    res.send(pdf);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
