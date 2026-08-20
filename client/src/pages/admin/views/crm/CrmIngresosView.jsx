@@ -449,6 +449,10 @@ export default function CrmIngresosView({ isAgency }) {
   const [simSel, setSimSel] = useState({});   // poliza_id → 'cobrar' | 'rehabilitar'
   const [sim, setSim] = useState(null);
   const [simBusy, setSimBusy] = useState(false);
+  /* Simulador de la promotoría (interactivo, sin agente) */
+  const [promoSimSel, setPromoSimSel] = useState({});   // poliza_id → 'cobrar' | 'rehabilitar'
+  const [promoSim, setPromoSim] = useState(null);
+  const [promoSimBusy, setPromoSimBusy] = useState(false);
 
   /* Expediente de póliza (clic en pendientes/rehabilitables): motivo de
      cancelación + notas ligadas al expediente en crm_policies */
@@ -570,6 +574,15 @@ export default function CrmIngresosView({ isAgency }) {
     })();
     return () => { alive = false; };
   }, [selClave]);
+
+  const runPromoSim = async () => {
+    setPromoSimBusy(true);
+    try {
+      const cobrar = Object.entries(promoSimSel).filter(([, v]) => v === 'cobrar').map(([k]) => Number(k));
+      const rehab = Object.entries(promoSimSel).filter(([, v]) => v === 'rehabilitar').map(([k]) => Number(k));
+      setPromoSim(await api.crmIngresosSimulatePromotoria({ cobrarPolizas: cobrar, rehabilitarPolizas: rehab }));
+    } catch (e) { alert(e.message); } finally { setPromoSimBusy(false); }
+  };
 
   const runSim = async () => {
     if (!detail) return;
@@ -1242,20 +1255,72 @@ export default function CrmIngresosView({ isAgency }) {
         </div>
       )}
 
-      {tab === 'simulador' && !detail && promo && (
-        <div className="crm-chart-card">
-          <h3><Calculator size={16} style={{ verticalAlign: -2, color: C.gold }} /> Simulador de la promotoría</h3>
-          <p className="sub">Escenarios agregados del índice de conservación de toda la cartera ({promo.agentes} asesores). Para simular pólizas específicas usa la selección del Tablero PIR (vista promotoría) o elige un asesor.</p>
-          <IndiceBar actual={promo.indice.hoy.actual} operativo={promo.indice.siCobraYRehabilitaTodo} marks={[0.84]} />
-          <div className="crm-kpi-detail">
-            <BonoCard icon={ShieldCheck} label="Índice hoy (en vivo)" value={<span style={{ color: indiceColor(promo.indice.hoy.actual) }}>{pct(promo.indice.hoy.actual)}</span>} sub="con vencimientos posteriores al corte" />
-            <BonoCard icon={TrendingUp} label="Si cobra todo lo pendiente" value={<span style={{ color: indiceColor(promo.indice.siCobraTodo) }}>{pct(promo.indice.siCobraTodo)}</span>} sub={`+${pct(promo.indice.siCobraTodo - promo.indice.hoy.actual)} sobre hoy`} color={C.green} />
-            <BonoCard icon={RotateCcw} label="Si cobra y rehabilita todo" value={<span style={{ color: indiceColor(promo.indice.siCobraYRehabilitaTodo) }}>{pct(promo.indice.siCobraYRehabilitaTodo)}</span>} sub="techo alcanzable de la cartera" color={C.gold} />
-            <BonoCard icon={HandCoins} label="Bonos PIR del Q (est.)" value={fmtMoney(overview.reduce((s, a) => s + (a.bonos?.total_trimestre || 0), 0))} sub="suma de todos los asesores" />
-          </div>
-          <p className="sub" style={{ marginTop: 10 }}>Umbral de la promotoría: <b>84%</b> (agentes 86%). Cobrar pendientes y rehabilitar canceladas es lo único que sube el índice.</p>
-        </div>
-      )}
+      {tab === 'simulador' && !detail && promo && (() => {
+        const pend = promo.accionables.pendientesPago;
+        const rehab = promo.accionables.rehabilitables;
+        const nSel = Object.values(promoSimSel).filter(Boolean).length;
+        const setSel = (lista, val) => setPromoSimSel(s => { const n = { ...s }; lista.forEach(p => { n[p.id] = val || undefined; }); return n; });
+        return (
+          <>
+            <div className="crm-chart-card">
+              <h3><Calculator size={16} style={{ verticalAlign: -2, color: C.gold }} /> Simulador de la promotoría</h3>
+              <p className="sub">Selecciona pólizas de cualquier asesor (cobrar pendientes / rehabilitar canceladas) y mira cómo queda el <b>índice agregado</b> y la <b>suma de bonos</b> de toda la cartera ({promo.agentes} asesores). Umbral promotoría 84%.</p>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
+                <button className="btn-primary" disabled={promoSimBusy} onClick={runPromoSim}><Calculator size={15} /> {promoSimBusy ? 'Calculando…' : `Simular (${nSel} seleccionadas)`}</button>
+                {nSel > 0 && <button className="f-tab" style={{ fontSize: 11.5 }} onClick={() => setPromoSimSel({})}>Limpiar selección</button>}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(340px,1fr))', gap: 16 }}>
+                {[{ tit: `Pendientes de pago (${pend.length})`, lista: pend, val: 'cobrar', badge: ['Cobrar', C.amberBg, C.amber] },
+                { tit: `Rehabilitables (${rehab.length})`, lista: rehab, val: 'rehabilitar', badge: ['Rehabilitar', '#E0F2FE', '#0891B2'] }].map(grp => (
+                  <div key={grp.val}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                      <h4 style={{ margin: 0, fontSize: 13.5 }}>{grp.tit}</h4>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button className="f-tab" style={{ fontSize: 11 }} onClick={() => setSel(grp.lista, grp.val)}>Todas</button>
+                        <button className="f-tab" style={{ fontSize: 11 }} onClick={() => setSel(grp.lista, null)}>Ninguna</button>
+                      </div>
+                    </div>
+                    <div style={{ maxHeight: 300, overflow: 'auto', border: '1px solid rgba(11,27,51,.1)', borderRadius: 8 }}>
+                      {grp.lista.length === 0 && <p className="empty" style={{ margin: 10 }}>Nada aquí</p>}
+                      {grp.lista.map(p => (
+                        <label key={p.id} className="crm-mc-row" style={{ padding: '6px 10px', gap: 8, cursor: 'pointer', borderBottom: '1px solid rgba(11,27,51,.05)' }}>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                            <input type="checkbox" style={{ accentColor: C.primary }} checked={promoSimSel[p.id] === grp.val}
+                              onChange={e => setPromoSimSel(s => ({ ...s, [p.id]: e.target.checked ? grp.val : undefined }))} />
+                            <span style={{ minWidth: 0 }}>
+                              <b style={{ cursor: 'pointer', textDecoration: 'underline', textDecorationColor: 'rgba(11,27,51,.25)' }} onClick={(ev) => { ev.preventDefault(); openPolExpediente(p.id); }}>{p.poliza}</b>
+                              {' '}<span style={{ fontSize: 11, color: C.textMuted }}>{p.plan_id}</span>
+                              <br /><span style={{ fontSize: 11, color: C.textMuted }}>{p.agente}</span>
+                            </span>
+                          </span>
+                          <span style={{ textAlign: 'right', flexShrink: 0 }}><b>{fmtMoney(p.monto)}</b> <span style={{ color: C.green, fontSize: 11 }}>+{pct(p.impacto_indice, 2)}</span></span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {promoSim && (
+              <div className="crm-chart-card">
+                <h3><TrendingUp size={16} style={{ verticalAlign: -2, color: C.green }} /> Resultado — promotoría</h3>
+                <div className="crm-kpi-detail">
+                  <BonoCard icon={ShieldCheck} label="Índice de la promotoría"
+                    value={<span><span style={{ color: indiceColor(promoSim.base.indice) }}>{pct(promoSim.base.indice)}</span> → <span style={{ color: indiceColor(promoSim.simulado.indice) }}>{pct(promoSim.simulado.indice)}</span></span>}
+                    sub={promoSim.delta.indice > 0 ? `sube ${pct(promoSim.delta.indice)}` : 'sin cambio'} />
+                  <BonoCard icon={RotateCcw} label="Pólizas incluidas" value={promoSim.seleccionadas.total}
+                    sub={`${promoSim.seleccionadas.cobrar} por cobrar · ${promoSim.seleccionadas.rehabilitar} rehabilitar`} color={C.gold} />
+                  <BonoCard icon={Scale} label="Base recuperada" value={fmtMoneyFull(promoSim.seleccionadas.monto)} sub="prima que entra a conservación" />
+                  <BonoCard icon={HandCoins} label="Bonos del trimestre (todos)"
+                    value={<span>{fmtMoney(promoSim.base.bonos)} → <span style={{ color: C.green }}>{fmtMoneyFull(promoSim.simulado.bonos)}</span></span>}
+                    sub={promoSim.delta.bonos > 0 ? `+${fmtMoneyFull(promoSim.delta.bonos)} adicionales` : 'sin bono adicional'} />
+                </div>
+              </div>
+            )}
+          </>
+        );
+      })()}
       {tab === 'simulador' && !detail && !promo && <p className="empty">Cargando datos de la promotoría…</p>}
     </div>
   );

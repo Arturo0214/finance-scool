@@ -2006,6 +2006,45 @@ router.post('/ingresos/simulate', async (req, res) => {
 });
 const round2sim = (n) => Math.round(n * 100) / 100;
 
+/* Simulador de la PROMOTORÍA: selecciona pólizas de cualquier asesor (cobrar
+   pendientes / rehabilitar canceladas) y devuelve cómo queda el índice agregado
+   y la suma de bonos del trimestre de toda la cartera. */
+router.post('/ingresos/simulate-promotoria', async (req, res) => {
+  try {
+    if (!isAgency(req.user.role)) return res.status(403).json({ error: 'Solo la agencia simula la promotoría' });
+    const cobrar = new Set((req.body.cobrarPolizas || []).map(Number));
+    const rehab = new Set((req.body.rehabilitarPolizas || []).map(Number));
+    const [pir, personalizaPlanes, { agentes, primas, polizas }] = await Promise.all([getPirTablas(), getPersonalizaPlanes(), fetchIngresosData(null)]);
+    const baseById = new Map(polizas.map(p => [p.id, Number(p.base_a_conservar_mxn) || 0]));
+
+    let baseAConservar = 0, hoyConservada = 0, bonosBase = 0, bonosSim = 0;
+    for (const a of agentes) {
+      const ap = polizas.filter(p => p.clave === a.clave);
+      const pr = primas.filter(p => p.clave === a.clave);
+      const cobrarA = ap.filter(p => cobrar.has(p.id)).map(p => p.id);
+      const rehabA = ap.filter(p => rehab.has(p.id)).map(p => p.id);
+      const base = computeIngresos({ agente: a, primas: pr, polizas: ap, pir, personalizaPlanes });
+      baseAConservar += base.indice.baseAConservar;
+      hoyConservada += base.indice.hoy.baseConservada;
+      bonosBase += base.bonos.total_trimestre;
+      if (cobrarA.length || rehabA.length) {
+        const sim = computeIngresos({ agente: a, primas: pr, polizas: ap, pir, personalizaPlanes }, { cobrarPolizas: cobrarA, rehabilitarPolizas: rehabA });
+        bonosSim += sim.bonos.total_trimestre;
+      } else bonosSim += base.bonos.total_trimestre;
+    }
+    const extra = [...cobrar, ...rehab].reduce((s, id) => s + (baseById.get(id) || 0), 0);
+    const div = (n, d) => d > 0 ? Math.round((n / d) * 10000) / 10000 : 1;
+    const baseHoy = div(hoyConservada, baseAConservar);
+    const simHoy = div(Math.min(hoyConservada + extra, baseAConservar), baseAConservar);
+    res.json({
+      seleccionadas: { cobrar: cobrar.size, rehabilitar: rehab.size, total: cobrar.size + rehab.size, monto: round2sim(extra) },
+      base: { indice: baseHoy, bonos: round2sim(bonosBase) },
+      simulado: { indice: simHoy, bonos: round2sim(bonosSim) },
+      delta: { indice: Math.round((simHoy - baseHoy) * 10000) / 10000, bonos: round2sim(bonosSim - bonosBase) },
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 /* Trayectoria del índice a N meses: ¿cuándo cruzo el 86/90/94% si vendo
    $X/mes conservando cierta tasa? Defaults: ritmo = promedio mensual de prima
    ubicación del último trimestre; tasa = último índice histórico del agente. */

@@ -222,6 +222,7 @@ export const api = {
   },
   crmIngresosAgent: (clave) => request(`/crm/ingresos/agent/${encodeURIComponent(clave)}`),
   crmIngresosSimulate: (data) => request('/crm/ingresos/simulate', { method: 'POST', body: JSON.stringify(data) }),
+  crmIngresosSimulatePromotoria: (data) => request('/crm/ingresos/simulate-promotoria', { method: 'POST', body: JSON.stringify(data) }),
   crmIngresosPoliza: (id, accion) => request(`/crm/ingresos/poliza/${id}`, { method: 'PATCH', body: JSON.stringify({ accion }) }),
   crmIngresosPolizaExpediente: (id) => request(`/crm/ingresos/poliza/${id}/expediente`),
   crmIngresosPolizaMotivo: (id, motivo) => request(`/crm/ingresos/poliza/${id}/motivo`, { method: 'PUT', body: JSON.stringify({ motivo_cancelacion: motivo }) }),
