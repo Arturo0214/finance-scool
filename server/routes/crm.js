@@ -232,6 +232,11 @@ function computeKpis(policies, goals, anio, pruPrimas = []) {
 function aggregateKpis(kpisList) {
   const months = Array.from({ length: 12 }, (_, i) => ({ mes: i + 1, primaNueva: 0, primaRenovacion: 0, meta: 0, pipeline: 0 }));
   const conservacion = { baseConservar: 0, baseConservada: 0, basePendiente: 0 };
+  /* El cumplimiento debe comparar peras con peras: solo la prima nueva de los
+     asesores que TIENEN meta capturada contra la suma de esas metas. Si no,
+     el numerador (venta de TODA la promotoría) contra el denominador (metas de
+     unos pocos) infla el % (ej. 214% con solo 3 metas capturadas de 26). */
+  let nuevaConMeta = 0, agentesConMeta = 0;
   for (const k of kpisList) {
     k.months.forEach((m, i) => {
       months[i].primaNueva += m.primaNueva; months[i].primaRenovacion += m.primaRenovacion;
@@ -240,6 +245,7 @@ function aggregateKpis(kpisList) {
     conservacion.baseConservar += k.conservacion.baseConservar;
     conservacion.baseConservada += k.conservacion.baseConservada;
     conservacion.basePendiente += k.conservacion.basePendiente;
+    if ((k.totales?.meta || 0) > 0) { nuevaConMeta += k.totales.primaNueva || 0; agentesConMeta++; }
   }
   const totalNueva = months.reduce((s, m) => s + m.primaNueva, 0);
   const totalRenovacion = months.reduce((s, m) => s + m.primaRenovacion, 0);
@@ -249,7 +255,9 @@ function aggregateKpis(kpisList) {
     months,
     totales: {
       primaNueva: totalNueva, primaRenovacion: totalRenovacion, primaTotal: totalNueva + totalRenovacion,
-      meta: totalMeta, pipeline: totalPipeline, cumplimiento: totalMeta > 0 ? (totalNueva / totalMeta) : null,
+      meta: totalMeta, pipeline: totalPipeline,
+      cumplimiento: totalMeta > 0 ? (nuevaConMeta / totalMeta) : null,
+      primaNuevaConMeta: nuevaConMeta, agentesConMeta,
     },
     conservacion: {
       ...conservacion,
@@ -1542,7 +1550,7 @@ router.get('/activity', async (req, res) => {
    Data del Business Review migrada a crm_pru_* (server/migrate-ingresos.js).
    Asesores solo ven su propia clave (crm_agents.clave ↔ crm_pru_agentes.clave). */
 
-const { computeIngresos, proyectarTrayectoria, derivarEstatus, clasificarRehabilitacion, ordenRehab, REHAB_ETAPAS, MESES_FRECUENCIA, PIR_DEFAULT } = require('../utils/ingresos');
+const { computeIngresos, proyectarTrayectoria, derivarEstatus, clasificarRehabilitacion, compilePersonaliza, ordenRehab, REHAB_ETAPAS, MESES_FRECUENCIA, PIR_DEFAULT } = require('../utils/ingresos');
 
 let _pirCache = null;
 async function getPirTablas() {
@@ -1712,7 +1720,7 @@ router.get('/ingresos/rehabilitaciones', async (req, res) => {
     const scope = await resolveClaveScope(req, res);
     if (!scope) return;
     const [personalizaPlanes, { agentes, polizas }] = await Promise.all([getPersonalizaPlanes(), fetchIngresosData(scope.clave)]);
-    const personalizaSet = new Set(personalizaPlanes.map(s => String(s).toUpperCase()));
+    const personalizaC = compilePersonaliza(personalizaPlanes);
     const hoy = new Date();
     const nombrePorClave = new Map(agentes.map(a => [a.clave, a.nombre]));
 
@@ -1721,7 +1729,7 @@ router.get('/ingresos/rehabilitaciones', async (req, res) => {
       por_etapa: { AUTOMATICA: 0, CORREO: 0, FIRMA: 0 }, por_urgencia: { EXTREMA: 0, ALTA: 0, MEDIA: 0, BAJA: 0 } };
     for (const p of polizas) {
       if (derivarEstatus(p, hoy) !== 'NO CONSERVADA') continue;
-      const c = clasificarRehabilitacion(p, hoy, personalizaSet);
+      const c = clasificarRehabilitacion(p, hoy, personalizaC);
       if (!c) continue;
       const monto = Math.round((Number(p.base_a_conservar_mxn) || 0) * 100) / 100;
       const item = { id: p.id, clave: p.clave, agente: nombrePorClave.get(p.clave) || p.clave,

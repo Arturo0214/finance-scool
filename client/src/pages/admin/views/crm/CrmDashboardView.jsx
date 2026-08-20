@@ -483,8 +483,8 @@ function KpiModal({ id, onClose, data, anio, pir, promoIdx, single, bonoTotal, c
     },
     meta: {
       titulo: `Cumplimiento de meta — ${fmtPct(g.cumplimiento)}`,
-      que: `Compara la prima NUEVA cobrada (${fmtMoneyFull(g.primaNueva)}) contra la meta anual capturada en Metas & Forecast (${fmtMoneyFull(g.meta)}). Solo cuenta venta nueva: la renovación no abona a la meta.`,
-      formula: 'Cumplimiento = prima nueva cobrada ÷ meta anual',
+      que: `Compara peras con peras: la prima NUEVA cobrada por los ${g.agentesConMeta || 0} asesor(es) que SÍ tienen meta capturada (${fmtMoneyFull(g.primaNuevaConMeta ?? g.primaNueva)}) contra la suma de esas metas (${fmtMoneyFull(g.meta)}). Solo cuenta venta nueva: la renovación no abona a la meta. Ojo: los asesores sin meta capturada en Metas & Forecast NO cuentan aquí — captura sus metas para ver el cumplimiento real de toda la promotoría.`,
+      formula: 'Cumplimiento = prima nueva (asesores con meta) ÷ suma de sus metas',
       lista: {
         titulo: 'Cumplimiento por asesor (con meta capturada)',
         rows: data.porAgente

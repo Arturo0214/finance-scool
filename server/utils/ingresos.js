@@ -119,13 +119,35 @@ function diasDesde(fechaISO, hoy = new Date()) {
   return Math.floor((hoy - d) / 86400000);
 }
 
+/* Compila la lista de planes PERSONALIZA a {exact, prefixes}. Una entrada que
+   termina en '*' es prefijo (ej. 'U*' cubre U10AF65I, U20CF65I…); si no, exacta. */
+function compilePersonaliza(lista) {
+  const exact = new Set(), prefixes = [];
+  for (const raw of (lista || [])) {
+    const s = String(raw || '').toUpperCase().trim();
+    if (!s) continue;
+    if (s.endsWith('*')) prefixes.push(s.slice(0, -1));
+    else exact.add(s);
+  }
+  return { exact, prefixes };
+}
+function esPersonalizaPlan(planId, compiled) {
+  if (!compiled) return false;
+  const p = String(planId || '').toUpperCase();
+  if (compiled.exact && compiled.exact.has(p)) return true;
+  return (compiled.prefixes || []).some(pre => pre && p.startsWith(pre));
+}
+
 /* Clasifica una póliza cancelada. Devuelve null si no aplica (sin fecha de
    cancelación o cancelación en el futuro). personalizaSet = Set de plan_id
    en MAYÚSCULAS que son PERSONALIZA. */
-function clasificarRehabilitacion(p, hoy = new Date(), personalizaSet = null) {
+function clasificarRehabilitacion(p, hoy = new Date(), personaliza = null) {
   const dias = diasDesde(p.fecha_ultima_cancelacion, hoy);
   if (dias === null || dias < 0) return null;
-  const esPersonaliza = !!personalizaSet && personalizaSet.has(String(p.plan_id || '').toUpperCase());
+  // personaliza puede venir compilado ({exact,prefixes}) o como lista/Set
+  const compiled = personaliza && personaliza.exact ? personaliza
+    : compilePersonaliza(personaliza instanceof Set ? [...personaliza] : personaliza);
+  const esPersonaliza = esPersonalizaPlan(p.plan_id, compiled);
 
   let etapa, finEtapa, siguienteEsPerdida;
   if (esPersonaliza) {
@@ -203,7 +225,7 @@ function proyectarTrayectoria({ polizas, ventaMensual = 0, tasaConservacion = 0.
  * overrides (simulador): { ventaAdicional, cobrarPolizas: [ids], rehabilitarPolizas: [ids] }
  */
 function computeIngresos({ agente, primas, polizas, pir, personalizaPlanes }, overrides = {}) {
-  const personalizaSet = new Set((personalizaPlanes || []).map(s => String(s).toUpperCase()));
+  const personalizaC = compilePersonaliza(personalizaPlanes);
   const tablas = ((pir || PIR_DEFAULT).cuadernos || {})[cuadernoKey(agente.cuaderno)] ||
     (pir || PIR_DEFAULT).cuadernos.NOVEL;
 
@@ -310,7 +332,7 @@ function computeIngresos({ agente, primas, polizas, pir, personalizaPlanes }, ov
   const rehabilitables = polizasHoy
     .filter(p => p.estatus_conservacion === 'NO CONSERVADA' && p.fecha_ultima_cancelacion)
     .map(p => {
-      const c = clasificarRehabilitacion(p, hoy, personalizaSet);
+      const c = clasificarRehabilitacion(p, hoy, personalizaC);
       if (!c) return null;
       return { id: p.id, poliza: p.poliza, plan_id: p.plan_id, forma_pago: p.forma_pago, frecuencia_pago: p.frecuencia_pago, fecha_ultima_cancelacion: p.fecha_ultima_cancelacion, monto: round2(p.base_a_conservar_mxn), impacto_indice: impacto(Number(p.base_a_conservar_mxn) || 0), ...c };
     })
@@ -371,4 +393,4 @@ function computeIngresos({ agente, primas, polizas, pir, personalizaPlanes }, ov
   };
 }
 
-module.exports = { computeIngresos, computeIndice, derivarEstatus, proyectarTrayectoria, clasificarRehabilitacion, ordenRehab, REHAB_ETAPAS, URGENCIA_RANK, umbralDe, cuadernoKey, MESES_FRECUENCIA, PIR_DEFAULT };
+module.exports = { computeIngresos, computeIndice, derivarEstatus, proyectarTrayectoria, clasificarRehabilitacion, compilePersonaliza, esPersonalizaPlan, ordenRehab, REHAB_ETAPAS, URGENCIA_RANK, umbralDe, cuadernoKey, MESES_FRECUENCIA, PIR_DEFAULT };

@@ -381,13 +381,14 @@ export default function CrmIngresosView({ isAgency }) {
   /* Rehabilitaciones (pestaña propia): lista clasificada por etapa/urgencia */
   const [rehab, setRehab] = useState(null);
   const [rehabBusy, setRehabBusy] = useState(false);
+  const [rehabErr, setRehabErr] = useState('');
   const loadRehab = useCallback(async () => {
-    setRehabBusy(true);
+    setRehabBusy(true); setRehabErr('');
     try { setRehab(await api.crmIngresosRehabilitaciones()); }
-    catch (e) { setErr(e.message); }
+    catch (e) { setRehabErr(e.message || 'No se pudo cargar rehabilitaciones'); }
     finally { setRehabBusy(false); }
   }, []);
-  useEffect(() => { if (tab === 'rehab' && !rehab) loadRehab(); }, [tab, rehab, loadRehab]);
+  useEffect(() => { if (tab === 'rehab' && !rehab && !rehabBusy && !rehabErr) loadRehab(); }, [tab, rehab, rehabBusy, rehabErr, loadRehab]);
 
   const load = useCallback(async () => {
     setLoading(true); setErr('');
@@ -497,9 +498,9 @@ export default function CrmIngresosView({ isAgency }) {
 
       <div className="crm-detail-tabs">
         <button className={`crm-dtab${tab === 'tablero' ? ' active' : ''}`} onClick={() => setTab('tablero')}>Tablero PIR</button>
-        <button className={`crm-dtab${tab === 'simulador' ? ' active' : ''}`} onClick={() => setTab('simulador')} disabled={!detail}>Simulador</button>
+        <button className={`crm-dtab${tab === 'simulador' ? ' active' : ''}`} onClick={() => setTab('simulador')}>Simulador</button>
         <button className={`crm-dtab${tab === 'conciliacion' ? ' active' : ''}`} onClick={() => setTab('conciliacion')}>Comisiones CRM</button>
-        <button className={`crm-dtab${tab === 'proyeccion' ? ' active' : ''}`} onClick={() => setTab('proyeccion')} disabled={!detail}>Proyección 1–3 años</button>
+        <button className={`crm-dtab${tab === 'proyeccion' ? ' active' : ''}`} onClick={() => setTab('proyeccion')}>Proyección 1–3 años</button>
         <button className={`crm-dtab${tab === 'rehab' ? ' active' : ''}`} onClick={() => setTab('rehab')}>♻️ Rehabilitaciones</button>
       </div>
 
@@ -602,12 +603,17 @@ export default function CrmIngresosView({ isAgency }) {
       {tab === 'proyeccion' && !detail && <p className="empty">Selecciona un agente en el Tablero PIR para proyectar sus ingresos.</p>}
 
       {/* ═══════════ TAB REHABILITACIONES ═══════════ */}
-      {tab === 'rehab' && (
-        rehabBusy && !rehab
-          ? <div className="loading-wrap"><div className="spinner" /><p>Cargando rehabilitaciones...</p></div>
-          : rehab
-            ? <RehabPanel data={rehab} isAgency={isAgency} busy={rehabBusy} onReload={loadRehab} openExpediente={openPolExpediente} />
-            : <p className="empty">Sin datos de rehabilitación.</p>
+      {tab === 'rehab' && rehabBusy && !rehab && (
+        <div className="loading-wrap"><div className="spinner" /><p>Cargando rehabilitaciones...</p></div>
+      )}
+      {tab === 'rehab' && rehabErr && !rehab && (
+        <div className="info-box" style={{ background: C.redBg, borderColor: `${C.red}40`, color: C.red }}>
+          <p style={{ margin: '0 0 8px' }}><AlertTriangle size={14} style={{ verticalAlign: -2 }} /> No se pudo cargar Rehabilitaciones: {rehabErr}</p>
+          <button className="btn-secondary" onClick={loadRehab}><RefreshCw size={14} /> Reintentar</button>
+        </div>
+      )}
+      {tab === 'rehab' && rehab && (
+        <RehabPanel data={rehab} isAgency={isAgency} busy={rehabBusy} onReload={loadRehab} openExpediente={openPolExpediente} />
       )}
 
       {/* ═══════════ TABLERO DE LA PROMOTORÍA (agregado, umbral 84%) ═══════════ */}
