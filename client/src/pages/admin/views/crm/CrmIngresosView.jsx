@@ -875,12 +875,17 @@ export default function CrmIngresosView({ isAgency }) {
               <p className="sub">
                 Toda la cartera ({promo.agentes} asesores) · base a conservar {fmtMoneyFull(promo.indice.baseAConservar)} · conservada {fmtMoneyFull(promo.indice.hoy.baseConservada)} · pendiente {fmtMoneyFull(promo.indice.hoy.basePendiente)} · <b>mínimo promotoría 84%</b> (agentes 86%)
               </p>
-              <IndiceBar actual={promo.indice.hoy.actual} operativo={promo.indice.siCobraTodo} marks={[0.84]} />
+              <div className="info-box" style={{ background: '#E7F5F3', borderColor: `${C.gold}40`, margin: '4px 0 12px' }}>
+                <p style={{ margin: 0, fontSize: 12.5 }}>
+                  <b>El índice que reporta Prudential ({pct(promo.indice.conPendiente)}) es el "con pendiente de pago"</b> — cuenta las pólizas vigentes que aún no pagan la anualidad como conservadas (se asume que pagarán). El <b>{pct(promo.indice.actual)} al corte</b> es el estricto (solo lo ya pagado). La verdad operativa está entre ambos: se vuelve realidad conforme entran los pagos pendientes.
+                </p>
+              </div>
+              <IndiceBar actual={promo.indice.conPendiente} operativo={promo.indice.siCobraYRehabilitaTodo} marks={[0.84]} />
               <div className="crm-kpi-detail">
-                <BonoCard icon={ShieldCheck} label="Índice al corte" value={<span style={{ color: promoColor(promo.indice.actual) }}>{pct(promo.indice.actual)}</span>} sub="oficial del último corte" />
-                <BonoCard icon={RefreshCw} label="Índice hoy (en vivo)" value={<span style={{ color: promoColor(promo.indice.hoy.actual) }}>{pct(promo.indice.hoy.actual)}</span>} sub="con vencimientos posteriores al corte" />
-                <BonoCard icon={TrendingUp} label="Si se cobra todo" value={<span style={{ color: promoColor(promo.indice.siCobraTodo) }}>{pct(promo.indice.siCobraTodo)}</span>} sub="cobrando todos los pendientes de pago" />
-                <BonoCard icon={RotateCcw} label="Cobrando y rehabilitando todo" value={<span style={{ color: promoColor(promo.indice.siCobraYRehabilitaTodo) }}>{pct(promo.indice.siCobraYRehabilitaTodo)}</span>} sub="pendientes + canceladas aún rehabilitables" />
+                <BonoCard icon={ShieldCheck} label="Índice Prudential (con pendiente)" value={<span style={{ color: promoColor(promo.indice.conPendiente) }}>{pct(promo.indice.conPendiente)}</span>} sub="previo + pendiente de pago — así lo reporta Prudential" color={C.gold} />
+                <BonoCard icon={RefreshCw} label="Índice estricto (al corte)" value={<span style={{ color: promoColor(promo.indice.actual) }}>{pct(promo.indice.actual)}</span>} sub="solo lo ya pagado adelante (piso)" />
+                <BonoCard icon={TrendingUp} label="Índice hoy (en vivo)" value={<span style={{ color: promoColor(promo.indice.hoy.actual) }}>{pct(promo.indice.hoy.actual)}</span>} sub="estricto, con vencimientos posteriores al corte" />
+                <BonoCard icon={RotateCcw} label="Techo: cobrando y rehabilitando todo" value={<span style={{ color: promoColor(promo.indice.siCobraYRehabilitaTodo) }}>{pct(promo.indice.siCobraYRehabilitaTodo)}</span>} sub="cobrar pendientes + rehabilitar canceladas" color={C.green} />
                 <BonoCard icon={Target} label="Pólizas en el índice" value={promo.polizas.total}
                   sub={`${promo.polizas.conservadas} conservadas · ${promo.polizas.pendientes} por cobrar · ${promo.polizas.noConservadas} canceladas (${promo.polizas.rehabilitables} rehabilitables)`} />
               </div>
