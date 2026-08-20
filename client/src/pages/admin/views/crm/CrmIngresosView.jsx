@@ -11,7 +11,8 @@ import { api } from '../../../../utils/api';
 import { C } from '../../constants';
 import {
   RefreshCw, TrendingUp, ShieldCheck, AlertTriangle, Sparkles,
-  HandCoins, Target, RotateCcw, Calculator, Scale,
+  HandCoins, Target, RotateCcw, Calculator, Scale, X, Plus,
+  Mail, PenTool, Zap, Send, Settings,
 } from 'lucide-react';
 import { getCrmCSS, fmtMoney, fmtMoneyFull, fmtDate, MESES } from './crmShared';
 import CrmCommissionsView from './CrmCommissionsView';
@@ -44,6 +45,174 @@ function BonoCard({ icon: Icon, label, value, sub, color }) {
       <div className="k-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Icon size={13} color={color || C.gold} /> {label}</div>
       <div className="k-value">{value}</div>
       {sub && <div className="k-sub">{sub}</div>}
+    </div>
+  );
+}
+
+/* ── Panel de Rehabilitaciones: canceladas clasificadas por etapa y urgencia ── */
+const URG_META = {
+  EXTREMA: { label: 'Extremadamente urgente', color: C.red, bg: C.redBg },
+  ALTA: { label: 'Urgente', color: '#B45309', bg: '#FEF3C7' },
+  MEDIA: { label: 'Media', color: '#0E7490', bg: '#CFFAFE' },
+  BAJA: { label: 'Baja', color: C.ink, bg: 'rgba(11,27,51,.05)' },
+};
+const ETAPA_META = {
+  AUTOMATICA: { label: 'Automática', icon: Zap, hint: '0–30 días · sin trámite del cliente' },
+  CORREO: { label: 'Con correo', icon: Mail, hint: '30–90 días · correo de petición' },
+  FIRMA: { label: 'Con firma', icon: PenTool, hint: '90–180 días · firma autógrafa del cliente' },
+};
+const ORDEN_URG = ['EXTREMA', 'ALTA', 'MEDIA', 'BAJA'];
+
+function UrgBadge({ u }) {
+  const m = URG_META[u] || URG_META.BAJA;
+  return <span style={{ background: m.bg, color: m.color, fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 20, whiteSpace: 'nowrap' }}>{m.label}</span>;
+}
+function EtapaBadge({ e }) {
+  const m = ETAPA_META[e]; if (!m) return null;
+  const Icon = m.icon;
+  return <span title={m.hint} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: C.ink, opacity: 0.85 }}><Icon size={12} /> {m.label}</span>;
+}
+
+function RehabConfigEditor({ onClose, onSaved }) {
+  const [cfg, setCfg] = useState(null);
+  const [sel, setSel] = useState(new Set());
+  const [busy, setBusy] = useState(false);
+  const [q, setQ] = useState('');
+  useEffect(() => {
+    api.crmIngresosRehabConfig().then(d => { setCfg(d); setSel(new Set((d.personaliza_planes || []).map(s => s.toUpperCase()))); }).catch(e => alert(e.message));
+  }, []);
+  const toggle = (p) => setSel(s => { const n = new Set(s); n.has(p) ? n.delete(p) : n.add(p); return n; });
+  const save = async () => {
+    setBusy(true);
+    try { await api.crmIngresosRehabConfigSave([...sel]); onSaved && onSaved(); onClose(); }
+    catch (e) { alert(e.message); } finally { setBusy(false); }
+  };
+  const planes = (cfg?.planes_disponibles || []).filter(p => p.plan_id.toLowerCase().includes(q.toLowerCase()));
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal crm-modal-lg" onClick={e => e.stopPropagation()}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <h3 style={{ margin: 0 }}><Settings size={16} style={{ verticalAlign: -3 }} /> Planes PERSONALIZA</h3>
+          <button className="btn-secondary" onClick={onClose}><X size={16} /></button>
+        </div>
+        <p className="sub" style={{ marginTop: 0 }}>Marca los códigos de plan que corresponden al producto <b>PERSONALIZA</b>. Esas pólizas solo tienen <b>30 días</b> de ventana de rehabilitación; pasado ese plazo se marcan como vencidas (no rehabilitables).</p>
+        {!cfg ? <div className="loading-wrap"><div className="spinner" /></div> : (
+          <>
+            <input className="crm-input" placeholder="Buscar código de plan…" value={q} onChange={e => setQ(e.target.value)} style={{ marginBottom: 8 }} />
+            <div style={{ maxHeight: 320, overflow: 'auto', border: `1px solid ${C.line || 'rgba(11,27,51,.1)'}`, borderRadius: 8 }}>
+              <table style={{ width: '100%' }}>
+                <thead><tr><th></th><th style={{ textAlign: 'left' }}>Plan</th><th style={{ textAlign: 'right' }}>Pólizas</th></tr></thead>
+                <tbody>
+                  {planes.map(p => (
+                    <tr key={p.plan_id} style={{ cursor: 'pointer', background: sel.has(p.plan_id) ? '#FEF3C7' : 'transparent' }} onClick={() => toggle(p.plan_id)}>
+                      <td style={{ width: 34 }}><input type="checkbox" readOnly checked={sel.has(p.plan_id)} /></td>
+                      <td style={{ fontFamily: 'monospace', fontSize: 12.5 }}>{p.plan_id}</td>
+                      <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{p.polizas}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
+              <span className="sub">{sel.size} plan(es) marcados como PERSONALIZA</span>
+              <button className="btn-primary" onClick={save} disabled={busy}>{busy ? 'Guardando…' : 'Guardar'}</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function RehabPanel({ data, isAgency, busy, onReload, openExpediente }) {
+  const { resumen, rehabilitables, vencidas, personaliza_configurado } = data;
+  const [cfgOpen, setCfgOpen] = useState(false);
+  const [alertMsg, setAlertMsg] = useState('');
+  const [sending, setSending] = useState(false);
+
+  const enviarAlertas = async () => {
+    if (!window.confirm('¿Enviar por correo las rehabilitaciones urgentes a cada asesor y el digest a la promotoría?')) return;
+    setSending(true); setAlertMsg('');
+    try {
+      const r = await api.crmIngresosRehabAlerts();
+      setAlertMsg(r.ok ? `✅ Enviado: ${r.enviados.length} asesor(es), digest a ${r.digestDestinatarios} destinatario(s), ${r.accionablesTotales} accionables.${r.fallidos?.length ? ` Fallidos: ${r.fallidos.length} (¿EMAIL_USER/PASS configurados?).` : ''}` : `Omitido: ${r.skipped}`);
+    } catch (e) { setAlertMsg('Error: ' + e.message); }
+    finally { setSending(false); }
+  };
+
+  const grupos = ORDEN_URG.map(u => ({ u, items: rehabilitables.filter(r => r.urgencia === u) })).filter(g => g.items.length);
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 6 }}>
+        <div>
+          <h3 style={{ margin: '0 0 2px' }}><RotateCcw size={17} style={{ verticalAlign: -3, color: C.gold }} /> Rehabilitaciones {data.scope === 'asesor' ? '(tu cartera)' : '(promotoría)'}</h3>
+          <p className="sub" style={{ margin: 0 }}>El plazo corre desde la cancelación: <b>0–30d</b> automática · <b>30–90d</b> con correo · <b>90–180d</b> con firma · <b>+180d</b> se pierde.</p>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {isAgency && <button className="btn-secondary" onClick={() => setCfgOpen(true)}><Settings size={15} /> PERSONALIZA</button>}
+          {isAgency && <button className="btn-secondary" onClick={enviarAlertas} disabled={sending}><Send size={15} /> {sending ? 'Enviando…' : 'Enviar alertas'}</button>}
+          <button className="btn-secondary" onClick={onReload} disabled={busy}><RefreshCw size={15} /></button>
+        </div>
+      </div>
+
+      {!personaliza_configurado && isAgency && (
+        <div className="info-box" style={{ background: '#FEF3C7', borderColor: '#F59E0B40', color: '#92400E', margin: '8px 0' }}>
+          <p style={{ margin: 0 }}><AlertTriangle size={14} style={{ verticalAlign: -2 }} /> No has configurado los planes <b>PERSONALIZA</b> (ventana de solo 30 días). Hasta hacerlo, esas pólizas se tratan con la regla general de 180 días. Configúralos con el botón <b>PERSONALIZA</b>.</p>
+        </div>
+      )}
+      {alertMsg && <div className="info-box" style={{ margin: '8px 0' }}><p style={{ margin: 0 }}>{alertMsg}</p></div>}
+
+      <div className="crm-kpi-detail" style={{ margin: '12px 0' }}>
+        <BonoCard icon={RotateCcw} label="Rehabilitables" value={resumen.total} sub={fmtMoney(resumen.monto) + ' en riesgo'} />
+        <BonoCard icon={Zap} label="Automáticas (0–30d)" value={resumen.automatizables} sub="sin trámite del cliente" color={C.green} />
+        <BonoCard icon={AlertTriangle} label="Extremas + urgentes" value={(resumen.por_urgencia.EXTREMA || 0) + (resumen.por_urgencia.ALTA || 0)} sub={`${resumen.por_urgencia.EXTREMA || 0} extremas · ${resumen.por_urgencia.ALTA || 0} urgentes`} color={C.red} />
+        <BonoCard icon={X} label="Vencidas (+180d)" value={vencidas.total} sub={fmtMoney(vencidas.monto) + ' perdidas'} color={C.ink} />
+      </div>
+
+      <div className="sub" style={{ display: 'flex', gap: 14, flexWrap: 'wrap', margin: '4px 0 12px' }}>
+        <span><Zap size={12} style={{ verticalAlign: -1, color: C.green }} /> Automática: {resumen.por_etapa.AUTOMATICA}</span>
+        <span><Mail size={12} style={{ verticalAlign: -1 }} /> Con correo: {resumen.por_etapa.CORREO}</span>
+        <span><PenTool size={12} style={{ verticalAlign: -1 }} /> Con firma: {resumen.por_etapa.FIRMA}</span>
+      </div>
+
+      {rehabilitables.length === 0 && <p className="empty">No hay canceladas rehabilitables. 🎉</p>}
+
+      {grupos.map(({ u, items }) => (
+        <div key={u} style={{ marginBottom: 18 }}>
+          <h4 style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '0 0 6px' }}>
+            <UrgBadge u={u} /> <span style={{ fontSize: 12.5, color: C.ink, opacity: 0.6 }}>{items.length} póliza(s) · {fmtMoney(items.reduce((s, r) => s + r.monto, 0))}</span>
+          </h4>
+          <table>
+            <thead>
+              <tr>
+                {data.scope !== 'asesor' && <th style={{ textAlign: 'left' }}>Asesor</th>}
+                <th style={{ textAlign: 'left' }}>Póliza</th>
+                <th style={{ textAlign: 'left' }}>Etapa / método</th>
+                <th style={{ textAlign: 'right' }}>Cancelada hace</th>
+                <th style={{ textAlign: 'right' }}>Vence etapa</th>
+                <th style={{ textAlign: 'right' }}>Monto</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map(r => (
+                <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => openExpediente(r.id)} title="Ver expediente">
+                  {data.scope !== 'asesor' && <td style={{ fontSize: 12 }}>{r.agente}</td>}
+                  <td style={{ fontFamily: 'monospace', fontSize: 12.5 }}>{r.poliza} <span style={{ opacity: 0.5 }}>{r.plan_id}</span></td>
+                  <td><EtapaBadge e={r.etapa} /><div className="sub" style={{ fontSize: 10.5 }}>{r.metodo}</div></td>
+                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{r.dias_desde_cancelacion}d</td>
+                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: r.dias_para_vencer_etapa <= 7 ? C.red : r.dias_para_vencer_etapa <= 20 ? '#B45309' : C.ink }}>
+                    {r.dias_para_vencer_etapa}d
+                  </td>
+                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(r.monto)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
+
+      {cfgOpen && <RehabConfigEditor onClose={() => setCfgOpen(false)} onSaved={onReload} />}
     </div>
   );
 }
@@ -169,12 +338,56 @@ export default function CrmIngresosView({ isAgency }) {
   const [sim, setSim] = useState(null);
   const [simBusy, setSimBusy] = useState(false);
 
+  /* Expediente de póliza (clic en pendientes/rehabilitables): motivo de
+     cancelación + notas ligadas al expediente en crm_policies */
+  const [polExp, setPolExp] = useState(null); // { id, loading, data, motivo, nota, saving }
+
+  const openPolExpediente = async (id) => {
+    setPolExp({ id, loading: true });
+    try {
+      const d = await api.crmIngresosPolizaExpediente(id);
+      setPolExp({ id, loading: false, data: d, motivo: d.policy?.motivo_cancelacion || '', nota: '', saving: false });
+    } catch (e) { alert(e.message); setPolExp(null); }
+  };
+
+  const savePolMotivo = async () => {
+    if (!polExp?.data) return;
+    setPolExp(p => ({ ...p, saving: true }));
+    try {
+      await api.crmIngresosPolizaMotivo(polExp.id, polExp.motivo);
+      setPolExp(p => ({ ...p, saving: false, data: { ...p.data, policy: { ...p.data.policy, motivo_cancelacion: p.motivo } } }));
+    } catch (e) { alert(e.message); setPolExp(p => ({ ...p, saving: false })); }
+  };
+
+  const addPolNota = async () => {
+    if (!polExp?.data?.policy?.crm_clients?.id || !polExp.nota.trim()) return;
+    try {
+      await api.crmCreateNote({
+        client_id: polExp.data.policy.crm_clients.id, tipo: 'nota',
+        texto: `[Póliza ${polExp.data.numero}] ${polExp.nota.trim()}`,
+      });
+      const d = await api.crmIngresosPolizaExpediente(polExp.id);
+      setPolExp(p => ({ ...p, nota: '', data: d }));
+    } catch (e) { alert(e.message); }
+  };
+
   /* Trayectoria a 15 meses */
   const [tray, setTray] = useState(null);
   const [trayBusy, setTrayBusy] = useState(false);
   const [trayVenta, setTrayVenta] = useState('');
   const [trayTasa, setTrayTasa] = useState('');
   const [trayCobra, setTrayCobra] = useState(true);
+
+  /* Rehabilitaciones (pestaña propia): lista clasificada por etapa/urgencia */
+  const [rehab, setRehab] = useState(null);
+  const [rehabBusy, setRehabBusy] = useState(false);
+  const loadRehab = useCallback(async () => {
+    setRehabBusy(true);
+    try { setRehab(await api.crmIngresosRehabilitaciones()); }
+    catch (e) { setErr(e.message); }
+    finally { setRehabBusy(false); }
+  }, []);
+  useEffect(() => { if (tab === 'rehab' && !rehab) loadRehab(); }, [tab, rehab, loadRehab]);
 
   const load = useCallback(async () => {
     setLoading(true); setErr('');
@@ -287,7 +500,99 @@ export default function CrmIngresosView({ isAgency }) {
         <button className={`crm-dtab${tab === 'simulador' ? ' active' : ''}`} onClick={() => setTab('simulador')} disabled={!detail}>Simulador</button>
         <button className={`crm-dtab${tab === 'conciliacion' ? ' active' : ''}`} onClick={() => setTab('conciliacion')}>Comisiones CRM</button>
         <button className={`crm-dtab${tab === 'proyeccion' ? ' active' : ''}`} onClick={() => setTab('proyeccion')} disabled={!detail}>Proyección 1–3 años</button>
+        <button className={`crm-dtab${tab === 'rehab' ? ' active' : ''}`} onClick={() => setTab('rehab')}>♻️ Rehabilitaciones</button>
       </div>
+
+      {/* ══ Expediente de póliza: motivo de cancelación + notas ══ */}
+      {polExp && (
+        <div className="modal-overlay" onClick={() => setPolExp(null)}>
+          <div className="modal crm-modal-lg" onClick={e => e.stopPropagation()}>
+            {polExp.loading ? (
+              <div className="loading-wrap" style={{ minHeight: 160 }}><div className="spinner" /></div>
+            ) : (() => {
+              const { indice, numero, policy, notes } = polExp.data;
+              const cancelada = String(indice.estatus_calculo || '').toUpperCase() !== 'VIGENTE';
+              const limite = indice.fecha_ultima_cancelacion ? new Date(indice.fecha_ultima_cancelacion) : null;
+              if (limite) limite.setMonth(limite.getMonth() + 6);
+              const diasRestantes = limite ? Math.round((limite - new Date()) / 86400000) : null;
+              const cliente = policy?.crm_clients;
+              return (
+                <>
+                  <div className="modal-head">
+                    <div>
+                      <h2>Póliza {numero}</h2>
+                      <div style={{ display: 'flex', gap: 8, marginTop: 5, alignItems: 'center', flexWrap: 'wrap' }}>
+                        {cancelada
+                          ? <span className="badge" style={{ background: C.redBg, color: C.red }}>Cancelada{indice.fecha_ultima_cancelacion ? ` el ${fmtDate(indice.fecha_ultima_cancelacion)}` : ''}</span>
+                          : <span className="badge" style={{ background: C.amberBg, color: C.amber }}>Pendiente de pago</span>}
+                        {cancelada && diasRestantes !== null && (
+                          <span className="badge" style={{ background: diasRestantes <= 30 ? C.redBg : C.greenBg, color: diasRestantes <= 30 ? C.red : C.green }}>
+                            {diasRestantes <= 0 ? 'ya no rehabilitable' : `♻️ rehabilitable ${diasRestantes} días más`}
+                          </span>
+                        )}
+                        {cliente?.telefono && (
+                          <a href={`https://wa.me/${String(cliente.telefono).replace(/\D/g, '')}`} target="_blank" rel="noreferrer"
+                            style={{ color: '#25D366', fontWeight: 600, textDecoration: 'none', fontSize: 12.5 }}>WhatsApp ↗</a>
+                        )}
+                      </div>
+                    </div>
+                    <button className="close-btn" onClick={() => setPolExp(null)}><X size={20} /></button>
+                  </div>
+                  <div className="modal-body">
+                    <div className="crm-kpi-detail" style={{ marginBottom: 14 }}>
+                      <div className="crm-kpi-box"><div className="k-label">Cliente</div><div style={{ fontSize: 13.5, fontWeight: 600 }}>{cliente?.nombre || '—'}</div><div className="k-sub">{cliente?.telefono || 'sin teléfono'}</div></div>
+                      <div className="crm-kpi-box"><div className="k-label">Plan</div><div style={{ fontSize: 13.5 }}>{indice.plan_id || policy?.plan || '—'}</div><div className="k-sub">{indice.frecuencia_pago || policy?.forma_pago || ''}</div></div>
+                      <div className="crm-kpi-box"><div className="k-label">Base en el índice</div><div style={{ fontSize: 13.5, fontWeight: 700 }}>{fmtMoney(indice.base_a_conservar_mxn)}</div><div className="k-sub">asesor {indice.clave}</div></div>
+                      {policy?.motivo_compra && <div className="crm-kpi-box"><div className="k-label">Compró porque</div><div style={{ fontSize: 12.5 }}>{policy.motivo_compra}</div></div>}
+                    </div>
+
+                    {!policy && (
+                      <div className="info-box" style={{ marginBottom: 14, background: C.amberBg, borderColor: `${C.amber}40` }}>
+                        <p>Esta póliza aún no está ligada a un expediente del CRM — carga el reporte de pólizas en la sección Pólizas para vincular cliente y notas.</p>
+                      </div>
+                    )}
+
+                    {policy && (
+                      <div className="field">
+                        <label>{cancelada ? '¿Por qué se canceló? (la clave para rehabilitarla: responde a ESA razón)' : '¿Por qué no ha pagado? (contexto de cobranza)'}</label>
+                        <textarea rows={2} value={polExp.motivo} onChange={e => setPolExp(p => ({ ...p, motivo: e.target.value }))}
+                          placeholder="ej. le pareció cara tras perder su empleo / se molestó por un siniestro no cubierto / cambió de banco y falló el cargo..." />
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 6 }}>
+                          <button className="btn-primary" disabled={polExp.saving || polExp.motivo === (policy.motivo_cancelacion || '')} onClick={savePolMotivo}>
+                            {polExp.saving ? 'Guardando...' : 'Guardar motivo'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {policy?.crm_clients?.id && (
+                      <>
+                        <h3 style={{ fontSize: 14, margin: '4px 0 8px' }}>Notas de esta póliza</h3>
+                        <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+                          <textarea rows={2} style={{ flex: 1, padding: '9px 12px', border: '1px solid rgba(11,27,51,.14)', borderRadius: 10, fontSize: 13.5, fontFamily: 'inherit', resize: 'vertical' }}
+                            placeholder="Qué dijo el cliente, qué sigue para rehabilitar/cobrar..."
+                            value={polExp.nota} onChange={e => setPolExp(p => ({ ...p, nota: e.target.value }))}
+                            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addPolNota(); } }} />
+                          <button className="btn-primary" disabled={!polExp.nota.trim()} onClick={addPolNota}><Plus size={15} /></button>
+                        </div>
+                        {(notes || []).length === 0 && <p className="empty">Sin notas de esta póliza aún.</p>}
+                        {(notes || []).map(n => (
+                          <div key={n.id} className="crm-file-row" style={{ alignItems: 'flex-start' }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div className="fname" style={{ whiteSpace: 'pre-wrap' }}>{String(n.texto).replace(`[Póliza ${numero}] `, '')}</div>
+                              <div className="fmeta">{n.user_name || ''} · {new Date(n.created_at).toLocaleString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      )}
 
       {/* ═══════════ TAB CONCILIACIÓN (vista de comisiones existente) ═══════════ */}
       {tab === 'conciliacion' && <CrmCommissionsView isAgency={isAgency} />}
@@ -295,6 +600,15 @@ export default function CrmIngresosView({ isAgency }) {
       {/* ═══════════ TAB PROYECCIÓN DE INGRESOS A 1/2/3 AÑOS ═══════════ */}
       {tab === 'proyeccion' && detail && <ProyeccionIngresos detail={detail} />}
       {tab === 'proyeccion' && !detail && <p className="empty">Selecciona un agente en el Tablero PIR para proyectar sus ingresos.</p>}
+
+      {/* ═══════════ TAB REHABILITACIONES ═══════════ */}
+      {tab === 'rehab' && (
+        rehabBusy && !rehab
+          ? <div className="loading-wrap"><div className="spinner" /><p>Cargando rehabilitaciones...</p></div>
+          : rehab
+            ? <RehabPanel data={rehab} isAgency={isAgency} busy={rehabBusy} onReload={loadRehab} openExpediente={openPolExpediente} />
+            : <p className="empty">Sin datos de rehabilitación.</p>
+      )}
 
       {/* ═══════════ TABLERO DE LA PROMOTORÍA (agregado, umbral 84%) ═══════════ */}
       {tab === 'tablero' && !selClave && isAgency && promo && (() => {
@@ -319,7 +633,9 @@ export default function CrmIngresosView({ isAgency }) {
               <input type="checkbox" style={{ accentColor: C.primary, cursor: 'pointer', flexShrink: 0 }} checked={!!promoSel[p.id]}
                 onChange={e => setPromoSel(s => ({ ...s, [p.id]: e.target.checked || undefined }))} />
               <span style={{ minWidth: 0 }}>
-                <b>{p.poliza}</b> <span style={{ fontSize: 11, color: C.textMuted }}>{p.plan_id}</span>
+                <b style={{ cursor: 'pointer', textDecoration: 'underline', textDecorationColor: 'rgba(11,27,51,.25)' }}
+                  title="Ver expediente: motivo de cancelación y notas" onClick={() => openPolExpediente(p.id)}>{p.poliza}</b>{' '}
+                <span style={{ fontSize: 11, color: C.textMuted }}>{p.plan_id}</span>
                 <br /><span style={{ fontSize: 11, color: C.textMuted, cursor: 'pointer', textDecoration: 'underline' }} onClick={() => setSelClave(p.clave)} title="Abrir el tablero de este asesor">{p.agente}</span>
               </span>
             </span>
@@ -594,7 +910,11 @@ export default function CrmIngresosView({ isAgency }) {
         <>
           <div className="crm-chart-card">
             <h3><Calculator size={16} style={{ verticalAlign: -2, color: C.gold }} /> Simulador — {detail.agente.nombre}</h3>
-            <p className="sub">¿Qué pasa con tu índice y tus bonos si vendes más, cobras lo pendiente o rehabilitas canceladas?</p>
+            <p className="sub">
+              ¿Qué pasa con tu índice y tus bonos si vendes más, cobras lo pendiente o rehabilitas canceladas?
+              El punto de partida ya asume cobrados los pendientes de pago (así arma Prudential el preliminar del trimestre),
+              por eso palomearlos confirma ese escenario sin volver a sumarlos — lo que mueve la aguja son las <b>rehabilitaciones</b> y la <b>venta nueva</b>.
+            </p>
 
             <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 16 }}>
               <div className="field" style={{ marginBottom: 0, minWidth: 220 }}>
@@ -613,7 +933,10 @@ export default function CrmIngresosView({ isAgency }) {
                       <tr key={`c${p.id}`}>
                         <td><input type="checkbox" style={{ accentColor: C.primary, cursor: 'pointer' }} checked={simSel[p.id] === 'cobrar'}
                           onChange={e => setSimSel(s => ({ ...s, [p.id]: e.target.checked ? 'cobrar' : undefined }))} /></td>
-                        <td><b>{p.poliza}</b> <span style={{ fontSize: 11, color: C.textMuted }}>{p.plan_id}</span></td>
+                        <td style={{ cursor: 'pointer' }} title="Ver expediente y notas" onClick={() => openPolExpediente(p.id)}>
+                          <b style={{ textDecoration: 'underline', textDecorationColor: 'rgba(11,27,51,.25)' }}>{p.poliza}</b>{' '}
+                          <span style={{ fontSize: 11, color: C.textMuted }}>{p.plan_id}</span>
+                        </td>
                         <td><span className="badge" style={{ background: C.amberBg, color: C.amber }}>Cobrar pendiente</span></td>
                         <td>{fmtMoney(p.monto)}</td>
                         <td style={{ color: C.green }}>+{pct(p.impacto_indice, 1)}</td>
@@ -623,7 +946,10 @@ export default function CrmIngresosView({ isAgency }) {
                       <tr key={`r${p.id}`}>
                         <td><input type="checkbox" style={{ accentColor: C.primary, cursor: 'pointer' }} checked={simSel[p.id] === 'rehabilitar'}
                           onChange={e => setSimSel(s => ({ ...s, [p.id]: e.target.checked ? 'rehabilitar' : undefined }))} /></td>
-                        <td><b>{p.poliza}</b> <span style={{ fontSize: 11, color: C.textMuted }}>{p.plan_id}</span></td>
+                        <td style={{ cursor: 'pointer' }} title="Ver expediente: por qué se canceló y notas" onClick={() => openPolExpediente(p.id)}>
+                          <b style={{ textDecoration: 'underline', textDecorationColor: 'rgba(11,27,51,.25)' }}>{p.poliza}</b>{' '}
+                          <span style={{ fontSize: 11, color: C.textMuted }}>{p.plan_id}</span>
+                        </td>
                         <td><span className="badge" style={{ background: '#E0F2FE', color: '#0891B2' }}>Rehabilitar</span></td>
                         <td>{fmtMoney(p.monto)}</td>
                         <td style={{ color: C.green }}>+{pct(p.impacto_indice, 1)}</td>

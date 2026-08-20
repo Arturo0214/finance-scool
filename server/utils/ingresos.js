@@ -94,6 +94,80 @@ const MESES_FRECUENCIA = { ANUAL: 12, SEMESTRAL: 6, TRIMESTRAL: 3, MENSUAL: 1 };
 const finTrimestre = (f) => new Date(f.getFullYear(), Math.floor(f.getMonth() / 3) * 3 + 3, 0);
 const isoLocal = (f) => new Date(f.getTime() - f.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 
+/* ── Rehabilitación de pólizas canceladas ─────────────────────────────────
+   Etapas por días desde la última cancelación (regla Prudential / promotoría):
+     0-30   → AUTOMATICA: rehabilitación automática, sin trámite del cliente.
+     30-90  → CORREO:     renovación/rehabilitación automática con correo de petición.
+     90-180 → FIRMA:      requiere firma autógrafa del cliente.
+     +180   → VENCIDA:    ya no es rehabilitable.
+   Producto PERSONALIZA: ventana ÚNICA de 30 días; pasados 30 días no se puede
+   rehabilitar (nunca entra a las etapas de correo/firma). La lista de planes
+   PERSONALIZA es configurable (crm_config.personaliza_planes); mientras esté
+   vacía, ninguna póliza se trata como PERSONALIZA. */
+const REHAB_ETAPAS = {
+  AUTOMATICA: { label: 'Rehabilitación automática', metodo: 'Automática — sin trámite del cliente', hasta: 30 },
+  CORREO: { label: 'Rehabilitación con correo', metodo: 'Renovación automática con correo de petición', hasta: 90 },
+  FIRMA: { label: 'Rehabilitación con firma', metodo: 'Requiere firma autógrafa del cliente', hasta: 180 },
+  VENCIDA: { label: 'Fuera de plazo', metodo: 'Ya no es rehabilitable', hasta: null },
+};
+const URGENCIA_RANK = { EXTREMA: 0, ALTA: 1, MEDIA: 2, BAJA: 3 };
+
+function diasDesde(fechaISO, hoy = new Date()) {
+  if (!fechaISO) return null;
+  const d = new Date(fechaISO);
+  if (isNaN(d.getTime())) return null;
+  return Math.floor((hoy - d) / 86400000);
+}
+
+/* Clasifica una póliza cancelada. Devuelve null si no aplica (sin fecha de
+   cancelación o cancelación en el futuro). personalizaSet = Set de plan_id
+   en MAYÚSCULAS que son PERSONALIZA. */
+function clasificarRehabilitacion(p, hoy = new Date(), personalizaSet = null) {
+  const dias = diasDesde(p.fecha_ultima_cancelacion, hoy);
+  if (dias === null || dias < 0) return null;
+  const esPersonaliza = !!personalizaSet && personalizaSet.has(String(p.plan_id || '').toUpperCase());
+
+  let etapa, finEtapa, siguienteEsPerdida;
+  if (esPersonaliza) {
+    if (dias <= 30) { etapa = 'AUTOMATICA'; finEtapa = 30; siguienteEsPerdida = true; }
+    else { etapa = 'VENCIDA'; finEtapa = null; siguienteEsPerdida = false; }
+  } else if (dias <= 30) { etapa = 'AUTOMATICA'; finEtapa = 30; siguienteEsPerdida = false; }
+  else if (dias <= 90) { etapa = 'CORREO'; finEtapa = 90; siguienteEsPerdida = false; }
+  else if (dias <= 180) { etapa = 'FIRMA'; finEtapa = 180; siguienteEsPerdida = true; }
+  else { etapa = 'VENCIDA'; finEtapa = null; siguienteEsPerdida = false; }
+
+  const rehabilitable = etapa !== 'VENCIDA';
+  const diasParaVencerEtapa = finEtapa != null ? Math.max(0, finEtapa - dias) : 0;
+  let urgencia = 'BAJA';
+  if (rehabilitable) {
+    if (siguienteEsPerdida) {
+      // al vencer la etapa la póliza se pierde para siempre → máxima prioridad
+      urgencia = diasParaVencerEtapa <= 7 ? 'EXTREMA' : diasParaVencerEtapa <= 20 ? 'ALTA' : 'MEDIA';
+    } else {
+      // al vencer solo se endurece el trámite (auto→correo→firma)
+      urgencia = diasParaVencerEtapa <= 5 ? 'ALTA' : diasParaVencerEtapa <= 15 ? 'MEDIA' : 'BAJA';
+    }
+  }
+  const info = REHAB_ETAPAS[etapa];
+  const limite = finEtapa != null
+    ? isoLocal(new Date(new Date(p.fecha_ultima_cancelacion).getTime() + finEtapa * 86400000))
+    : null;
+  return {
+    dias_desde_cancelacion: dias,
+    es_personaliza: esPersonaliza,
+    etapa, etapa_label: info.label, metodo: info.metodo,
+    fin_etapa_dias: finEtapa, dias_para_vencer_etapa: diasParaVencerEtapa,
+    fecha_limite_etapa: limite,
+    rehabilitable, automatizable: etapa === 'AUTOMATICA', urgencia,
+  };
+}
+
+/* Ordena rehabilitables: primero por urgencia, luego por monto en riesgo */
+function ordenRehab(a, b) {
+  const u = (URGENCIA_RANK[a.urgencia] ?? 9) - (URGENCIA_RANK[b.urgencia] ?? 9);
+  return u !== 0 ? u : (b.monto || 0) - (a.monto || 0);
+}
+
 /**
  * Trayectoria del índice a N meses. La ventana del índice solo crece (alta del
  * agente → hoy−15 meses) y las canceladas nunca salen de ella, así que el
@@ -128,7 +202,8 @@ function proyectarTrayectoria({ polizas, ventaMensual = 0, tasaConservacion = 0.
  * Cálculo completo de ingresos PIR de un agente.
  * overrides (simulador): { ventaAdicional, cobrarPolizas: [ids], rehabilitarPolizas: [ids] }
  */
-function computeIngresos({ agente, primas, polizas, pir }, overrides = {}) {
+function computeIngresos({ agente, primas, polizas, pir, personalizaPlanes }, overrides = {}) {
+  const personalizaSet = new Set((personalizaPlanes || []).map(s => String(s).toUpperCase()));
   const tablas = ((pir || PIR_DEFAULT).cuadernos || {})[cuadernoKey(agente.cuaderno)] ||
     (pir || PIR_DEFAULT).cuadernos.NOVEL;
 
@@ -162,20 +237,29 @@ function computeIngresos({ agente, primas, polizas, pir }, overrides = {}) {
     .filter(p => p.estatus_conservacion === 'CONSERVADA' && derivarEstatus(p, cierreQ) !== 'CONSERVADA')
     .map(p => ({ id: p.id, poliza: p.poliza, plan_id: p.plan_id, frecuencia_pago: p.frecuencia_pago, pagado_hasta: p.pagado_hasta, monto: round2(p.base_a_conservar_mxn), impacto_indice: indiceInfo.baseAConservar > 0 ? (Number(p.base_a_conservar_mxn) || 0) / indiceInfo.baseAConservar : 0 }))
     .sort((a, b) => b.monto - a.monto);
-  let extraConservada = 0;
+  /* extraConservada sube el índice simulado (que parte de la base conservada
+     del corte). Para el operativo lo PENDIENTE DE PAGO ya está contado dentro
+     de basePendiente: volver a sumar los pendientes seleccionados duplicaba la
+     base y el simulador podía pasar de 100% — solo las rehabilitaciones (no
+     conservadas) agregan base nueva al operativo. */
+  let extraConservada = 0, extraOperativo = 0;
   for (const p of polizas) {
     const sel = cobrar.has(p.id) || rehabilitar.has(p.id);
-    if (sel && p.estatus_conservacion !== 'CONSERVADA') extraConservada += Number(p.base_a_conservar_mxn) || 0;
+    if (!sel || p.estatus_conservacion === 'CONSERVADA') continue;
+    const monto = Number(p.base_a_conservar_mxn) || 0;
+    extraConservada += monto;
+    if (p.estatus_conservacion !== 'PENDIENTE DE PAGO') extraOperativo += monto;
   }
   const conservadaSim = indiceInfo.baseConservada + extraConservada;
-  const indiceSim = indiceInfo.baseAConservar > 0 ? conservadaSim / indiceInfo.baseAConservar : 1;
+  const indiceSim = indiceInfo.baseAConservar > 0
+    ? Math.min(1, conservadaSim / indiceInfo.baseAConservar) : 1;
 
   const meses = mesesDesde(agente.fecha_inicio_calculos);
   const esNuevo = meses !== null && meses < 15;
   /* Índice operativo para bandas: el preliminar del trimestre considera lo
      pendiente de pago (así lo maneja el Business Review) + lo simulado */
   const indiceOperativo = indiceInfo.baseAConservar > 0
-    ? (indiceInfo.baseConservada + indiceInfo.basePendiente + extraConservada) / indiceInfo.baseAConservar
+    ? Math.min(1, (indiceInfo.baseConservada + indiceInfo.basePendiente + extraOperativo) / indiceInfo.baseAConservar)
     : 1;
   const umbral = umbralDe(indiceOperativo, esNuevo);
 
@@ -212,7 +296,6 @@ function computeIngresos({ agente, primas, polizas, pir }, overrides = {}) {
 
   /* Accionables */
   const hoy = new Date();
-  const seisMesesAtras = new Date(hoy); seisMesesAtras.setMonth(hoy.getMonth() - 6);
   const impacto = (monto) => indiceInfo.baseAConservar > 0 ? monto / indiceInfo.baseAConservar : 0;
 
   /* Accionables sobre el estatus derivado a hoy, no el del corte: una póliza
@@ -222,10 +305,23 @@ function computeIngresos({ agente, primas, polizas, pir }, overrides = {}) {
     .map(p => ({ id: p.id, poliza: p.poliza, plan_id: p.plan_id, forma_pago: p.forma_pago, frecuencia_pago: p.frecuencia_pago, pagado_hasta: p.pagado_hasta, monto: round2(p.base_a_conservar_mxn), impacto_indice: impacto(Number(p.base_a_conservar_mxn) || 0) }))
     .sort((a, b) => b.monto - a.monto);
 
+  /* Rehabilitables: canceladas clasificadas por etapa (auto/correo/firma) y
+     urgencia. Se excluyen las VENCIDAS (+180 días, o PERSONALIZA +30). */
   const rehabilitables = polizasHoy
-    .filter(p => p.estatus_conservacion === 'NO CONSERVADA' && p.fecha_ultima_cancelacion && new Date(p.fecha_ultima_cancelacion) >= seisMesesAtras)
-    .map(p => ({ id: p.id, poliza: p.poliza, plan_id: p.plan_id, forma_pago: p.forma_pago, frecuencia_pago: p.frecuencia_pago, fecha_ultima_cancelacion: p.fecha_ultima_cancelacion, monto: round2(p.base_a_conservar_mxn), impacto_indice: impacto(Number(p.base_a_conservar_mxn) || 0) }))
-    .sort((a, b) => b.monto - a.monto);
+    .filter(p => p.estatus_conservacion === 'NO CONSERVADA' && p.fecha_ultima_cancelacion)
+    .map(p => {
+      const c = clasificarRehabilitacion(p, hoy, personalizaSet);
+      if (!c) return null;
+      return { id: p.id, poliza: p.poliza, plan_id: p.plan_id, forma_pago: p.forma_pago, frecuencia_pago: p.frecuencia_pago, fecha_ultima_cancelacion: p.fecha_ultima_cancelacion, monto: round2(p.base_a_conservar_mxn), impacto_indice: impacto(Number(p.base_a_conservar_mxn) || 0), ...c };
+    })
+    .filter(r => r && r.rehabilitable)
+    .sort(ordenRehab);
+
+  /* Resumen por etapa/urgencia para tableros y alertas */
+  const rehabResumen = { total: rehabilitables.length, monto: round2(rehabilitables.reduce((s, r) => s + r.monto, 0)),
+    por_etapa: { AUTOMATICA: 0, CORREO: 0, FIRMA: 0 }, por_urgencia: { EXTREMA: 0, ALTA: 0, MEDIA: 0, BAJA: 0 },
+    automatizables: rehabilitables.filter(r => r.automatizable).length };
+  for (const r of rehabilitables) { rehabResumen.por_etapa[r.etapa]++; rehabResumen.por_urgencia[r.urgencia]++; }
 
   return {
     agente: {
@@ -271,8 +367,8 @@ function computeIngresos({ agente, primas, polizas, pir }, overrides = {}) {
       trimestral: bonosEnJuego(tablas.bono_inicial_trimestral, ubicacionQ, pagadaInicialQ),
       conservacion: bonosEnJuego(tablas.bono_conservacion, ubicacionQ, renovacionQ),
     },
-    accionables: { pendientesPago, rehabilitables },
+    accionables: { pendientesPago, rehabilitables, rehabResumen },
   };
 }
 
-module.exports = { computeIngresos, computeIndice, derivarEstatus, proyectarTrayectoria, umbralDe, cuadernoKey, MESES_FRECUENCIA, PIR_DEFAULT };
+module.exports = { computeIngresos, computeIndice, derivarEstatus, proyectarTrayectoria, clasificarRehabilitacion, ordenRehab, REHAB_ETAPAS, URGENCIA_RANK, umbralDe, cuadernoKey, MESES_FRECUENCIA, PIR_DEFAULT };

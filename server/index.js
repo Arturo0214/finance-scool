@@ -125,6 +125,9 @@ cron.schedule('0 8 * * *', () => cronFetch('auto-reminders', 'CRM auto-reminders
 // CRM: reporte PDF mensual por asesor (día 1, 8:30) — requiere CRM_MONTHLY_REPORT_ENABLED=true
 cron.schedule('30 8 1 * *', () => cronFetch('monthly-reports', 'CRM monthly reports', 'crm'));
 
+// CRM: alertas de rehabilitación urgente por correo — diario 8:15, requiere CRM_REHAB_ALERTS_ENABLED=true
+cron.schedule('15 8 * * *', () => cronFetch('ingresos/rehab-alerts', 'CRM rehab alerts', 'crm'));
+
 app.listen(PORT, () => {
   console.log(`🚀 Finance SCool API running at http://localhost:${PORT}`);
   console.log('📅 Cron jobs active: reminders(15m), no-show(30m), post-cita(6h)');

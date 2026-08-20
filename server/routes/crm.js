@@ -1542,7 +1542,7 @@ router.get('/activity', async (req, res) => {
    Data del Business Review migrada a crm_pru_* (server/migrate-ingresos.js).
    Asesores solo ven su propia clave (crm_agents.clave ↔ crm_pru_agentes.clave). */
 
-const { computeIngresos, proyectarTrayectoria, derivarEstatus, MESES_FRECUENCIA, PIR_DEFAULT } = require('../utils/ingresos');
+const { computeIngresos, proyectarTrayectoria, derivarEstatus, clasificarRehabilitacion, ordenRehab, REHAB_ETAPAS, MESES_FRECUENCIA, PIR_DEFAULT } = require('../utils/ingresos');
 
 let _pirCache = null;
 async function getPirTablas() {
@@ -1550,6 +1550,17 @@ async function getPirTablas() {
   const { data } = await getDB().from('crm_pir_tablas').select('tablas').eq('anio', new Date().getFullYear()).maybeSingle();
   _pirCache = (data && data.tablas) || PIR_DEFAULT;
   return _pirCache;
+}
+
+/* Lista de plan_id que son producto PERSONALIZA (ventana de rehabilitación de
+   solo 30 días). Configurable desde crm_config; cacheada. */
+let _personalizaCache = null;
+async function getPersonalizaPlanes() {
+  if (_personalizaCache) return _personalizaCache;
+  const { data } = await getDB().from('crm_config').select('value').eq('key', 'personaliza_planes').maybeSingle();
+  const arr = Array.isArray(data && data.value) ? data.value : [];
+  _personalizaCache = arr.map(s => String(s).toUpperCase());
+  return _personalizaCache;
 }
 
 /* Resuelve la clave Prudential permitida: null = todas (agencia) */
@@ -1581,20 +1592,20 @@ router.get('/ingresos/overview', async (req, res) => {
   try {
     const scope = await resolveClaveScope(req, res);
     if (!scope) return;
-    const [pir, { agentes, primas, polizas }] = await Promise.all([getPirTablas(), fetchIngresosData(scope.clave)]);
+    const [pir, personalizaPlanes, { agentes, primas, polizas }] = await Promise.all([getPirTablas(), getPersonalizaPlanes(), fetchIngresosData(scope.clave)]);
     const rows = agentes.map(a => {
       const r = computeIngresos({
         agente: a,
         primas: primas.filter(p => p.clave === a.clave),
         polizas: polizas.filter(p => p.clave === a.clave),
-        pir,
+        pir, personalizaPlanes,
       });
       return {
         clave: a.clave, nombre: a.nombre, cuaderno: a.cuaderno, estatus: a.estatus,
         mes_agente: r.agente.mes_agente, es_nuevo: r.agente.es_nuevo,
         indice: r.indice, primas: r.primas,
         bonos: { total_trimestre: r.bonos.total_trimestre, trimestral: r.bonos.trimestral, conservacion: r.bonos.conservacion, total_mensuales: r.bonos.total_mensuales },
-        accionables: { pendientes: r.accionables.pendientesPago.length, rehabilitables: r.accionables.rehabilitables.length },
+        accionables: { pendientes: r.accionables.pendientesPago.length, rehabilitables: r.accionables.rehabilitables.length, rehab: r.accionables.rehabResumen },
         periodo: r.periodo,
       };
     });
@@ -1610,7 +1621,7 @@ router.get('/ingresos/overview', async (req, res) => {
 router.get('/ingresos/promotoria', async (req, res) => {
   try {
     if (!isAgency(req.user.role)) return res.status(403).json({ error: 'Solo administración ve el tablero de la promotoría' });
-    const [pir, { agentes, primas, polizas }] = await Promise.all([getPirTablas(), fetchIngresosData(null)]);
+    const [pir, personalizaPlanes, { agentes, primas, polizas }] = await Promise.all([getPirTablas(), getPersonalizaPlanes(), fetchIngresosData(null)]);
     const hoy = new Date();
     const diasRestantes = (fechaCancelacion) => {
       const limite = new Date(fechaCancelacion); limite.setMonth(limite.getMonth() + 6);
@@ -1627,7 +1638,7 @@ router.get('/ingresos/promotoria', async (req, res) => {
         agente: a,
         primas: primas.filter(p => p.clave === a.clave),
         polizas: polizas.filter(p => p.clave === a.clave),
-        pir,
+        pir, personalizaPlanes,
       });
       baseAConservar += r.indice.baseAConservar;
       baseConservada += r.indice.baseConservada;
@@ -1640,17 +1651,26 @@ router.get('/ingresos/promotoria', async (req, res) => {
       })));
     }
     /* Conteo de pólizas del índice con el estatus derivado a hoy */
-    const seisMesesAtras = new Date(hoy); seisMesesAtras.setMonth(hoy.getMonth() - 6);
     for (const p of polizas) {
       conteo.total++;
       const st = derivarEstatus(p, hoy);
       if (st === 'CONSERVADA') conteo.conservadas++;
       else if (st === 'PENDIENTE DE PAGO') conteo.pendientes++;
-      else {
-        conteo.noConservadas++;
-        if (p.fecha_ultima_cancelacion && new Date(p.fecha_ultima_cancelacion) >= seisMesesAtras) conteo.rehabilitables++;
-      }
+      else conteo.noConservadas++;
     }
+    conteo.rehabilitables = rehabilitables.length; // ya excluye vencidas/PERSONALIZA fuera de plazo
+
+    /* Resumen de rehabilitación agregado de la promotoría (por etapa/urgencia) */
+    const rehabResumen = { total: rehabilitables.length, monto: 0,
+      por_etapa: { AUTOMATICA: 0, CORREO: 0, FIRMA: 0 }, por_urgencia: { EXTREMA: 0, ALTA: 0, MEDIA: 0, BAJA: 0 },
+      automatizables: 0 };
+    for (const r of rehabilitables) {
+      rehabResumen.monto += r.monto || 0;
+      if (rehabResumen.por_etapa[r.etapa] != null) rehabResumen.por_etapa[r.etapa]++;
+      if (rehabResumen.por_urgencia[r.urgencia] != null) rehabResumen.por_urgencia[r.urgencia]++;
+      if (r.automatizable) rehabResumen.automatizables++;
+    }
+    rehabResumen.monto = Math.round(rehabResumen.monto * 100) / 100;
 
     const div = (n, d) => (d > 0 ? Math.round((n / d) * 10000) / 10000 : 1);
     const baseRehabilitable = rehabilitables.reduce((s, p) => s + p.monto, 0);
@@ -1661,6 +1681,7 @@ router.get('/ingresos/promotoria', async (req, res) => {
       umbral: 0.84,
       umbralAgente: 0.86,
       agentes: agentes.length,
+      rehabResumen,
       indice: {
         actual: div(baseConservada, baseAConservar),
         conPendiente: div(baseConservada + basePendiente, baseAConservar),
@@ -1676,11 +1697,177 @@ router.get('/ingresos/promotoria', async (req, res) => {
       polizas: conteo,
       accionables: {
         pendientesPago: reimpacto(pendientesPago.sort((a, b) => b.monto - a.monto)),
-        rehabilitables: reimpacto(rehabilitables.sort((a, b) => a.dias_restantes - b.dias_restantes)),
+        rehabilitables: reimpacto(rehabilitables.sort(ordenRehab)),
       },
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+
+/* ── Rehabilitaciones: lista priorizada de canceladas rehabilitables por etapa
+   (auto 0-30 · correo 30-90 · firma 90-180) y urgencia. Agencia ve toda la
+   promotoría; asesor solo su cartera. También reporta las VENCIDAS (informativo)
+   y las PERSONALIZA fuera de plazo (30 días). ── */
+router.get('/ingresos/rehabilitaciones', async (req, res) => {
+  try {
+    const scope = await resolveClaveScope(req, res);
+    if (!scope) return;
+    const [personalizaPlanes, { agentes, polizas }] = await Promise.all([getPersonalizaPlanes(), fetchIngresosData(scope.clave)]);
+    const personalizaSet = new Set(personalizaPlanes.map(s => String(s).toUpperCase()));
+    const hoy = new Date();
+    const nombrePorClave = new Map(agentes.map(a => [a.clave, a.nombre]));
+
+    const rehabilitables = [], vencidas = [];
+    const resumen = { total: 0, monto: 0, automatizables: 0,
+      por_etapa: { AUTOMATICA: 0, CORREO: 0, FIRMA: 0 }, por_urgencia: { EXTREMA: 0, ALTA: 0, MEDIA: 0, BAJA: 0 } };
+    for (const p of polizas) {
+      if (derivarEstatus(p, hoy) !== 'NO CONSERVADA') continue;
+      const c = clasificarRehabilitacion(p, hoy, personalizaSet);
+      if (!c) continue;
+      const monto = Math.round((Number(p.base_a_conservar_mxn) || 0) * 100) / 100;
+      const item = { id: p.id, clave: p.clave, agente: nombrePorClave.get(p.clave) || p.clave,
+        poliza: p.poliza, plan_id: p.plan_id, forma_pago: p.forma_pago, frecuencia_pago: p.frecuencia_pago,
+        fecha_ultima_cancelacion: p.fecha_ultima_cancelacion, monto, ...c };
+      if (c.rehabilitable) {
+        rehabilitables.push(item);
+        resumen.total++; resumen.monto += monto;
+        if (resumen.por_etapa[c.etapa] != null) resumen.por_etapa[c.etapa]++;
+        if (resumen.por_urgencia[c.urgencia] != null) resumen.por_urgencia[c.urgencia]++;
+        if (c.automatizable) resumen.automatizables++;
+      } else {
+        vencidas.push(item);
+      }
+    }
+    resumen.monto = Math.round(resumen.monto * 100) / 100;
+    rehabilitables.sort(ordenRehab);
+    vencidas.sort((a, b) => b.monto - a.monto);
+    res.json({
+      scope: scope.restricted ? 'asesor' : 'promotoria',
+      clave: scope.clave || null,
+      etapas: REHAB_ETAPAS,
+      personaliza_configurado: personalizaPlanes.length > 0,
+      resumen, rehabilitables,
+      vencidas: { total: vencidas.length, monto: Math.round(vencidas.reduce((s, v) => s + v.monto, 0) * 100) / 100, lista: vencidas.slice(0, 100) },
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* Config de planes PERSONALIZA (solo agencia). GET lista la config + los
+   plan_id disponibles en el índice para elegir. PUT reemplaza la lista. */
+router.get('/ingresos/rehab-config', async (req, res) => {
+  if (!isAgency(req.user.role)) return res.status(403).json({ error: 'Solo administración configura los planes PERSONALIZA' });
+  try {
+    const db = getDB();
+    const [personalizaPlanes, { data: rows }] = await Promise.all([
+      getPersonalizaPlanes(),
+      db.from('crm_pru_polizas_indice').select('plan_id').range(0, 4999),
+    ]);
+    const conteo = new Map();
+    for (const r of (rows || [])) { const k = String(r.plan_id || '').toUpperCase(); if (k) conteo.set(k, (conteo.get(k) || 0) + 1); }
+    const planesDisponibles = [...conteo.entries()].map(([plan_id, polizas]) => ({ plan_id, polizas })).sort((a, b) => b.polizas - a.polizas);
+    res.json({ personaliza_planes: personalizaPlanes, planes_disponibles: planesDisponibles });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.put('/ingresos/rehab-config', async (req, res) => {
+  if (!isAgency(req.user.role)) return res.status(403).json({ error: 'Solo administración configura los planes PERSONALIZA' });
+  try {
+    const lista = Array.isArray(req.body.personaliza_planes) ? req.body.personaliza_planes : null;
+    if (!lista) return res.status(400).json({ error: 'personaliza_planes debe ser un arreglo de códigos de plan' });
+    const limpia = [...new Set(lista.map(s => String(s).trim().toUpperCase()).filter(Boolean))];
+    const { error } = await getDB().from('crm_config').upsert(
+      { key: 'personaliza_planes', value: limpia, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+    if (error) throw new Error(error.message);
+    _personalizaCache = limpia; // invalida/actualiza cache
+    logActivity(req, 'configurar', 'rehab-personaliza', null, `${limpia.length} planes`);
+    res.json({ ok: true, personaliza_planes: limpia });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* ── Alertas de rehabilitación por correo ──
+   Manda a cada asesor sus canceladas urgentes (auto 0-30 + urgencia EXTREMA/ALTA
+   por vencer etapa) y un digest a la promotoría (agencia). Manual desde el
+   tablero (agencia) o vía cron diario con CRM_REHAB_ALERTS_ENABLED=true. La
+   rehabilitación real se hace en Prudential/Zeus (el correo es el aviso). ── */
+router.post('/ingresos/rehab-alerts', async (req, res) => {
+  if (!isAgency(req.user.role)) return res.status(403).json({ error: 'Solo administración envía las alertas de rehabilitación' });
+  const isCron = req.user && req.user.email === 'cron@internal';
+  if (isCron && process.env.CRM_REHAB_ALERTS_ENABLED !== 'true') {
+    return res.json({ ok: false, skipped: 'CRM_REHAB_ALERTS_ENABLED != true' });
+  }
+  try {
+    const { sendMail } = require('../utils/crmMailer');
+    const db = getDB();
+    const [pir, personalizaPlanes, { agentes, primas, polizas }] = await Promise.all([getPirTablas(), getPersonalizaPlanes(), fetchIngresosData(null)]);
+    const { data: crmAgents } = await db.from('crm_agents').select('clave, email, nombre, activo_fsc');
+    const emailPorClave = new Map((crmAgents || []).filter(a => a.clave && a.email && a.activo_fsc !== false).map(a => [a.clave, a]));
+
+    const money = (n) => `$${(Number(n) || 0).toLocaleString('es-MX', { maximumFractionDigits: 0 })}`;
+    const urg = (u) => u === 'EXTREMA' ? '⚠️ EXTREMADAMENTE URGENTE' : u === 'ALTA' ? '⚠️ Urgente' : '';
+    const lineaPoliza = (p) => `  · Póliza ${p.poliza} (${p.plan_id || ''}) — ${money(p.monto)} · ${p.etapa_label}: ${p.metodo} · quedan ${p.dias_para_vencer_etapa} días de esta etapa${urg(p.urgencia) ? ' · ' + urg(p.urgencia) : ''}`;
+
+    const sent = [], skipped = [], failed = [];
+    const digest = []; // acumula lo urgente de toda la promotoría
+
+    for (const a of agentes) {
+      const r = computeIngresos({ agente: a, primas: primas.filter(p => p.clave === a.clave), polizas: polizas.filter(p => p.clave === a.clave), pir, personalizaPlanes });
+      const rehab = r.accionables.rehabilitables;
+      // "Accionable ya": auto-rehab (0-30) o urgencia alta/extrema (por vencer etapa)
+      const accionables = rehab.filter(p => p.automatizable || p.urgencia === 'EXTREMA' || p.urgencia === 'ALTA');
+      if (!accionables.length) { skipped.push(a.clave); continue; }
+      digest.push(...accionables.map(p => ({ ...p, clave: a.clave, agente: a.nombre })));
+
+      const dest = emailPorClave.get(a.clave);
+      if (!dest) { skipped.push(a.clave + ' (sin correo)'); continue; }
+      const auto = accionables.filter(p => p.automatizable);
+      const porVencer = accionables.filter(p => !p.automatizable);
+      const cuerpo = [
+        `Hola ${String(dest.nombre || '').split(' ')[0]},`,
+        '',
+        `Tienes ${accionables.length} póliza(s) cancelada(s) que puedes rehabilitar YA — el plazo corre desde la cancelación y al vencer cada etapa el trámite se endurece (o se pierde).`,
+        '',
+        auto.length ? `✅ REHABILITACIÓN AUTOMÁTICA (menos de 30 días — sin trámite del cliente):` : null,
+        ...auto.map(lineaPoliza),
+        auto.length ? '' : null,
+        porVencer.length ? `⏳ POR VENCER ETAPA (atiéndelas ya):` : null,
+        ...porVencer.map(lineaPoliza),
+        '',
+        `Rehabilítalas en Prudential/Zeus. Revisa el detalle y simula tu índice en el CRM → Ingresos → Rehabilitaciones.`,
+        '',
+        '— Incubadora S-COOL',
+      ].filter(l => l !== null);
+      try {
+        await sendMail({ to: dest.email, subject: `♻️ ${accionables.length} rehabilitación(es) urgente(s) — ${a.nombre}`, text: cuerpo.join('\n') });
+        sent.push(a.clave);
+      } catch (e) { failed.push(`${a.clave}: ${e.message}`); }
+    }
+
+    // Digest a la promotoría (admins de agencia)
+    let digestSent = 0;
+    if (digest.length) {
+      const { data: admins } = await db.from('users').select('email, role').in('role', ['superadmin', 'agencia', 'admin']);
+      const to = [...new Set((admins || []).map(u => u.email).filter(Boolean))];
+      if (to.length) {
+        digest.sort(ordenRehab);
+        const extremas = digest.filter(d => d.urgencia === 'EXTREMA').length;
+        const cuerpo = [
+          `Rehabilitaciones accionables en la promotoría: ${digest.length} pólizas (${money(digest.reduce((s, d) => s + d.monto, 0))} en riesgo · ${extremas} extremadamente urgentes).`,
+          '',
+          `Top 20 por urgencia:`,
+          ...digest.slice(0, 20).map(d => `  · ${d.agente} — Póliza ${d.poliza} (${d.plan_id || ''}) — ${money(d.monto)} · ${d.etapa_label} · quedan ${d.dias_para_vencer_etapa} días${urg(d.urgencia) ? ' · ' + urg(d.urgencia) : ''}`),
+          '',
+          `Detalle completo en el CRM → Ingresos → Rehabilitaciones.`,
+          '',
+          '— Sistema Incubadora S-COOL',
+        ];
+        try { await sendMail({ to: to.join(','), subject: `♻️ Digest de rehabilitaciones — ${digest.length} accionables (${extremas} extremas)`, text: cuerpo.join('\n') }); digestSent = to.length; } catch (e) { failed.push(`digest: ${e.message}`); }
+      }
+    }
+
+    logActivity(req, 'enviar', 'rehab-alerts', null, `${sent.length} asesores, digest ${digestSent}`);
+    res.json({ ok: true, enviados: sent, sinAccionOSinCorreo: skipped, fallidos: failed, digestDestinatarios: digestSent, accionablesTotales: digest.length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 /* ── Mailing de cobranza por asesor: "esta es tu cartera por cobrar, este es
    tu índice y a esto sube si cobras — importa para tus bonos". Manual desde
    Metas (admin) o vía cron con CRM_COBRANZA_MAILING_ENABLED=true. ── */
@@ -1689,7 +1876,7 @@ router.post('/cobranza-mailing', async (req, res) => {
   try {
     const { sendMail } = require('../utils/crmMailer');
     const db = getDB();
-    const [pir, { agentes, primas, polizas }] = await Promise.all([getPirTablas(), fetchIngresosData(null)]);
+    const [pir, personalizaPlanes, { agentes, primas, polizas }] = await Promise.all([getPirTablas(), getPersonalizaPlanes(), fetchIngresosData(null)]);
     const { data: crmAgents } = await db.from('crm_agents').select('clave, email, nombre, activo_fsc');
     const emailPorClave = new Map((crmAgents || []).filter(a => a.clave && a.email && a.activo_fsc !== false).map(a => [a.clave, a]));
     const soloClave = req.body.clave || null; // opcional: enviar a uno solo
@@ -1703,7 +1890,7 @@ router.post('/cobranza-mailing', async (req, res) => {
         agente: a,
         primas: primas.filter(p => p.clave === a.clave),
         polizas: polizas.filter(p => p.clave === a.clave),
-        pir,
+        pir, personalizaPlanes,
       });
       const pend = r.accionables.pendientesPago;
       const rehab = r.accionables.rehabilitables;
@@ -1720,8 +1907,8 @@ router.post('/cobranza-mailing', async (req, res) => {
         ...pend.slice(0, 12).map(p => `  · Póliza ${p.poliza} (${p.plan_id || ''}) — ${money(p.monto)} · vencida desde ${p.pagado_hasta || 's/f'} · sube tu índice +${pctTxt(p.impacto_indice)}`),
         pend.length > 12 ? `  …y ${pend.length - 12} más (revísalas en el CRM → Ingresos).` : null,
         '',
-        rehab.length ? `♻️ AÚN REHABILITABLES (canceladas hace menos de 6 meses — después ya no se puede):` : null,
-        ...rehab.slice(0, 8).map(p => `  · Póliza ${p.poliza} — ${money(p.monto)} · cancelada ${p.fecha_ultima_cancelacion || 's/f'} · recuperaría +${pctTxt(p.impacto_indice)}`),
+        rehab.length ? `♻️ AÚN REHABILITABLES (por etapa — el plazo corre desde la cancelación):` : null,
+        ...rehab.slice(0, 10).map(p => `  · Póliza ${p.poliza} — ${money(p.monto)} · ${p.etapa_label} (${p.metodo}) · ${p.dias_para_vencer_etapa} días para vencer esta etapa · recuperaría +${pctTxt(p.impacto_indice)}${p.urgencia === 'EXTREMA' ? ' · ⚠️ EXTREMADAMENTE URGENTE' : p.urgencia === 'ALTA' ? ' · ⚠️ urgente' : ''}`),
         '',
         `Cada cobro cuenta para tus bonos PIR del trimestre. Entra al CRM → Ingresos para simular tu índice y registrar avances.`,
         '',
@@ -1744,9 +1931,9 @@ router.get('/ingresos/agent/:clave', async (req, res) => {
     if (!scope) return;
     const clave = String(req.params.clave).toUpperCase();
     if (scope.restricted && scope.clave !== clave) return res.status(403).json({ error: 'Solo puedes consultar tu propia clave' });
-    const [pir, { agentes, primas, polizas }] = await Promise.all([getPirTablas(), fetchIngresosData(clave)]);
+    const [pir, personalizaPlanes, { agentes, primas, polizas }] = await Promise.all([getPirTablas(), getPersonalizaPlanes(), fetchIngresosData(clave)]);
     if (!agentes.length) return res.status(404).json({ error: `No hay data Prudential para la clave ${clave}` });
-    const detalle = computeIngresos({ agente: agentes[0], primas, polizas, pir });
+    const detalle = computeIngresos({ agente: agentes[0], primas, polizas, pir, personalizaPlanes });
     const { data: hist } = await getDB().from('crm_pru_indices_hist').select('periodo,base_a_conservar,base_conservada,indice').eq('clave', clave).order('periodo');
     res.json({ ...detalle, historico: hist || [] });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -1760,10 +1947,10 @@ router.post('/ingresos/simulate', async (req, res) => {
     const clave = String(req.body.clave || scope.clave || '').toUpperCase();
     if (!clave) return res.status(400).json({ error: 'clave requerida' });
     if (scope.restricted && scope.clave !== clave) return res.status(403).json({ error: 'Solo puedes simular tu propia clave' });
-    const [pir, { agentes, primas, polizas }] = await Promise.all([getPirTablas(), fetchIngresosData(clave)]);
+    const [pir, personalizaPlanes, { agentes, primas, polizas }] = await Promise.all([getPirTablas(), getPersonalizaPlanes(), fetchIngresosData(clave)]);
     if (!agentes.length) return res.status(404).json({ error: `No hay data Prudential para la clave ${clave}` });
-    const base = computeIngresos({ agente: agentes[0], primas, polizas, pir });
-    const sim = computeIngresos({ agente: agentes[0], primas, polizas, pir }, {
+    const base = computeIngresos({ agente: agentes[0], primas, polizas, pir, personalizaPlanes });
+    const sim = computeIngresos({ agente: agentes[0], primas, polizas, pir, personalizaPlanes }, {
       ventaAdicional: Number(req.body.ventaAdicional) || 0,
       cobrarPolizas: req.body.cobrarPolizas || [],
       rehabilitarPolizas: req.body.rehabilitarPolizas || [],
@@ -1806,6 +1993,70 @@ router.post('/ingresos/trayectoria', async (req, res) => {
       meses: Math.min(36, Math.max(3, Number(req.body.meses) || 15)),
     });
     res.json({ clave, nombre: agentes[0].nombre, ...tray });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* ── Expediente de una póliza del índice ──
+   Liga la fila de crm_pru_polizas_indice con su expediente en crm_policies por
+   número de póliza (campo cifrado → barrido con descifrado). Da el contexto
+   para trabajar una rehabilitación: cliente, motivo de cancelación y notas. */
+const normNumPoliza = (v) => String(v ?? '').trim().replace(/\.0$/, '');
+
+async function findPolicyByNumero(db, numero) {
+  const rows = await fetchAllRows(() => db.from('crm_policies')
+    .select('*, crm_clients(id, nombre, telefono, email), crm_agents(nombre)'));
+  for (const r of rows) {
+    const d = decryptFields(r, 'crm_policies');
+    if (normNumPoliza(d.poliza) === numero) return d;
+  }
+  return null;
+}
+
+async function loadIndexRowScoped(req, res) {
+  const scope = await resolveClaveScope(req, res);
+  if (!scope) return null;
+  const db = getDB();
+  const { data: pol, error } = await db.from('crm_pru_polizas_indice').select('*').eq('id', req.params.id).maybeSingle();
+  if (error) { res.status(500).json({ error: error.message }); return null; }
+  if (!pol) { res.status(404).json({ error: 'Póliza no encontrada' }); return null; }
+  if (scope.restricted && scope.clave !== String(pol.clave).toUpperCase()) {
+    res.status(403).json({ error: 'Solo puedes consultar pólizas de tu propia clave' });
+    return null;
+  }
+  return { db, pol };
+}
+
+router.get('/ingresos/poliza/:id/expediente', async (req, res) => {
+  try {
+    const ctx = await loadIndexRowScoped(req, res);
+    if (!ctx) return;
+    const numero = normNumPoliza(ctx.pol.poliza);
+    const policy = await findPolicyByNumero(ctx.db, numero);
+    let notes = [];
+    if (policy?.crm_clients?.id) {
+      const { data: n } = await ctx.db.from('crm_notes').select('*')
+        .eq('client_id', policy.crm_clients.id).order('created_at', { ascending: false });
+      notes = (n || []).filter(x => String(x.texto || '').includes(`[Póliza ${numero}]`));
+    }
+    res.json({ indice: ctx.pol, numero, policy, notes });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* Motivo de cancelación: anotación operativa de la rehabilitación — la puede
+   capturar el asesor dueño de la clave o la agencia (no pasa por crm_can_edit) */
+router.put('/ingresos/poliza/:id/motivo', async (req, res) => {
+  try {
+    const ctx = await loadIndexRowScoped(req, res);
+    if (!ctx) return;
+    const numero = normNumPoliza(ctx.pol.poliza);
+    const policy = await findPolicyByNumero(ctx.db, numero);
+    if (!policy) return res.status(404).json({ error: 'Esta póliza aún no tiene expediente en el CRM — carga el reporte de pólizas en la sección Pólizas' });
+    const patch = encryptFields({ motivo_cancelacion: String(req.body.motivo_cancelacion || '').trim() || null }, 'crm_policies');
+    const { error } = await ctx.db.from('crm_policies')
+      .update({ ...patch, updated_at: new Date().toISOString() }).eq('id', policy.id);
+    if (error) return res.status(500).json({ error: error.message });
+    logActivity(req, 'editar', 'poliza-motivo-cancelacion', policy.id, `póliza ${numero}`);
+    res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

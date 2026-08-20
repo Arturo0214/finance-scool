@@ -223,7 +223,13 @@ export const api = {
   crmIngresosAgent: (clave) => request(`/crm/ingresos/agent/${encodeURIComponent(clave)}`),
   crmIngresosSimulate: (data) => request('/crm/ingresos/simulate', { method: 'POST', body: JSON.stringify(data) }),
   crmIngresosPoliza: (id, accion) => request(`/crm/ingresos/poliza/${id}`, { method: 'PATCH', body: JSON.stringify({ accion }) }),
+  crmIngresosPolizaExpediente: (id) => request(`/crm/ingresos/poliza/${id}/expediente`),
+  crmIngresosPolizaMotivo: (id, motivo) => request(`/crm/ingresos/poliza/${id}/motivo`, { method: 'PUT', body: JSON.stringify({ motivo_cancelacion: motivo }) }),
   crmIngresosTrayectoria: (data) => request('/crm/ingresos/trayectoria', { method: 'POST', body: JSON.stringify(data) }),
+  crmIngresosRehabilitaciones: () => request('/crm/ingresos/rehabilitaciones'),
+  crmIngresosRehabConfig: () => request('/crm/ingresos/rehab-config'),
+  crmIngresosRehabConfigSave: (planes) => request('/crm/ingresos/rehab-config', { method: 'PUT', body: JSON.stringify({ personaliza_planes: planes }) }),
+  crmIngresosRehabAlerts: () => request('/crm/ingresos/rehab-alerts', { method: 'POST', body: '{}' }),
   crmPortalData: (t) => request(`/crm/portal?t=${encodeURIComponent(t)}`),
 
   crmUploadFile: async (file, { client_id, policy_id, categoria } = {}) => {
