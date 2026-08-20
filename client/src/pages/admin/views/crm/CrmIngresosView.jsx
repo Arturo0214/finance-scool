@@ -624,6 +624,19 @@ export default function CrmIngresosView({ isAgency }) {
   const b = detail?.bonos;
   const idx = detail?.indice;
 
+  /* Detalle AGREGADO de la promotoría (para Simulador/Proyección sin agente):
+     suma primas y bonos de todos los asesores + índice agregado de la promotoría. */
+  const detailPromo = (!detail && promo && overview.length) ? {
+    agente: { nombre: 'Promotoría — todos los asesores', clave: '' },
+    indice: { actual: promo.indice.actual, conPendiente: promo.indice.conPendiente },
+    bonos: { total_trimestre: overview.reduce((s, a) => s + (a.bonos?.total_trimestre || 0), 0) },
+    primas: {
+      ubicacionQ: overview.reduce((s, a) => s + (a.primas?.ubicacionQ || 0), 0),
+      pagadaInicialQ: overview.reduce((s, a) => s + (a.primas?.pagadaInicialQ || 0), 0),
+      renovacionQ: overview.reduce((s, a) => s + (a.primas?.renovacionQ || 0), 0),
+    },
+  } : null;
+
   return (
     <div className="view">
       <style>{getCrmCSS()}</style>
@@ -776,8 +789,8 @@ export default function CrmIngresosView({ isAgency }) {
       {tab === 'conciliacion' && <CrmCommissionsView isAgency={isAgency} />}
 
       {/* ═══════════ TAB PROYECCIÓN DE INGRESOS A 1/2/3 AÑOS ═══════════ */}
-      {tab === 'proyeccion' && detail && <ProyeccionIngresos detail={detail} />}
-      {tab === 'proyeccion' && !detail && <p className="empty">Selecciona un agente en el Tablero PIR para proyectar sus ingresos.</p>}
+      {tab === 'proyeccion' && (detail || detailPromo) && <ProyeccionIngresos detail={detail || detailPromo} />}
+      {tab === 'proyeccion' && !detail && !detailPromo && <p className="empty">Cargando datos de la promotoría… (o selecciona un agente en el Tablero PIR).</p>}
 
       {/* ═══════════ TAB REHABILITACIONES ═══════════ */}
       {tab === 'rehab' && rehabBusy && !rehab && (
@@ -1229,7 +1242,21 @@ export default function CrmIngresosView({ isAgency }) {
         </div>
       )}
 
-      {tab === 'simulador' && !detail && <p className="empty">Selecciona un agente en el Tablero PIR para simular.</p>}
+      {tab === 'simulador' && !detail && promo && (
+        <div className="crm-chart-card">
+          <h3><Calculator size={16} style={{ verticalAlign: -2, color: C.gold }} /> Simulador de la promotoría</h3>
+          <p className="sub">Escenarios agregados del índice de conservación de toda la cartera ({promo.agentes} asesores). Para simular pólizas específicas usa la selección del Tablero PIR (vista promotoría) o elige un asesor.</p>
+          <IndiceBar actual={promo.indice.hoy.actual} operativo={promo.indice.siCobraYRehabilitaTodo} marks={[0.84]} />
+          <div className="crm-kpi-detail">
+            <BonoCard icon={ShieldCheck} label="Índice hoy (en vivo)" value={<span style={{ color: indiceColor(promo.indice.hoy.actual) }}>{pct(promo.indice.hoy.actual)}</span>} sub="con vencimientos posteriores al corte" />
+            <BonoCard icon={TrendingUp} label="Si cobra todo lo pendiente" value={<span style={{ color: indiceColor(promo.indice.siCobraTodo) }}>{pct(promo.indice.siCobraTodo)}</span>} sub={`+${pct(promo.indice.siCobraTodo - promo.indice.hoy.actual)} sobre hoy`} color={C.green} />
+            <BonoCard icon={RotateCcw} label="Si cobra y rehabilita todo" value={<span style={{ color: indiceColor(promo.indice.siCobraYRehabilitaTodo) }}>{pct(promo.indice.siCobraYRehabilitaTodo)}</span>} sub="techo alcanzable de la cartera" color={C.gold} />
+            <BonoCard icon={HandCoins} label="Bonos PIR del Q (est.)" value={fmtMoney(overview.reduce((s, a) => s + (a.bonos?.total_trimestre || 0), 0))} sub="suma de todos los asesores" />
+          </div>
+          <p className="sub" style={{ marginTop: 10 }}>Umbral de la promotoría: <b>84%</b> (agentes 86%). Cobrar pendientes y rehabilitar canceladas es lo único que sube el índice.</p>
+        </div>
+      )}
+      {tab === 'simulador' && !detail && !promo && <p className="empty">Cargando datos de la promotoría…</p>}
     </div>
   );
 }
