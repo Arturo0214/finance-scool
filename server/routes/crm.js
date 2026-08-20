@@ -2061,7 +2061,7 @@ router.get('/ingresos/forecast', async (req, res) => {
     const [pir, personalizaPlanes, { agentes, primas, polizas }, primasHist, indHist, goals] = await Promise.all([
       getPirTablas(), getPersonalizaPlanes(), fetchIngresosData(null),
       db.from('crm_pru_primas').select('clave,anio,mes,trimestre,prima_pagada_inicial,prima_pagada_renovacion,prima_ubicacion').then(r => r.data || []),
-      db.from('crm_pru_indices_hist').select('periodo,base_a_conservar,base_conservada').then(r => r.data || []),
+      db.from('crm_pru_indices_hist').select('clave,periodo,base_a_conservar,base_conservada').then(r => r.data || []),
       db.from('crm_goals').select('clave,anio,mes,meta_prima').then(r => r.data || []),
     ]);
     const div = (n, d) => (d > 0 ? Math.round((n / d) * 10000) / 10000 : 0);
@@ -2109,6 +2109,7 @@ router.get('/ingresos/forecast', async (req, res) => {
       baseRehab += r.accionables.rehabilitables.reduce((s, p) => s + (p.monto || 0), 0);
       const meta = metaPorClave.get(a.clave) || 0;
       const nueva = Math.round(r.primas.pagadaInicialQ || 0);
+      const rehabA = r.accionables.rehabilitables.reduce((s, p) => s + (p.monto || 0), 0);
       return {
         clave: a.clave, nombre: a.nombre, cuaderno: a.cuaderno, estatus: a.estatus,
         mes_agente: r.agente.mes_agente, es_nuevo: r.agente.es_nuevo,
@@ -2117,6 +2118,11 @@ router.get('/ingresos/forecast', async (req, res) => {
         bonos: Math.round(r.bonos.total_trimestre || 0),
         meta: Math.round(meta), cumplimiento: meta > 0 ? div(nueva, meta) : null,
         rehabilitables: r.accionables.rehabilitables.length, pendientes: r.accionables.pendientesPago.length,
+        /* Componentes crudos del índice para re-agregar cualquier subconjunto en el cliente */
+        idx: {
+          base: Math.round(r.indice.baseAConservar), cons: Math.round(r.indice.baseConservada), pend: Math.round(r.indice.basePendiente),
+          hoyCons: Math.round(r.indice.hoy.baseConservada), hoyPend: Math.round(r.indice.hoy.basePendiente), rehab: Math.round(rehabA),
+        },
       };
     }).sort((a, b) => b.nueva - a.nueva);
 
@@ -2215,6 +2221,19 @@ router.get('/ingresos/forecast', async (req, res) => {
     const focos = [...sinProduccion.map(a => ({ ...a, motivo: 'Sin venta nueva' })), ...bajoIndice.filter(a => a.nueva > 0).map(a => ({ ...a, motivo: `Índice ${(a.conPendiente * 100).toFixed(0)}%` }))]
       .filter((a, i, arr) => arr.findIndex(x => x.clave === a.clave) === i).slice(0, 8);
 
+    /* ── 8) DATOS CRUDOS para modelado interactivo en el cliente (filtros por
+       año / asesor, tendencias, escenarios). Volumen pequeño: ~26×8 filas. ── */
+    const nombrePorClave = new Map(agentes.map(a => [a.clave, a.nombre]));
+    const prodPorClaveMes = [...primasHist.reduce((m, p) => {
+      const k = `${p.clave}|${p.anio}|${p.mes}`;
+      const cur = m.get(k) || { clave: p.clave, anio: p.anio, mes: p.mes, nueva: 0, renov: 0 };
+      cur.nueva += Number(p.prima_pagada_inicial) || 0; cur.renov += Number(p.prima_pagada_renovacion) || 0;
+      return m.set(k, cur);
+    }, new Map()).values()].map(x => ({ ...x, nueva: Math.round(x.nueva), renov: Math.round(x.renov) }));
+    const indiceClavePeriodo = indHist.map(h => ({ clave: h.clave, ...parsePeriodo(h.periodo), periodo: h.periodo, base: Math.round(Number(h.base_a_conservar) || 0), cons: Math.round(Number(h.base_conservada) || 0) }));
+    const aniosDisponibles = [...new Set([...primasHist.map(p => p.anio), ...indiceClavePeriodo.map(h => h.anio)])].filter(Boolean).sort();
+    const agentesLista = leaderboard.map(a => ({ clave: a.clave, nombre: a.nombre, es_nuevo: a.es_nuevo, cuaderno: a.cuaderno }));
+
     res.json({
       anioActual, umbralPromo: 0.84, umbralAgente: 0.86,
       totalAgentes: agentes.length, activos: activos.length,
@@ -2224,6 +2243,7 @@ router.get('/ingresos/forecast', async (req, res) => {
       totales: { nuevaQ: totalNuevaQ, renovQ: totalRenovQ },
       cierreAnio,
       concentracionTop3, tendenciaIndice: Math.round(tendenciaIndice * 10000) / 10000,
+      raw: { prodPorClaveMes, indiceClavePeriodo, aniosDisponibles, agentesLista },
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
