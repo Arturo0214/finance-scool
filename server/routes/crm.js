@@ -2045,6 +2045,189 @@ router.post('/ingresos/simulate-promotoria', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   FORECAST / MODELADO A FUTURO de la promotoría (solo agencia)
+   Responde: ¿cuánto puedo producir a través de mis asesores?, ¿quiénes son mis
+   estrellas y qué está fallando?, ¿cómo voy vs. periodos pasados?, ¿a qué índice
+   y venta cierro el año y los próximos años al ritmo actual?
+   ═══════════════════════════════════════════════════════════════════════════ */
+const MESES_CORTO = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+const parsePeriodo = (s) => { const m = /(\d)\s*Q\s*(\d{4})/.exec(s || ''); return m ? { q: +m[1], anio: +m[2], orden: (+m[2]) * 4 + (+m[1]) } : { q: 0, anio: 0, orden: 0 }; };
+
+router.get('/ingresos/forecast', async (req, res) => {
+  try {
+    if (!isAgency(req.user.role)) return res.status(403).json({ error: 'Solo administración ve el forecast de la promotoría' });
+    const db = getDB();
+    const [pir, personalizaPlanes, { agentes, primas, polizas }, primasHist, indHist, goals] = await Promise.all([
+      getPirTablas(), getPersonalizaPlanes(), fetchIngresosData(null),
+      db.from('crm_pru_primas').select('clave,anio,mes,trimestre,prima_pagada_inicial,prima_pagada_renovacion,prima_ubicacion').then(r => r.data || []),
+      db.from('crm_pru_indices_hist').select('periodo,base_a_conservar,base_conservada').then(r => r.data || []),
+      db.from('crm_goals').select('clave,anio,mes,meta_prima').then(r => r.data || []),
+    ]);
+    const div = (n, d) => (d > 0 ? Math.round((n / d) * 10000) / 10000 : 0);
+
+    /* ── 1) Producción mensual agregada de la promotoría ── */
+    const mesMap = new Map();
+    for (const p of primasHist) {
+      const k = `${p.anio}-${String(p.mes).padStart(2, '0')}`;
+      const cur = mesMap.get(k) || { anio: p.anio, mes: p.mes, nueva: 0, renov: 0, meta: 0 };
+      cur.nueva += Number(p.prima_pagada_inicial) || 0;
+      cur.renov += Number(p.prima_pagada_renovacion) || 0;
+      mesMap.set(k, cur);
+    }
+    for (const g of goals) {
+      const k = `${g.anio}-${String(g.mes).padStart(2, '0')}`;
+      const cur = mesMap.get(k); if (cur) cur.meta += Number(g.meta_prima) || 0;
+    }
+    const produccionMensual = [...mesMap.values()]
+      .sort((a, b) => a.anio - b.anio || a.mes - b.mes)
+      .map(m => ({
+        anio: m.anio, mes: m.mes, label: `${MESES_CORTO[m.mes - 1]} '${String(m.anio).slice(2)}`,
+        nueva: Math.round(m.nueva), renov: Math.round(m.renov), total: Math.round(m.nueva + m.renov), meta: Math.round(m.meta),
+      }));
+
+    /* ── 2) Trayectoria de índice por periodo (snapshots oficiales Prudential) ── */
+    const perMap = new Map();
+    for (const h of indHist) {
+      const cur = perMap.get(h.periodo) || { periodo: h.periodo, base: 0, cons: 0 };
+      cur.base += Number(h.base_a_conservar) || 0;
+      cur.cons += Number(h.base_conservada) || 0;
+      perMap.set(h.periodo, cur);
+    }
+    let indiceHist = [...perMap.values()].map(p => ({ ...p, ...parsePeriodo(p.periodo) }))
+      .sort((a, b) => a.orden - b.orden)
+      .map(p => ({ periodo: p.periodo, anio: p.anio, q: p.q, baseAConservar: Math.round(p.base), baseConservada: Math.round(p.cons), indice: div(p.cons, p.base) }));
+
+    /* ── 3) Leaderboard por asesor + índice agregado de la promotoría a hoy ── */
+    const metaPorClave = new Map();
+    for (const g of goals) metaPorClave.set(g.clave, (metaPorClave.get(g.clave) || 0) + (Number(g.meta_prima) || 0));
+    let agBase = 0, agCons = 0, agPend = 0, hoyCons = 0, hoyPend = 0, baseRehab = 0;
+    const leaderboard = agentes.map(a => {
+      const r = computeIngresos({ agente: a, primas: primas.filter(p => p.clave === a.clave), polizas: polizas.filter(p => p.clave === a.clave), pir, personalizaPlanes });
+      agBase += r.indice.baseAConservar; agCons += r.indice.baseConservada; agPend += r.indice.basePendiente;
+      hoyCons += r.indice.hoy.baseConservada; hoyPend += r.indice.hoy.basePendiente;
+      baseRehab += r.accionables.rehabilitables.reduce((s, p) => s + (p.monto || 0), 0);
+      const meta = metaPorClave.get(a.clave) || 0;
+      const nueva = Math.round(r.primas.pagadaInicialQ || 0);
+      return {
+        clave: a.clave, nombre: a.nombre, cuaderno: a.cuaderno, estatus: a.estatus,
+        mes_agente: r.agente.mes_agente, es_nuevo: r.agente.es_nuevo,
+        nueva, renov: Math.round(r.primas.renovacionQ || 0), ubicacion: Math.round(r.primas.ubicacionQ || 0),
+        indice: r.indice.actual, conPendiente: r.indice.conPendiente,
+        bonos: Math.round(r.bonos.total_trimestre || 0),
+        meta: Math.round(meta), cumplimiento: meta > 0 ? div(nueva, meta) : null,
+        rehabilitables: r.accionables.rehabilitables.length, pendientes: r.accionables.pendientesPago.length,
+      };
+    }).sort((a, b) => b.nueva - a.nueva);
+
+    const totalNuevaQ = leaderboard.reduce((s, a) => s + a.nueva, 0);
+    const totalRenovQ = leaderboard.reduce((s, a) => s + a.renov, 0);
+    leaderboard.forEach(a => { a.aporte = totalNuevaQ > 0 ? div(a.nueva, totalNuevaQ) : 0; });
+
+    const indicePromo = {
+      actual: div(agCons, agBase), conPendiente: div(agCons + agPend, agBase),
+      hoy: div(hoyCons, agBase), hoyConPendiente: div(hoyCons + hoyPend, agBase),
+      techo: div(Math.min(hoyCons + hoyPend + baseRehab, agBase), agBase),
+      baseAConservar: Math.round(agBase),
+    };
+
+    /* ── 4) Run-rate y cierre de año (al ritmo actual) ── */
+    const anios = [...new Set(produccionMensual.map(m => m.anio))].sort();
+    const anioActual = anios.length ? anios[anios.length - 1] : new Date().getFullYear();
+    const mesesAnio = produccionMensual.filter(m => m.anio === anioActual);
+    const mesesConDatos = mesesAnio.filter(m => m.total > 0).length || mesesAnio.length || 1;
+    const ytdNueva = mesesAnio.reduce((s, m) => s + m.nueva, 0);
+    const ytdRenov = mesesAnio.reduce((s, m) => s + m.renov, 0);
+    const baselineNueva = ytdNueva / mesesConDatos;      // prima nueva mensual promedio del año
+    const baselineRenov = ytdRenov / mesesConDatos;
+    /* Ritmo reciente = promedio de los 3 últimos meses con venta nueva>0 */
+    const conVenta = mesesAnio.filter(m => m.nueva > 0);
+    const ult3 = conVenta.slice(-3);
+    const runRateNueva = ult3.length ? ult3.reduce((s, m) => s + m.nueva, 0) / ult3.length : baselineNueva;
+    const mesesRestantes = Math.max(0, 12 - mesesConDatos);
+    /* Último trimestre COMPLETO (3 meses con datos) = baseline más representativo
+       para proyectar, evitando el sesgo de meses de corte parcial (ej. el mes
+       en curso trae solo media quincena). */
+    const trimMeses = new Map();
+    for (const m of mesesAnio.filter(x => x.total > 0)) {
+      const t = Math.ceil(m.mes / 3);
+      const cur = trimMeses.get(t) || { t, meses: 0, nueva: 0, renov: 0 };
+      cur.meses++; cur.nueva += m.nueva; cur.renov += m.renov; trimMeses.set(t, cur);
+    }
+    const trimsCompletos = [...trimMeses.values()].filter(t => t.meses >= 3).sort((a, b) => b.t - a.t);
+    const trimBase = trimsCompletos[0] || [...trimMeses.values()].sort((a, b) => b.t - a.t)[0] || { t: 0, meses: 1, nueva: baselineNueva, renov: baselineRenov };
+    const mensualTrimNueva = trimBase.nueva / (trimBase.meses || 1);
+    const mensualTrimRenov = trimBase.renov / (trimBase.meses || 1);
+    const cierreAnio = {
+      anio: anioActual, mesesConDatos, mesesRestantes,
+      ytdNueva: Math.round(ytdNueva), ytdRenov: Math.round(ytdRenov),
+      baselineNuevaMensual: Math.round(baselineNueva), runRateNuevaMensual: Math.round(runRateNueva),
+      trimBaseLabel: trimBase.t ? `T${trimBase.t} ${anioActual}${trimBase.meses < 3 ? ' (parcial)' : ''}` : '—',
+      mensualTrimNueva: Math.round(mensualTrimNueva), mensualTrimRenov: Math.round(mensualTrimRenov),
+      proyNuevaAnio: Math.round(ytdNueva + mensualTrimNueva * mesesRestantes),
+      proyNuevaAnioRitmo: Math.round(ytdNueva + runRateNueva * mesesRestantes),
+      proyRenovAnio: Math.round(ytdRenov + mensualTrimRenov * mesesRestantes),
+    };
+
+    /* ── 5) Comparativa periodo a periodo (año/trimestre) ── */
+    const porTrim = new Map();
+    for (const p of primasHist) {
+      const k = `${p.anio}-T${p.trimestre}`;
+      const cur = porTrim.get(k) || { anio: p.anio, trimestre: p.trimestre, nueva: 0, renov: 0 };
+      cur.nueva += Number(p.prima_pagada_inicial) || 0; cur.renov += Number(p.prima_pagada_renovacion) || 0;
+      porTrim.set(k, cur);
+    }
+    const comparativaTrim = [...porTrim.values()].sort((a, b) => a.anio - b.anio || a.trimestre - b.trimestre)
+      .map(t => ({ label: `T${t.trimestre} ${t.anio}`, anio: t.anio, trimestre: t.trimestre, nueva: Math.round(t.nueva), renov: Math.round(t.renov), total: Math.round(t.nueva + t.renov) }));
+
+    /* ── 6) Diagnóstico: qué está fallando ── */
+    const activos = leaderboard.filter(a => a.estatus !== 'BAJA');
+    const sinProduccion = activos.filter(a => a.nueva === 0);
+    const bajoIndice = leaderboard.filter(a => (a.renov > 0 || a.conPendiente < 1) && a.conPendiente < 0.86 && a.conPendiente > 0);
+    const nuevosSinArrancar = activos.filter(a => a.es_nuevo && a.nueva === 0);
+    const top3 = leaderboard.slice(0, 3).reduce((s, a) => s + a.nueva, 0);
+    const concentracionTop3 = totalNuevaQ > 0 ? div(top3, totalNuevaQ) : 0;
+    /* El último snapshot de índice suele ser el trimestre EN CURSO: su índice
+       "crudo" (conservada/base) está artificialmente bajo porque faltan cobros.
+       Lo marcamos como en curso y le pegamos el índice realista (con pendientes)
+       que ya calculamos en vivo, para no dibujar un falso desplome. */
+    const ultHist = indiceHist[indiceHist.length - 1];
+    if (ultHist && Math.abs(ultHist.baseAConservar - indicePromo.baseAConservar) < indicePromo.baseAConservar * 0.02) {
+      ultHist.enCurso = true;
+      ultHist.indiceRealista = indicePromo.conPendiente;
+      ultHist.techo = indicePromo.techo;
+    }
+    /* Tendencia honesta: índice realista actual vs. el periodo cerrado previo */
+    const prevHist = indiceHist[indiceHist.length - 2];
+    const indiceActualComparable = ultHist?.enCurso ? indicePromo.conPendiente : (ultHist?.indice ?? 0);
+    const tendenciaIndice = prevHist ? indiceActualComparable - prevHist.indice : 0;
+
+    const diagnostico = [];
+    if (indicePromo.conPendiente < 0.86) diagnostico.push({ severidad: 'alta', tipo: 'indice', titulo: 'Índice bajo el mínimo de bono', detalle: `El índice realista (con pendientes) es ${(indicePromo.conPendiente * 100).toFixed(1)}%, debajo del 86% que activa bonos. Cobrando y rehabilitando llegas a ${(indicePromo.techo * 100).toFixed(1)}%.`, valor: indicePromo.conPendiente });
+    if (sinProduccion.length) diagnostico.push({ severidad: sinProduccion.length > activos.length / 2 ? 'alta' : 'media', tipo: 'produccion', titulo: `${sinProduccion.length} asesores sin venta este trimestre`, detalle: `De ${activos.length} asesores activos, ${sinProduccion.length} no han colocado prima nueva. Reactivarlos es la palanca más rápida.`, valor: sinProduccion.length, nombres: sinProduccion.slice(0, 8).map(a => a.nombre) });
+    if (concentracionTop3 > 0.6) diagnostico.push({ severidad: 'media', tipo: 'concentracion', titulo: 'Producción muy concentrada', detalle: `El ${(concentracionTop3 * 100).toFixed(0)}% de la venta nueva depende de solo 3 asesores. Riesgo si alguno baja el ritmo.`, valor: concentracionTop3 });
+    if (nuevosSinArrancar.length) diagnostico.push({ severidad: 'media', tipo: 'onboarding', titulo: `${nuevosSinArrancar.length} asesores nuevos sin arrancar`, detalle: `Asesores en sus primeros meses aún sin primera venta — atención de onboarding.`, valor: nuevosSinArrancar.length, nombres: nuevosSinArrancar.slice(0, 8).map(a => a.nombre) });
+    if (bajoIndice.length) diagnostico.push({ severidad: 'media', tipo: 'conservacion', titulo: `${bajoIndice.length} asesores con índice bajo 86%`, detalle: `Su conservación individual no alcanza banda de bono; revisar cobranza y rehabilitaciones de su cartera.`, valor: bajoIndice.length, nombres: bajoIndice.slice(0, 8).map(a => a.nombre) });
+    if (tendenciaIndice < -0.02) diagnostico.push({ severidad: 'alta', tipo: 'tendencia', titulo: 'El índice viene cayendo', detalle: `Cayó ${(Math.abs(tendenciaIndice) * 100).toFixed(1)} pts vs. el periodo anterior. La cartera se está desconservando.`, valor: tendenciaIndice });
+
+    /* ── 7) Estrellas y focos rojos ── */
+    const estrellas = leaderboard.filter(a => a.nueva > 0).slice(0, 5).map(a => ({ ...a, buenIndice: a.conPendiente >= 0.86 }));
+    const focos = [...sinProduccion.map(a => ({ ...a, motivo: 'Sin venta nueva' })), ...bajoIndice.filter(a => a.nueva > 0).map(a => ({ ...a, motivo: `Índice ${(a.conPendiente * 100).toFixed(0)}%` }))]
+      .filter((a, i, arr) => arr.findIndex(x => x.clave === a.clave) === i).slice(0, 8);
+
+    res.json({
+      anioActual, umbralPromo: 0.84, umbralAgente: 0.86,
+      totalAgentes: agentes.length, activos: activos.length,
+      produccionMensual, indiceHist, comparativaTrim,
+      leaderboard, estrellas, focos, diagnostico,
+      indicePromo,
+      totales: { nuevaQ: totalNuevaQ, renovQ: totalRenovQ },
+      cierreAnio,
+      concentracionTop3, tendenciaIndice: Math.round(tendenciaIndice * 10000) / 10000,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 /* Trayectoria del índice a N meses: ¿cuándo cruzo el 86/90/94% si vendo
    $X/mes conservando cierta tasa? Defaults: ritmo = promedio mensual de prima
    ubicación del último trimestre; tasa = último índice histórico del agente. */

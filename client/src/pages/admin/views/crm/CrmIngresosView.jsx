@@ -13,10 +13,11 @@ import {
   RefreshCw, TrendingUp, ShieldCheck, AlertTriangle, Sparkles,
   HandCoins, Target, RotateCcw, Calculator, Scale, X, Plus,
   Mail, PenTool, Zap, Send, Settings,
+  Users, TrendingDown, Filter, Search, Award, Flame, Trophy,
 } from 'lucide-react';
 import { getCrmCSS, fmtMoney, fmtMoneyFull, fmtDate, MESES } from './crmShared';
 import CrmCommissionsView from './CrmCommissionsView';
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, ReferenceLine, CartesianGrid } from 'recharts';
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, ReferenceLine, CartesianGrid, ComposedChart, Bar, Area, AreaChart, Legend, Cell } from 'recharts';
 
 const pct = (n, dec = 2) => `${((Number(n) || 0) * 100).toFixed(dec)}%`;
 
@@ -329,6 +330,462 @@ function RehabPanel({ data, isAgency, busy, onReload, openExpediente }) {
   );
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   MODELO A FUTURO de la promotoría: producción a través de los asesores,
+   asesores estrella, diagnóstico (qué está fallando), comparativa por trimestre
+   y proyección al cierre de año / próximos años. Consume /ingresos/forecast.
+   ═══════════════════════════════════════════════════════════════════════════ */
+const MESES_MINI = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+const SEV = {
+  alta: { c: C.red, bg: C.redBg, t: 'Crítico', Icon: AlertTriangle },
+  media: { c: '#B45309', bg: '#FEF3C7', t: 'Atención', Icon: TrendingDown },
+  baja: { c: '#0E7490', bg: '#CFFAFE', t: 'Nota', Icon: Sparkles },
+};
+
+function PromotoriaForecast() {
+  const [d, setD] = useState(null);
+  const [err, setErr] = useState('');
+  const [g, setG] = useState('10');     // crecimiento anual % (editable)
+  const [cons, setCons] = useState(''); // conservación % (editable, default backend)
+
+  useEffect(() => {
+    api.crmIngresosForecast()
+      .then(r => { setD(r); setCons(String(Math.round((r.indicePromo?.conPendiente || 0.85) * 100))); })
+      .catch(e => setErr(e.message));
+  }, []);
+
+  if (err) return <div className="info-box" style={{ background: C.redBg, borderColor: `${C.red}40`, color: C.red }}><p>{err}</p></div>;
+  if (!d) return <p className="empty">Cargando modelo a futuro de la promotoría…</p>;
+
+  const ca = d.cierreAnio, ip = d.indicePromo, anio = d.anioActual;
+  const sufAnio = `'${String(anio).slice(2)}`;
+
+  /* Serie de producción: real + meses futuros al ritmo del último trimestre completo */
+  const ultMes = d.produccionMensual.length ? d.produccionMensual[d.produccionMensual.length - 1].mes : 0;
+  const serieProd = d.produccionMensual.map(m => ({ label: m.label, nueva: m.nueva, renov: m.renov, meta: m.meta || null }));
+  for (let m = ultMes + 1; m <= 12; m++) serieProd.push({ label: `${MESES_MINI[m - 1]} ${sufAnio}`, nuevaProy: ca.mensualTrimNueva, renovProy: ca.mensualTrimRenov, proy: true });
+
+  /* Trayectoria de índice: cerrados (sólido) + en curso realista + proyección cierre (punteado) */
+  const serieIdx = d.indiceHist.map((h, i, arr) => ({
+    label: h.periodo,
+    indice: h.enCurso ? null : h.indice,
+    realista: h.enCurso ? h.indiceRealista : (i === arr.length - 2 ? h.indice : null),
+    crudo: h.enCurso ? h.indice : null,
+  }));
+  serieIdx.push({ label: `Cierre ${anio}`, realista: ip.conPendiente, techo: ip.techo });
+
+  /* Modelo multi-año (producción): venta nueva crece g%, cartera renovación
+     sobrevive a la tasa de conservación y se apila año con año. */
+  const gr = (Number(g) || 0) / 100, rr = Math.min(1, Math.max(0, (Number(cons) || 0) / 100));
+  const Vbase = ca.proyNuevaAnio, cartBase = ca.proyRenovAnio;
+  const years = [0, 1, 2, 3].map(k => {
+    const nueva = Vbase * Math.pow(1 + gr, k);
+    let cartera = cartBase * Math.pow(rr, k);
+    for (let j = 1; j <= k; j++) cartera += Vbase * Math.pow(1 + gr, j - 1) * Math.pow(rr, k - j + 1);
+    return { anio: anio + k, nueva, cartera, total: nueva + cartera, esActual: k === 0 };
+  });
+
+  const tendUp = d.tendenciaIndice >= 0;
+  const chartTip = { contentStyle: { fontSize: 12, borderRadius: 8, border: '1px solid rgba(11,27,51,.12)' } };
+
+  return (
+    <>
+      {/* ── Titular + KPIs de cierre de año ── */}
+      <div className="crm-chart-card">
+        <h3><TrendingUp size={16} style={{ verticalAlign: -2, color: C.gold }} /> Modelo a futuro de la promotoría — {d.activos} asesores activos</h3>
+        <p className="sub">
+          Al ritmo actual (<b>{fmtMoneyFull(ca.mensualTrimNueva)}/mes</b> de prima nueva, base {ca.trimBaseLabel}), esto es lo que produces a través de tus asesores,
+          cómo cierras el año y a dónde llega tu índice. Llevas <b>{ca.mesesConDatos}/12</b> meses de {anio}.
+        </p>
+        <div className="crm-kpi-detail">
+          <BonoCard icon={Target} label={`Venta nueva proyectada ${anio}`} value={fmtMoneyFull(ca.proyNuevaAnio)}
+            sub={`vas en ${fmtMoneyFull(ca.ytdNueva)} · faltan ${ca.mesesRestantes} meses`} color={C.gold} />
+          <BonoCard icon={RotateCcw} label={`Renovación proyectada ${anio}`} value={fmtMoneyFull(ca.proyRenovAnio)}
+            sub={`cartera anualizada`} color={C.primary} />
+          <BonoCard icon={ShieldCheck} label="Índice realista hoy" value={<span style={{ color: indiceColor(ip.conPendiente) }}>{pct(ip.conPendiente)}</span>}
+            sub={`crudo ${pct(ip.actual, 0)} · techo ${pct(ip.techo, 0)} cobrando y rehabilitando`} color={indiceColor(ip.conPendiente)} />
+          <BonoCard icon={tendUp ? TrendingUp : TrendingDown} label="Tendencia del índice"
+            value={<span style={{ color: tendUp ? C.green : C.red }}>{tendUp ? '+' : ''}{(d.tendenciaIndice * 100).toFixed(1)} pts</span>}
+            sub="vs. trimestre cerrado anterior" color={tendUp ? C.green : C.red} />
+        </div>
+      </div>
+
+      {/* ── Producción mensual: real + proyectada ── */}
+      <div className="crm-chart-card">
+        <h4 style={{ margin: '0 0 2px' }}>Producción mensual — real y proyectada al cierre de {anio}</h4>
+        <p className="sub" style={{ marginTop: 0 }}>Barras sólidas = cobrado; tenue = proyección al ritmo del último trimestre completo. Línea = meta capturada.</p>
+        <ResponsiveContainer width="100%" height={300}>
+          <ComposedChart data={serieProd} margin={{ top: 8, right: 12, left: 6, bottom: 4 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(11,27,51,.08)" />
+            <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+            <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} />
+            <Tooltip {...chartTip} formatter={(v, n) => [fmtMoneyFull(v), n]} />
+            <Legend wrapperStyle={{ fontSize: 11 }} />
+            <Bar dataKey="nueva" name="Nueva" stackId="r" fill={C.gold} radius={[0, 0, 0, 0]} />
+            <Bar dataKey="renov" name="Renovación" stackId="r" fill={C.primary} />
+            <Bar dataKey="nuevaProy" name="Nueva (proy.)" stackId="p" fill={`${C.gold}66`} />
+            <Bar dataKey="renovProy" name="Renov. (proy.)" stackId="p" fill={`${C.primary}55`} />
+            <Line dataKey="meta" name="Meta" stroke={C.red} strokeWidth={2} dot={false} connectNulls />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* ── Trayectoria del índice + proyección de cierre ── */}
+      <div className="crm-chart-card">
+        <h4 style={{ margin: '0 0 2px' }}>¿A qué índice cierro el año?</h4>
+        <p className="sub" style={{ marginTop: 0 }}>
+          Trimestres cerrados (línea sólida) llegaron a ~86–87%. El trimestre en curso está en {pct(ip.actual, 0)} crudo pero
+          su nivel realista con pendientes es <b style={{ color: indiceColor(ip.conPendiente) }}>{pct(ip.conPendiente)}</b>; el punteado proyecta el cierre.
+        </p>
+        <ResponsiveContainer width="100%" height={280}>
+          <LineChart data={serieIdx} margin={{ top: 8, right: 16, left: 6, bottom: 4 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(11,27,51,.08)" />
+            <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+            <YAxis domain={[0.3, 1]} tick={{ fontSize: 11 }} tickFormatter={v => `${(v * 100).toFixed(0)}%`} />
+            <Tooltip {...chartTip} formatter={(v, n) => [v == null ? '—' : pct(v), n]} />
+            <ReferenceLine y={0.86} stroke={C.amber} strokeDasharray="4 4" label={{ value: 'Bono 86%', fontSize: 10, fill: C.amber, position: 'right' }} />
+            <ReferenceLine y={0.84} stroke={C.red} strokeDasharray="4 4" label={{ value: 'Prom. 84%', fontSize: 10, fill: C.red, position: 'right' }} />
+            <Line dataKey="indice" name="Cerrado" stroke={C.primary} strokeWidth={2.5} connectNulls dot={{ r: 4 }} />
+            <Line dataKey="realista" name="Realista / proyectado" stroke={C.green} strokeWidth={2.5} strokeDasharray="6 4" connectNulls dot={{ r: 4 }} />
+            <Line dataKey="techo" name="Techo (cobrando+rehab)" stroke="#0891B2" strokeWidth={2} strokeDasharray="2 3" connectNulls dot={{ r: 3 }} />
+            <Line dataKey="crudo" name="Crudo (en curso)" stroke={C.red} strokeWidth={0} dot={{ r: 4 }} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* ── Diagnóstico: qué está fallando ── */}
+      {d.diagnostico.length > 0 && (
+        <div className="crm-chart-card">
+          <h4 style={{ margin: '0 0 8px' }}><AlertTriangle size={15} style={{ verticalAlign: -2, color: C.amber }} /> Qué está fallando</h4>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: 12 }}>
+            {d.diagnostico.map((x, i) => {
+              const s = SEV[x.severidad] || SEV.media; const Ic = s.Icon;
+              return (
+                <div key={i} style={{ border: `1px solid ${s.c}40`, background: s.bg, borderRadius: 10, padding: '11px 13px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 4 }}>
+                    <Ic size={15} color={s.c} />
+                    <b style={{ fontSize: 13, color: s.c }}>{x.titulo}</b>
+                    <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 700, color: s.c, textTransform: 'uppercase' }}>{s.t}</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: C.ink, lineHeight: 1.4 }}>{x.detalle}</div>
+                  {x.nombres?.length > 0 && <div style={{ fontSize: 11, color: C.textMuted, marginTop: 6 }}>{x.nombres.join(' · ')}{x.valor > x.nombres.length ? ' …' : ''}</div>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── Asesores estrella + leaderboard ── */}
+      <div className="crm-chart-card">
+        <h4 style={{ margin: '0 0 8px' }}><Trophy size={15} style={{ verticalAlign: -2, color: C.gold }} /> Asesores estrella y rendimiento</h4>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 10, marginBottom: 14 }}>
+          {d.estrellas.map((e, i) => (
+            <div key={e.clave} style={{ border: `1px solid ${i === 0 ? C.gold : 'rgba(11,27,51,.12)'}`, borderRadius: 10, padding: '10px 12px', background: i === 0 ? `${C.gold}0D` : '#fff' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: C.textMuted }}>
+                {i === 0 ? <Award size={13} color={C.gold} /> : <Users size={12} />} #{i + 1}{e.es_nuevo ? ' · nuevo' : ''}
+              </div>
+              <div style={{ fontSize: 12.5, fontWeight: 700, margin: '3px 0', lineHeight: 1.2 }}>{e.nombre}</div>
+              <div style={{ fontSize: 15, fontWeight: 800, color: C.gold }}>{fmtMoney(e.nueva)}</div>
+              <div style={{ fontSize: 10.5, color: C.textMuted }}>{pct(e.aporte, 0)} del total · índice <span style={{ color: indiceColor(e.conPendiente) }}>{pct(e.conPendiente, 0)}</span></div>
+            </div>
+          ))}
+        </div>
+        <div className="tbl-wrap">
+          <table>
+            <thead><tr><th>#</th><th>Asesor</th><th>Cuaderno</th><th>Mes</th><th style={{ textAlign: 'right' }}>Nueva Q</th><th style={{ textAlign: 'right' }}>Aporte</th><th style={{ textAlign: 'right' }}>Índice</th><th style={{ textAlign: 'right' }}>Bonos Q</th><th style={{ textAlign: 'center' }}>Estado</th></tr></thead>
+            <tbody>
+              {d.leaderboard.map((a, i) => {
+                const foco = d.focos.find(f => f.clave === a.clave);
+                return (
+                  <tr key={a.clave} style={foco ? { background: `${C.red}08` } : undefined}>
+                    <td>{i + 1}</td>
+                    <td><b>{a.nombre}</b>{a.es_nuevo && <span style={{ fontSize: 10, color: C.primary, marginLeft: 5 }}>nuevo</span>}</td>
+                    <td style={{ fontSize: 11.5, color: C.textMuted }}>{a.cuaderno || '—'}</td>
+                    <td>{a.mes_agente}</td>
+                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: a.nueva > 0 ? 700 : 400, color: a.nueva > 0 ? C.ink : C.textLight }}>{fmtMoney(a.nueva)}</td>
+                    <td style={{ textAlign: 'right', color: C.textMuted }}>{pct(a.aporte, 0)}</td>
+                    <td style={{ textAlign: 'right', color: indiceColor(a.conPendiente), fontWeight: 600 }}>{a.conPendiente > 0 ? pct(a.conPendiente, 0) : '—'}</td>
+                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: a.bonos > 0 ? C.green : C.textLight }}>{a.bonos > 0 ? fmtMoney(a.bonos) : '—'}</td>
+                    <td style={{ textAlign: 'center' }}>
+                      {foco
+                        ? <span style={{ fontSize: 10, fontWeight: 700, color: C.red, background: C.redBg, padding: '2px 7px', borderRadius: 10 }}>{foco.motivo}</span>
+                        : a.conPendiente >= 0.86 && a.nueva > 0
+                          ? <span style={{ fontSize: 10, fontWeight: 700, color: C.green, background: '#DCFCE7', padding: '2px 7px', borderRadius: 10 }}>OK</span>
+                          : <span style={{ fontSize: 10, color: C.textLight }}>—</span>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* ── Comparativa por trimestre ── */}
+      <div className="crm-chart-card">
+        <h4 style={{ margin: '0 0 2px' }}>Comparativa por trimestre</h4>
+        <p className="sub" style={{ marginTop: 0 }}>Prima nueva vs. renovación por trimestre. Sirve para ver el ritmo trimestre contra trimestre (y año contra año conforme se acumulen cortes).</p>
+        <ResponsiveContainer width="100%" height={240}>
+          <ComposedChart data={d.comparativaTrim} margin={{ top: 8, right: 12, left: 6, bottom: 4 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(11,27,51,.08)" />
+            <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+            <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} />
+            <Tooltip {...chartTip} formatter={(v, n) => [fmtMoneyFull(v), n]} />
+            <Legend wrapperStyle={{ fontSize: 11 }} />
+            <Bar dataKey="nueva" name="Nueva" fill={C.gold} />
+            <Bar dataKey="renov" name="Renovación" fill={C.primary} />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* ── Proyección multi-año (editable) ── */}
+      <div className="crm-chart-card">
+        <h4 style={{ margin: '0 0 2px' }}>¿Cuánto puedo producir en los próximos años?</h4>
+        <p className="sub" style={{ marginTop: 0 }}>Parte de la venta proyectada de {anio} ({fmtMoneyFull(Vbase)}). Ajusta el crecimiento y la conservación: la cartera de renovación se apila cada año que conservas.</p>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
+          <div className="field" style={{ marginBottom: 0, minWidth: 160 }}>
+            <label>Crecimiento anual de venta</label>
+            <div style={{ position: 'relative' }}><input type="number" value={g} onChange={e => setG(e.target.value)} /><span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: C.textMuted }}>%</span></div>
+          </div>
+          <div className="field" style={{ marginBottom: 0, minWidth: 160 }}>
+            <label>Conservación de cartera</label>
+            <div style={{ position: 'relative' }}><input type="number" value={cons} onChange={e => setCons(e.target.value)} /><span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: C.textMuted }}>%</span></div>
+          </div>
+        </div>
+        <div className="crm-kpi-detail" style={{ marginBottom: 14 }}>
+          {years.map(y => (
+            <div key={y.anio} className="crm-kpi-box" style={{ borderTop: `3px solid ${y.esActual ? C.textMuted : C.green}` }}>
+              <div className="k-label">{y.anio}{y.esActual ? ' (proy. cierre)' : ''}</div>
+              <div className="k-value" style={{ color: C.green }}>{fmtMoneyFull(Math.round(y.total))}</div>
+              <div className="k-sub">producción total del año</div>
+            </div>
+          ))}
+        </div>
+        <div className="tbl-wrap">
+          <table>
+            <thead><tr><th>Año</th><th style={{ textAlign: 'right' }}>Venta nueva</th><th style={{ textAlign: 'right' }}>Cartera en renovación</th><th style={{ textAlign: 'right' }}>Producción total</th></tr></thead>
+            <tbody>
+              {years.map(y => (
+                <tr key={y.anio}>
+                  <td><b>{y.anio}</b></td>
+                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(y.nueva)}</td>
+                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(y.cartera)}</td>
+                  <td style={{ textAlign: 'right' }}><b style={{ color: C.green }}>{fmtMoneyFull(Math.round(y.total))}</b></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p style={{ fontSize: 11, color: C.textLight, margin: '10px 0 0' }}>
+          Estimación de producción (prima), no de comisión. La cartera crece con las generaciones nuevas que conservas; sube la conservación para ver el efecto de retener cartera.
+        </p>
+      </div>
+    </>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SIMULADOR DINÁMICO de la promotoría: el índice vive arriba (sticky) y sube en
+   vivo conforme arrastras/agregas cobros y rehabilitaciones; gráfica acumulada,
+   filtros de fecha/urgencia/búsqueda y colores por importancia. El índice se
+   recalcula 100% en el cliente (índice = (conservada_hoy + Σ montos) / base);
+   los bonos exactos se piden al backend con un botón.
+   ═══════════════════════════════════════════════════════════════════════════ */
+function PromotoriaSimulator({ promo, openExpediente }) {
+  const B = promo.indice.baseAConservar || 1;
+  const Ch = promo.indice.hoy.baseConservada || 0;
+  const baseIndice = promo.indice.hoy.actual;
+
+  const [sel, setSel] = useState({});           // id → 'cobrar' | 'rehabilitar'
+  const [q, setQ] = useState('');
+  const [urg, setUrg] = useState('TODAS');
+  const [venc, setVenc] = useState(0);          // 0=todas · N = vence en ≤N días
+  const [bonos, setBonos] = useState(null);
+  const [bonosBusy, setBonosBusy] = useState(false);
+  const [drag, setDrag] = useState(null);       // { id, val } arrastrándose
+  const [over, setOver] = useState(false);
+
+  const pend = promo.accionables.pendientesPago || [];
+  const rehab = promo.accionables.rehabilitables || [];
+  const byId = new Map(); [...pend, ...rehab].forEach(p => byId.set(p.id, p));
+
+  const selEntries = Object.entries(sel).filter(([, v]) => v);
+  const selMonto = selEntries.reduce((s, [id]) => s + (byId.get(Number(id))?.monto || 0), 0);
+  const nCobrar = selEntries.filter(([, v]) => v === 'cobrar').length;
+  const nRehab = selEntries.filter(([, v]) => v === 'rehabilitar').length;
+  const simIndice = Math.min(Ch + selMonto, B) / B;
+  const delta = simIndice - baseIndice;
+  const cruza86 = baseIndice < 0.86 && simIndice >= 0.86;
+
+  const matchTxt = p => !q || `${p.poliza} ${p.plan_id || ''} ${p.agente || ''}`.toLowerCase().includes(q.toLowerCase());
+  const fPend = pend.filter(matchTxt).sort((a, b) => b.monto - a.monto);
+  const fRehab = rehab.filter(p => matchTxt(p) && (urg === 'TODAS' || p.urgencia === urg) && (!venc || (p.dias_restantes ?? 9999) <= venc))
+    .sort((a, b) => (ORDEN_URG.indexOf(a.urgencia) - ORDEN_URG.indexOf(b.urgencia)) || b.monto - a.monto);
+
+  /* Gráfica acumulada: el índice arranca en "Hoy" y sube con cada póliza (mayor a menor impacto) */
+  const chartData = [{ label: 'Hoy', indice: baseIndice, monto: 0 }];
+  selEntries.map(([id]) => byId.get(Number(id))).filter(Boolean).sort((a, b) => b.monto - a.monto)
+    .reduce((cum, p) => { const c = cum + (p.monto || 0); chartData.push({ label: p.poliza, indice: Math.min(Ch + c, B) / B, monto: p.monto }); return c; }, 0);
+
+  const add = (id, val) => setSel(s => ({ ...s, [id]: val }));
+  const toggle = (id, val) => setSel(s => ({ ...s, [id]: s[id] === val ? undefined : val }));
+  const remove = (id) => setSel(s => ({ ...s, [id]: undefined }));
+  const addList = (lista, val) => setSel(s => { const n = { ...s }; lista.forEach(p => { n[p.id] = val; }); return n; });
+  const clear = () => setSel({});
+
+  const runBonos = async () => {
+    setBonosBusy(true);
+    try {
+      setBonos(await api.crmIngresosSimulatePromotoria({
+        cobrarPolizas: selEntries.filter(([, v]) => v === 'cobrar').map(([k]) => Number(k)),
+        rehabilitarPolizas: selEntries.filter(([, v]) => v === 'rehabilitar').map(([k]) => Number(k)),
+      }));
+    } catch (e) { alert(e.message); } finally { setBonosBusy(false); }
+  };
+
+  const impColor = (p, val) => val === 'rehabilitar' ? (URG_META[p.urgencia] || URG_META.BAJA).color : C.amber;
+
+  const Row = ({ p, val }) => {
+    const on = sel[p.id] === val;
+    const col = impColor(p, val);
+    return (
+      <div draggable
+        onDragStart={() => setDrag({ id: p.id, val })} onDragEnd={() => setDrag(null)}
+        onClick={() => toggle(p.id, val)}
+        className="crm-mc-row"
+        style={{ padding: '7px 10px', gap: 8, cursor: 'grab', borderBottom: '1px solid rgba(11,27,51,.05)', borderLeft: `4px solid ${col}`, background: on ? `${col}12` : '#fff', alignItems: 'center' }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+          <input type="checkbox" style={{ accentColor: col }} checked={on} readOnly />
+          <span style={{ minWidth: 0 }}>
+            <b style={{ cursor: 'pointer', textDecoration: 'underline', textDecorationColor: 'rgba(11,27,51,.25)' }}
+              onClick={(ev) => { ev.stopPropagation(); openExpediente(p.id); }}>{p.poliza}</b>
+            {' '}<span style={{ fontSize: 11, color: C.textMuted }}>{p.plan_id}</span>
+            <br /><span style={{ fontSize: 11, color: C.textMuted }}>{p.agente}</span>
+            {val === 'rehabilitar' && <span style={{ marginLeft: 6 }}><UrgBadge u={p.urgencia} /></span>}
+            {val === 'rehabilitar' && p.dias_restantes != null && <span style={{ fontSize: 10.5, color: p.dias_restantes <= 7 ? C.red : p.dias_restantes <= 30 ? '#B45309' : C.textMuted, marginLeft: 6 }}>vence en {p.dias_restantes}d</span>}
+          </span>
+        </span>
+        <span style={{ textAlign: 'right', flexShrink: 0 }}><b>{fmtMoney(p.monto)}</b> <span style={{ color: C.green, fontSize: 11 }}>+{pct(p.impacto_indice, 2)}</span></span>
+      </div>
+    );
+  };
+
+  const gaugeColor = indiceColor(simIndice);
+
+  return (
+    <>
+      {/* ── ÍNDICE STICKY EN VIVO ── */}
+      <div style={{ position: 'sticky', top: 8, zIndex: 20 }}>
+        <div className="crm-chart-card" style={{ marginBottom: 12, boxShadow: '0 6px 20px rgba(11,27,51,.10)', border: `1px solid ${gaugeColor}44` }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
+            <div>
+              <div style={{ fontSize: 11.5, color: C.textMuted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: .3 }}>Índice de la promotoría (en vivo)</div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
+                <span style={{ fontSize: 34, fontWeight: 800, color: gaugeColor, lineHeight: 1 }}>{pct(simIndice)}</span>
+                <span style={{ fontSize: 14, color: C.textMuted }}>desde {pct(baseIndice)}</span>
+                {delta > 0.0001 && <span style={{ fontSize: 14, fontWeight: 700, color: C.green }}>▲ +{pct(delta)}</span>}
+              </div>
+              <div style={{ fontSize: 11, color: C.textMuted, marginTop: 3 }}>Parte de lo <b>cobrado hoy</b>; suma pendientes y rehabilitaciones para ver cuánto sube hacia el techo.</div>
+            </div>
+            <div style={{ display: 'flex', gap: 16, textAlign: 'right', flexWrap: 'wrap' }}>
+              <div><div style={{ fontSize: 11, color: C.textMuted }}>Recuperado</div><b style={{ fontSize: 16 }}>{fmtMoneyFull(selMonto)}</b></div>
+              <div><div style={{ fontSize: 11, color: C.textMuted }}>Pólizas</div><b style={{ fontSize: 16 }}>{nCobrar + nRehab}</b><div style={{ fontSize: 10, color: C.textMuted }}>{nCobrar} cobrar · {nRehab} rehab</div></div>
+              <div><div style={{ fontSize: 11, color: C.textMuted }}>Techo posible</div><b style={{ fontSize: 16, color: '#0891B2' }}>{pct(promo.indice.siCobraYRehabilitaTodo || simIndice, 1)}</b></div>
+            </div>
+          </div>
+          <IndiceBar actual={simIndice} operativo={baseIndice} marks={[0.84, 0.86, 0.90, 0.94]} />
+          {cruza86 && <div style={{ fontSize: 12, color: C.green, fontWeight: 600, marginTop: -6 }}><Sparkles size={13} style={{ verticalAlign: -2 }} /> ¡Con esta selección la promotoría cruza el 86% y reactiva bonos!</div>}
+          {/* Canasta / drop zone */}
+          <div
+            onDragOver={e => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)}
+            onDrop={e => { e.preventDefault(); setOver(false); if (drag) add(drag.id, drag.val); setDrag(null); }}
+            style={{ marginTop: 10, border: `2px dashed ${over ? gaugeColor : 'rgba(11,27,51,.18)'}`, background: over ? `${gaugeColor}0D` : 'transparent', borderRadius: 10, padding: '8px 10px', minHeight: 44, transition: 'all .15s' }}>
+            {selEntries.length === 0
+              ? <div style={{ fontSize: 12, color: C.textMuted, textAlign: 'center', padding: '6px 0' }}>Arrastra aquí las pólizas (o da clic) para sumarlas al índice — cobros y rehabilitaciones.</div>
+              : <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {selEntries.map(([id, val]) => { const p = byId.get(Number(id)); if (!p) return null; const col = impColor(p, val);
+                    return <span key={id} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: `${col}15`, color: col, border: `1px solid ${col}40`, borderRadius: 20, padding: '2px 8px', fontSize: 11.5, fontWeight: 600 }}>
+                      {p.poliza} · {fmtMoney(p.monto)}
+                      <X size={12} style={{ cursor: 'pointer' }} onClick={() => remove(Number(id))} />
+                    </span>; })}
+                </div>}
+          </div>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 10 }}>
+            <button className="btn-primary" disabled={bonosBusy || selEntries.length === 0} onClick={runBonos}><Calculator size={15} /> {bonosBusy ? 'Calculando bonos…' : 'Calcular bonos exactos'}</button>
+            {selEntries.length > 0 && <button className="f-tab" style={{ fontSize: 11.5 }} onClick={clear}>Limpiar todo</button>}
+            {bonos && <span style={{ fontSize: 13 }}>Bonos: <b>{fmtMoney(bonos.base.bonos)}</b> → <b style={{ color: C.green }}>{fmtMoneyFull(bonos.simulado.bonos)}</b> {bonos.delta.bonos > 0 && <span style={{ color: C.green }}>(+{fmtMoneyFull(bonos.delta.bonos)})</span>}</span>}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Gráfica acumulada ── */}
+      {selEntries.length > 0 && (
+        <div className="crm-chart-card">
+          <h4 style={{ margin: '0 0 2px' }}>Cómo sube el índice al recuperar cada póliza</h4>
+          <p className="sub" style={{ marginTop: 0 }}>De mayor a menor impacto. Las líneas marcan los umbrales 84 / 86 / 90 / 94%.</p>
+          <ResponsiveContainer width="100%" height={230}>
+            <AreaChart data={chartData} margin={{ top: 8, right: 14, left: 6, bottom: 4 }}>
+              <defs><linearGradient id="simIdx" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={gaugeColor} stopOpacity={0.5} /><stop offset="100%" stopColor={gaugeColor} stopOpacity={0.03} /></linearGradient></defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(11,27,51,.08)" />
+              <XAxis dataKey="label" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
+              <YAxis domain={[Math.max(0, Math.floor(baseIndice * 20) / 20 - 0.05), 1]} tick={{ fontSize: 11 }} tickFormatter={v => `${(v * 100).toFixed(0)}%`} />
+              <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} formatter={(v, n) => n === 'indice' ? [pct(v), 'Índice'] : [fmtMoneyFull(v), n]} />
+              <ReferenceLine y={0.86} stroke={C.amber} strokeDasharray="4 4" />
+              <ReferenceLine y={0.84} stroke={C.red} strokeDasharray="4 4" />
+              <Area dataKey="indice" stroke={gaugeColor} strokeWidth={2.5} fill="url(#simIdx)" />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* ── Filtros ── */}
+      <div className="crm-chart-card" style={{ paddingTop: 12, paddingBottom: 12 }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ position: 'relative', flex: '1 1 220px' }}>
+            <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: C.textMuted }} />
+            <input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar póliza, plan o asesor…" style={{ width: '100%', padding: '8px 10px 8px 32px', borderRadius: 8, border: '1px solid rgba(11,27,51,.15)', fontSize: 13 }} />
+          </div>
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+            <Filter size={13} color={C.textMuted} />
+            {[['TODAS', 'Toda urgencia'], ['EXTREMA', 'Extrema'], ['ALTA', 'Alta'], ['MEDIA', 'Media']].map(([k, t]) => (
+              <button key={k} className="f-tab" style={{ fontSize: 11, ...(urg === k ? { background: C.ink, color: '#fff' } : {}) }} onClick={() => setUrg(k)}>{t}</button>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+            <span style={{ fontSize: 11, color: C.textMuted }}>Vence:</span>
+            {[[0, 'Todas'], [7, '≤7d'], [30, '≤30d'], [60, '≤60d']].map(([k, t]) => (
+              <button key={k} className="f-tab" style={{ fontSize: 11, ...(venc === k ? { background: C.red, color: '#fff' } : {}) }} onClick={() => setVenc(k)}>{t}</button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Listas ── */}
+      <div className="crm-chart-card">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(340px,1fr))', gap: 16 }}>
+          {[{ tit: 'Pendientes de pago', lista: fPend, val: 'cobrar', color: C.amber },
+            { tit: 'Rehabilitables', lista: fRehab, val: 'rehabilitar', color: '#0891B2' }].map(grp => (
+            <div key={grp.val}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                <h4 style={{ margin: 0, fontSize: 13.5, color: grp.color }}>{grp.tit} ({grp.lista.length})</h4>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button className="f-tab" style={{ fontSize: 11 }} onClick={() => addList(grp.lista, grp.val)}>Agregar todas</button>
+                  <button className="f-tab" style={{ fontSize: 11 }} onClick={() => addList(grp.lista, undefined)}>Quitar</button>
+                </div>
+              </div>
+              <div style={{ maxHeight: 360, overflow: 'auto', border: '1px solid rgba(11,27,51,.1)', borderRadius: 8 }}>
+                {grp.lista.length === 0 && <p className="empty" style={{ margin: 10 }}>Nada con estos filtros</p>}
+                {grp.lista.map(p => <Row key={p.id} p={p} val={grp.val} />)}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
 /* ── Proyección de ingresos a 1/2/3 años ──
    Modelo transparente con supuestos editables: la venta mensual crece g% al
    año; cada generación de pólizas sobrevive con la tasa de conservación; el
@@ -449,11 +906,6 @@ export default function CrmIngresosView({ isAgency }) {
   const [simSel, setSimSel] = useState({});   // poliza_id → 'cobrar' | 'rehabilitar'
   const [sim, setSim] = useState(null);
   const [simBusy, setSimBusy] = useState(false);
-  /* Simulador de la promotoría (interactivo, sin agente) */
-  const [promoSimSel, setPromoSimSel] = useState({});   // poliza_id → 'cobrar' | 'rehabilitar'
-  const [promoSim, setPromoSim] = useState(null);
-  const [promoSimBusy, setPromoSimBusy] = useState(false);
-
   /* Expediente de póliza (clic en pendientes/rehabilitables): motivo de
      cancelación + notas ligadas al expediente en crm_policies */
   const [polExp, setPolExp] = useState(null); // { id, loading, data, motivo, nota, saving }
@@ -574,15 +1026,6 @@ export default function CrmIngresosView({ isAgency }) {
     })();
     return () => { alive = false; };
   }, [selClave]);
-
-  const runPromoSim = async () => {
-    setPromoSimBusy(true);
-    try {
-      const cobrar = Object.entries(promoSimSel).filter(([, v]) => v === 'cobrar').map(([k]) => Number(k));
-      const rehab = Object.entries(promoSimSel).filter(([, v]) => v === 'rehabilitar').map(([k]) => Number(k));
-      setPromoSim(await api.crmIngresosSimulatePromotoria({ cobrarPolizas: cobrar, rehabilitarPolizas: rehab }));
-    } catch (e) { alert(e.message); } finally { setPromoSimBusy(false); }
-  };
 
   const runSim = async () => {
     if (!detail) return;
@@ -801,9 +1244,12 @@ export default function CrmIngresosView({ isAgency }) {
       {/* ═══════════ TAB CONCILIACIÓN (vista de comisiones existente) ═══════════ */}
       {tab === 'conciliacion' && <CrmCommissionsView isAgency={isAgency} />}
 
-      {/* ═══════════ TAB PROYECCIÓN DE INGRESOS A 1/2/3 AÑOS ═══════════ */}
-      {tab === 'proyeccion' && (detail || detailPromo) && <ProyeccionIngresos detail={detail || detailPromo} />}
-      {tab === 'proyeccion' && !detail && !detailPromo && <p className="empty">Cargando datos de la promotoría… (o selecciona un agente en el Tablero PIR).</p>}
+      {/* ═══════════ TAB PROYECCIÓN ═══════════
+          Promotoría → modelo a futuro completo; agente → calculadora de ingresos personal */}
+      {tab === 'proyeccion' && !detail && isAgency && <PromotoriaForecast />}
+      {tab === 'proyeccion' && detail && <ProyeccionIngresos detail={detail} />}
+      {tab === 'proyeccion' && !detail && !isAgency && detailPromo && <ProyeccionIngresos detail={detailPromo} />}
+      {tab === 'proyeccion' && !detail && !isAgency && !detailPromo && <p className="empty">Cargando datos… (o selecciona un agente en el Tablero PIR).</p>}
 
       {/* ═══════════ TAB REHABILITACIONES ═══════════ */}
       {tab === 'rehab' && rehabBusy && !rehab && (
@@ -1260,72 +1706,7 @@ export default function CrmIngresosView({ isAgency }) {
         </div>
       )}
 
-      {tab === 'simulador' && !detail && promo && (() => {
-        const pend = promo.accionables.pendientesPago;
-        const rehab = promo.accionables.rehabilitables;
-        const nSel = Object.values(promoSimSel).filter(Boolean).length;
-        const setSel = (lista, val) => setPromoSimSel(s => { const n = { ...s }; lista.forEach(p => { n[p.id] = val || undefined; }); return n; });
-        return (
-          <>
-            <div className="crm-chart-card">
-              <h3><Calculator size={16} style={{ verticalAlign: -2, color: C.gold }} /> Simulador de la promotoría</h3>
-              <p className="sub">Selecciona pólizas de cualquier asesor (cobrar pendientes / rehabilitar canceladas) y mira cómo queda el <b>índice agregado</b> y la <b>suma de bonos</b> de toda la cartera ({promo.agentes} asesores). Umbral promotoría 84%.</p>
-              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
-                <button className="btn-primary" disabled={promoSimBusy} onClick={runPromoSim}><Calculator size={15} /> {promoSimBusy ? 'Calculando…' : `Simular (${nSel} seleccionadas)`}</button>
-                {nSel > 0 && <button className="f-tab" style={{ fontSize: 11.5 }} onClick={() => setPromoSimSel({})}>Limpiar selección</button>}
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(340px,1fr))', gap: 16 }}>
-                {[{ tit: `Pendientes de pago (${pend.length})`, lista: pend, val: 'cobrar', badge: ['Cobrar', C.amberBg, C.amber] },
-                { tit: `Rehabilitables (${rehab.length})`, lista: rehab, val: 'rehabilitar', badge: ['Rehabilitar', '#E0F2FE', '#0891B2'] }].map(grp => (
-                  <div key={grp.val}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                      <h4 style={{ margin: 0, fontSize: 13.5 }}>{grp.tit}</h4>
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <button className="f-tab" style={{ fontSize: 11 }} onClick={() => setSel(grp.lista, grp.val)}>Todas</button>
-                        <button className="f-tab" style={{ fontSize: 11 }} onClick={() => setSel(grp.lista, null)}>Ninguna</button>
-                      </div>
-                    </div>
-                    <div style={{ maxHeight: 300, overflow: 'auto', border: '1px solid rgba(11,27,51,.1)', borderRadius: 8 }}>
-                      {grp.lista.length === 0 && <p className="empty" style={{ margin: 10 }}>Nada aquí</p>}
-                      {grp.lista.map(p => (
-                        <label key={p.id} className="crm-mc-row" style={{ padding: '6px 10px', gap: 8, cursor: 'pointer', borderBottom: '1px solid rgba(11,27,51,.05)' }}>
-                          <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                            <input type="checkbox" style={{ accentColor: C.primary }} checked={promoSimSel[p.id] === grp.val}
-                              onChange={e => setPromoSimSel(s => ({ ...s, [p.id]: e.target.checked ? grp.val : undefined }))} />
-                            <span style={{ minWidth: 0 }}>
-                              <b style={{ cursor: 'pointer', textDecoration: 'underline', textDecorationColor: 'rgba(11,27,51,.25)' }} onClick={(ev) => { ev.preventDefault(); openPolExpediente(p.id); }}>{p.poliza}</b>
-                              {' '}<span style={{ fontSize: 11, color: C.textMuted }}>{p.plan_id}</span>
-                              <br /><span style={{ fontSize: 11, color: C.textMuted }}>{p.agente}</span>
-                            </span>
-                          </span>
-                          <span style={{ textAlign: 'right', flexShrink: 0 }}><b>{fmtMoney(p.monto)}</b> <span style={{ color: C.green, fontSize: 11 }}>+{pct(p.impacto_indice, 2)}</span></span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {promoSim && (
-              <div className="crm-chart-card">
-                <h3><TrendingUp size={16} style={{ verticalAlign: -2, color: C.green }} /> Resultado — promotoría</h3>
-                <div className="crm-kpi-detail">
-                  <BonoCard icon={ShieldCheck} label="Índice de la promotoría"
-                    value={<span><span style={{ color: indiceColor(promoSim.base.indice) }}>{pct(promoSim.base.indice)}</span> → <span style={{ color: indiceColor(promoSim.simulado.indice) }}>{pct(promoSim.simulado.indice)}</span></span>}
-                    sub={promoSim.delta.indice > 0 ? `sube ${pct(promoSim.delta.indice)}` : 'sin cambio'} />
-                  <BonoCard icon={RotateCcw} label="Pólizas incluidas" value={promoSim.seleccionadas.total}
-                    sub={`${promoSim.seleccionadas.cobrar} por cobrar · ${promoSim.seleccionadas.rehabilitar} rehabilitar`} color={C.gold} />
-                  <BonoCard icon={Scale} label="Base recuperada" value={fmtMoneyFull(promoSim.seleccionadas.monto)} sub="prima que entra a conservación" />
-                  <BonoCard icon={HandCoins} label="Bonos del trimestre (todos)"
-                    value={<span>{fmtMoney(promoSim.base.bonos)} → <span style={{ color: C.green }}>{fmtMoneyFull(promoSim.simulado.bonos)}</span></span>}
-                    sub={promoSim.delta.bonos > 0 ? `+${fmtMoneyFull(promoSim.delta.bonos)} adicionales` : 'sin bono adicional'} />
-                </div>
-              </div>
-            )}
-          </>
-        );
-      })()}
+      {tab === 'simulador' && !detail && promo && <PromotoriaSimulator promo={promo} openExpediente={openPolExpediente} />}
       {tab === 'simulador' && !detail && !promo && <p className="empty">Cargando datos de la promotoría…</p>}
     </div>
   );

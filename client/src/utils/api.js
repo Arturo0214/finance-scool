@@ -190,6 +190,7 @@ export const api = {
   crmDeleteProduct: (id) => request(`/crm/products/${id}`, { method: 'DELETE' }),
   crmIngresosOverview: () => request('/crm/ingresos/overview'),
   crmIngresosPromotoria: () => request('/crm/ingresos/promotoria'),
+  crmIngresosForecast: () => request('/crm/ingresos/forecast'),
   // ── Cartera, carga diaria del reporte y export ──
   crmCarteraResumen: () => request('/crm/cartera/resumen'),
   crmCobranzaMailing: (clave) => request('/crm/cobranza-mailing', { method: 'POST', body: JSON.stringify(clave ? { clave } : {}) }),
