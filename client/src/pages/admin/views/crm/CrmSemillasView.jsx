@@ -61,6 +61,14 @@ export default function CrmSemillasView() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
+  // Cerrar drawer / panel con Escape
+  useEffect(() => {
+    if (!sel && !addCol) return;
+    const onKey = (e) => { if (e.key === 'Escape') { setSel(null); setAddCol(null); } };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [sel, addCol]);
+
   const visibles = useMemo(() => columnas.filter(c => c.visible).sort((a, b) => a.orden - b.orden), [columnas]);
   const filtered = useMemo(() => {
     const t = q.trim().toLowerCase();
@@ -113,8 +121,10 @@ export default function CrmSemillasView() {
         .sem-grid td{padding:8px 12px;border-bottom:1px solid ${C.line};white-space:nowrap;max-width:280px;overflow:hidden;text-overflow:ellipsis}
         .sem-grid tbody tr{cursor:pointer}
         .sem-grid tbody tr:hover td{background:${C.goldBg}}
-        .sem-drawer{position:fixed;top:0;right:0;bottom:0;width:min(560px,94vw);background:#fff;box-shadow:-12px 0 40px rgba(5,22,54,.18);z-index:60;display:flex;flex-direction:column;animation:semin .2s ease}
+        .sem-backdrop{position:fixed;inset:0;background:rgba(5,22,54,.28);backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px);z-index:1100;animation:semfade .2s ease}
+        .sem-drawer{position:fixed;top:0;right:0;bottom:0;width:min(560px,94vw);background:#fff;box-shadow:-12px 0 40px rgba(5,22,54,.18);z-index:1200;display:flex;flex-direction:column;animation:semin .2s ease}
         @keyframes semin{from{transform:translateX(30px);opacity:.4}to{transform:none;opacity:1}}
+        @keyframes semfade{from{opacity:0}to{opacity:1}}
         .sem-chip{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:700;padding:2px 9px;border-radius:20px}
         .colmenu{position:absolute;top:42px;right:0;background:#fff;border:1px solid ${C.line};border-radius:12px;box-shadow:0 10px 34px rgba(5,22,54,.16);z-index:30;width:280px;max-height:420px;overflow:auto;padding:6px}
       `}</style>
@@ -175,7 +185,8 @@ export default function CrmSemillasView() {
       </div>
 
       {/* Nueva columna */}
-      {addCol && (
+      {addCol && (<>
+        <div className="sem-backdrop" onClick={() => setAddCol(null)} />
         <div className="sem-drawer" style={{ width: 'min(420px,94vw)', padding: 20 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
             <h3 style={{ margin: 0 }}>Nueva columna</h3><button className="crm-icon-btn" onClick={() => setAddCol(null)}><X size={18} /></button>
@@ -196,10 +207,11 @@ export default function CrmSemillasView() {
           )}
           <button className="crm-btn" style={{ marginTop: 16, width: '100%' }} onClick={crearCol}>Crear columna</button>
         </div>
-      )}
+      </>)}
 
       {/* Drawer de la semilla */}
-      {sel && (
+      {sel && (<>
+        <div className="sem-backdrop" onClick={() => setSel(null)} />
         <div className="sem-drawer">
           <div style={{ padding: '18px 20px', borderBottom: `1px solid ${C.line}`, background: `linear-gradient(135deg,${C.navy},${C.ink})`, color: '#fff' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -267,7 +279,7 @@ export default function CrmSemillasView() {
             </>}
           </div>
         </div>
-      )}
+      </>)}
     </>
   );
 }
