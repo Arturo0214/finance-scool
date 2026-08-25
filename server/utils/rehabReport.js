@@ -68,7 +68,7 @@ function drawLogo(doc, x, y, h, variant = 'light') {
   doc.fillColor('#000');
 }
 
-function buildRehabPDFBuffer({ agentName, clave, indiceHoy, lista }) {
+function buildRehabPDFBuffer({ agentName, clave, indiceHoy, indiceConPendiente, lista }) {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'LETTER', margins: { top: 44, bottom: 48, left: 46, right: 46 } });
     const chunks = [];
@@ -85,6 +85,13 @@ function buildRehabPDFBuffer({ agentName, clave, indiceHoy, lista }) {
       || (b.monto || 0) - (a.monto || 0));
 
     const monto = items.reduce((s, r) => s + (r.monto || 0), 0);
+    /* Cada fila es una COBERTURA; varias comparten número de póliza. Contamos
+       las pólizas distintas para no confundir coberturas con pólizas (feedback
+       de mesa de control: "21 pólizas" cuando son 21 coberturas en 9 pólizas). */
+    const nPolizas = new Set(items.map(r => String(r.poliza || ''))).size;
+    const nCob = items.length;
+    const cobTxt = (n) => `${n} cobertura${n === 1 ? '' : 's'}`;
+    const polTxt = (n) => `${n} póliza${n === 1 ? '' : 's'}`;
     const por = {
       auto: items.filter(r => r.etapa === 'AUTOMATICA').length,
       correo: items.filter(r => r.etapa === 'CORREO').length,
@@ -102,12 +109,14 @@ function buildRehabPDFBuffer({ agentName, clave, indiceHoy, lista }) {
     doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(18).text('Reporte de Rehabilitaciones', LX + 150, 30, { width: W - 150, align: 'right' });
     doc.fillColor('#C7D2E4').font('Helvetica').fontSize(9.5)
       .text(`Incubadora S-COOL · ${agentName || 'Promotoría'}${clave ? '  ·  ' + clave : ''}`, LX + 150, 56, { width: W - 150, align: 'right' })
-      .text(`Índice de conservación: ${indiceHoy != null ? (indiceHoy * 100).toFixed(2) + '%' : '—'}   ·   Generado ${hoy}`, LX + 150, 71, { width: W - 150, align: 'right' });
+      .text(indiceConPendiente != null
+        ? `Índice de conservación: ${(indiceConPendiente * 100).toFixed(2)}%  ·  cobrado ${indiceHoy != null ? (indiceHoy * 100).toFixed(2) + '%' : '—'}   ·   Generado ${hoy}`
+        : `Índice de conservación: ${indiceHoy != null ? (indiceHoy * 100).toFixed(2) + '%' : '—'}   ·   Generado ${hoy}`, LX + 150, 71, { width: W - 150, align: 'right' });
     let y = HH + 24;
 
     /* ── Tarjetas de resumen ── */
     const cards = [
-      ['PÓLIZAS RECUPERABLES', String(items.length), money(monto) + ' en riesgo', NAVY],
+      ['COBERTURAS RECUPERABLES', String(nCob), `${money(monto)} en riesgo · en ${polTxt(nPolizas)}`, NAVY],
       ['AUTOMÁTICAS · 0–30d', String(por.auto), 'sin trámite del cliente', VERDE],
       ['CORREO / FIRMA', `${por.correo} / ${por.firma}`, '30–90d / 90–180d', CYAN],
       ['URGENTES', String(extremas + altas), `${extremas} extremas · ${altas} altas`, ROJO],
@@ -140,7 +149,7 @@ function buildRehabPDFBuffer({ agentName, clave, indiceHoy, lista }) {
       cols.forEach((c, i) => { doc.fill('#fff').font('Helvetica-Bold').fontSize(8).text(c, x + 6, y + 6, { width: cw[i] - 10, align: i >= 4 ? 'right' : 'left' }); x += cw[i]; });
       y += 20;
     };
-    doc.fill(NAVY).font('Helvetica-Bold').fontSize(11).text(`Detalle — ${items.length} póliza${items.length === 1 ? '' : 's'} por recuperar`, LX, y);
+    doc.fill(NAVY).font('Helvetica-Bold').fontSize(11).text(`Detalle — ${cobTxt(nCob)} en ${polTxt(nPolizas)} por recuperar`, LX, y);
     y += 18;
     header();
 

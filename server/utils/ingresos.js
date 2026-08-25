@@ -330,7 +330,7 @@ function computeIngresos({ agente, primas, polizas, pir, personalizaPlanes }, ov
   /* Rehabilitables: canceladas clasificadas por etapa (auto/correo/firma) y
      urgencia. Se excluyen las VENCIDAS (+180 días, o PERSONALIZA +30). */
   const rehabilitables = polizasHoy
-    .filter(p => p.estatus_conservacion === 'NO CONSERVADA' && p.fecha_ultima_cancelacion)
+    .filter(p => p.estatus_conservacion === 'NO CONSERVADA' && p.fecha_ultima_cancelacion && !p.live_vigente)
     .map(p => {
       const c = clasificarRehabilitacion(p, hoy, personalizaC);
       if (!c) return null;

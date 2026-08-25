@@ -16,7 +16,7 @@ import {
   MessageCircle, Link as LinkIcon, Zap, Eye, Settings,
   Activity, Filter, PieChart, Megaphone, Briefcase,
   UserCheck, Bot, LayoutDashboard, Contact, FileText, Target, Bell,
-  KanbanSquare, HandCoins, ChevronsLeft, ChevronsRight,
+  KanbanSquare, HandCoins, ChevronsLeft, ChevronsRight, Sparkles, Mic, GraduationCap, Plane, Sprout,
 } from 'lucide-react';
 
 import { C, SPANISH_LABELS, isAgencyRole } from './admin/constants';
@@ -39,6 +39,11 @@ const HubSpotView         = lazy(() => import('./admin/views/HubSpotView'));
 const WorkflowAIView      = lazy(() => import('./admin/views/WorkflowAIView'));
 const TeamView            = lazy(() => import('./admin/views/TeamView'));
 const FSCConversationsView = lazy(() => import('./admin/views/FSCConversationsView'));
+const CrmMiDiaView        = lazy(() => import('./admin/views/crm/CrmMiDiaView'));
+const CrmCitasView        = lazy(() => import('./admin/views/crm/CrmCitasView'));
+const CrmIncubadoraView   = lazy(() => import('./admin/views/crm/CrmIncubadoraView'));
+const CrmCampanasView     = lazy(() => import('./admin/views/crm/CrmCampanasView'));
+const CrmSemillasView     = lazy(() => import('./admin/views/crm/CrmSemillasView'));
 const CrmDashboardView    = lazy(() => import('./admin/views/crm/CrmDashboardView'));
 const CrmPipelineView     = lazy(() => import('./admin/views/crm/CrmPipelineView'));
 const CrmClientsView      = lazy(() => import('./admin/views/crm/CrmClientsView'));
@@ -108,20 +113,26 @@ export default function AdminPanel() {
      antiguas (leads, calendario, WhatsApp, Sofía Bot, etc.) siguen
      accesibles por URL directa pero ya no aparecen en el menú. */
   const navItems = [
-    { id: 'divider-crm',      label: '── CRM Asesores ──',            icon: null       },
+    { id: 'divider-crm',      label: '── Productividad Comercial ──',  icon: null       },
+    { id: 'crm-mi-dia',       label: 'Mi Día',                        icon: Sparkles   },
     { id: 'crm',              label: 'Tableros CRM',                  icon: LayoutDashboard },
     { id: 'crm-pipeline',     label: 'Pipeline',                      icon: KanbanSquare },
     { id: 'crm-clientes',     label: 'Consultores',                   icon: Contact    },
     { id: 'crm-polizas',      label: 'Pólizas',                       icon: FileText   },
     { id: 'crm-ingresos',     label: 'Ingresos',                      icon: HandCoins  },
+    { id: 'crm-campanas',     label: 'Campañas',                      icon: Plane      },
     { id: 'crm-metas',        label: 'Metas & Forecast',              icon: Target     },
     { id: 'crm-recordatorios', label: 'Recordatorios',                icon: Bell       },
+    { id: 'crm-citas',        label: 'Inteligencia de citas',         icon: Mic        },
+    { id: 'crm-incubadora',   label: 'Incubadora',                    icon: GraduationCap },
     { id: 'crm-cotizador',    label: 'Cotizador PPR',                 icon: BarChart3  },
+    { id: 'crm-semillas',     label: 'Semillas',                      icon: Sprout     },
     { id: 'divider-2',        label: '── Administración ──',          icon: null       },
     { id: 'team',             label: SPANISH_LABELS.team,             icon: Settings   },
     { id: 'health',           label: 'Salud del sistema',             icon: Activity   },
   ].filter(item => {
     if (item.id === 'health') return userIsAgency;
+    if (item.id === 'crm-semillas') return ['superadmin', 'agencia'].includes(user?.role);
     return (item.id !== 'team' && item.id !== 'divider-2') || canManageTeam;
   });
 
@@ -334,6 +345,7 @@ export default function AdminPanel() {
               {!loading && activeView === 'sofia-bot' && userIsAgency &&
                 <FSCConversationsView onOpenMenu={() => setMobileMenuOpen(o => !o)} />}
               {/* ── CRM Asesores ── */}
+              {!loading && activeView === 'crm-mi-dia' && <CrmMiDiaView isAgency={userSeesAllCrm} />}
               {!loading && activeView === 'crm' && <CrmDashboardView />}
               {!loading && activeView === 'crm-pipeline' && <CrmPipelineView isAgency={userSeesAllCrm} />}
               {!loading && activeView === 'crm-clientes' && <CrmConsultoresView isAgency={userSeesAllCrm} />}
@@ -343,6 +355,10 @@ export default function AdminPanel() {
               {!loading && activeView === 'crm-comisiones' && <CrmCommissionsView isAgency={userSeesAllCrm} />}
               {!loading && activeView === 'crm-metas' && <CrmGoalsView isAgency={userSeesAllCrm} />}
               {!loading && activeView === 'crm-recordatorios' && <CrmRemindersView isAgency={userSeesAllCrm} />}
+              {!loading && activeView === 'crm-citas' && <CrmCitasView />}
+              {!loading && activeView === 'crm-incubadora' && <CrmIncubadoraView />}
+              {!loading && activeView === 'crm-campanas' && <CrmCampanasView isAgency={userSeesAllCrm} />}
+              {!loading && activeView === 'crm-semillas' && ['superadmin', 'agencia'].includes(user?.role) && <CrmSemillasView />}
               {!loading && activeView === 'crm-cotizador' && <CrmQuoteView />}
               {!loading && activeView === 'health' && userIsAgency && <HealthView />}
             </Suspense>

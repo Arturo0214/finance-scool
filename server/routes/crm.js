@@ -769,6 +769,61 @@ router.delete('/reminders/:id', async (req, res) => {
   res.json({ ok: true });
 });
 
+/* ── Pipeline accionable: "próxima acción obligatoria" ──────────────────────
+   Cada prospecto en una etapa activa DEBE tener una próxima acción agendada.
+   Cruza crm_clients (etapas de pipeline) con sus recordatorios pendientes y
+   clasifica: sin_accion (hueco — la etapa sin siguiente paso), vencidas, hoy,
+   proximas. Es el núcleo del "Pipeline accionable" de Powing, sin schema nuevo:
+   la acción se agenda como un recordatorio normal. Asesor ve lo suyo; agencia
+   ve todo o filtra por ?agent_id. */
+const ETAPAS_ACTIVAS = ['prospecto', 'cita_agendada', 'cita_realizada', 'presentacion', 'solicitud'];
+router.get('/pipeline/acciones', async (req, res) => {
+  const scope = await resolveScope(req, res);
+  if (!scope) return;
+  const db = getDB();
+  try {
+    const clients = await fetchAllRows(() => {
+      let q = db.from('crm_clients').select('id, agent_id, nombre, telefono, etapa, crm_agents(nombre)').in('etapa', ETAPAS_ACTIVAS).order('id');
+      if (scope.restricted) q = q.eq('agent_id', scope.agentId);
+      else if (req.query.agent_id) q = q.eq('agent_id', req.query.agent_id);
+      return q;
+    });
+    const ids = clients.map(c => c.id);
+    const rems = ids.length ? await fetchAllRows(() =>
+      db.from('crm_reminders').select('id, client_id, titulo, tipo, fecha, estatus').in('client_id', ids).neq('estatus', 'completado').order('fecha')) : [];
+    /* próximo recordatorio pendiente por cliente (el de fecha más temprana) */
+    const nextByClient = new Map();
+    for (const r of decryptRows(rems, 'crm_reminders')) {
+      if (!r.fecha) continue;
+      const prev = nextByClient.get(r.client_id);
+      if (!prev || r.fecha < prev.fecha) nextByClient.set(r.client_id, r);
+    }
+    const hoyStr = new Date().toISOString().slice(0, 10);
+    const grupos = { sin_accion: [], vencidas: [], hoy: [], proximas: [] };
+    for (const c of decryptRows(clients, 'crm_clients')) {
+      const nx = nextByClient.get(c.id);
+      const item = {
+        id: c.id, nombre: c.nombre, telefono: c.telefono || null, etapa: c.etapa,
+        agente: c.crm_agents?.nombre || null,
+        accion: nx ? { titulo: nx.titulo, tipo: nx.tipo, fecha: nx.fecha } : null,
+      };
+      if (!nx) grupos.sin_accion.push(item);
+      else if (nx.fecha < hoyStr) grupos.vencidas.push(item);
+      else if (nx.fecha === hoyStr) grupos.hoy.push(item);
+      else grupos.proximas.push(item);
+    }
+    grupos.vencidas.sort((a, b) => (a.accion?.fecha || '').localeCompare(b.accion?.fecha || ''));
+    grupos.proximas.sort((a, b) => (a.accion?.fecha || '').localeCompare(b.accion?.fecha || ''));
+    res.json({
+      resumen: {
+        total: clients.length, sin_accion: grupos.sin_accion.length,
+        vencidas: grupos.vencidas.length, hoy: grupos.hoy.length, proximas: grupos.proximas.length,
+      },
+      grupos,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 /* ═══════════════ ARCHIVOS (Cloudinary) ═══════════════ */
 
 router.post('/files', upload.single('file'), async (req, res) => {
@@ -1330,6 +1385,60 @@ router.delete('/notes/:id', async (req, res) => {
   res.json({ ok: true });
 });
 
+/* ═══════════════ FIREFLIES · Inteligencia de citas ═══════════════
+   Trae de las reuniones grabadas el resumen y los action items y los vuelca al
+   expediente del cliente (nota + tareas). Se activa con FIREFLIES_API_KEY; sin
+   la llave, /status responde { enabled:false } y el resto responde 200 vacío en
+   vez de 500, para no romper el CRM mientras se confirman las licencias. */
+const { firefliesEnabled, listTranscripts, getTranscript } = require('../utils/fireflies');
+
+router.get('/fireflies/status', (req, res) => {
+  res.json({ enabled: firefliesEnabled() });
+});
+
+router.get('/fireflies/transcripts', async (req, res) => {
+  if (!firefliesEnabled()) return res.json({ enabled: false, transcripts: [] });
+  try {
+    const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 25));
+    res.json({ enabled: true, transcripts: await listTranscripts({ limit }) });
+  } catch (e) { res.status(502).json({ error: e.message }); }
+});
+
+router.get('/fireflies/transcript/:id', async (req, res) => {
+  if (!firefliesEnabled()) return res.status(503).json({ error: 'Fireflies no está configurado' });
+  try {
+    res.json({ enabled: true, transcript: await getTranscript(req.params.id) });
+  } catch (e) { res.status(502).json({ error: e.message }); }
+});
+
+/* Importa una cita al expediente: crea 1 nota (resumen) + 1 tarea por action
+   item. Idempotencia ligera: evita duplicar si ya se importó esa reunión. */
+router.post('/clients/:id/fireflies/import', async (req, res) => {
+  if (!firefliesEnabled()) return res.status(503).json({ error: 'Fireflies no está configurado' });
+  const { transcript_id } = req.body;
+  if (!transcript_id) return res.status(400).json({ error: 'transcript_id requerido' });
+  const ok = await assertClientScope(req, res, req.params.id);
+  if (!ok) return;
+  const db = getDB();
+  try {
+    const t = await getTranscript(transcript_id);
+    const marca = `[Fireflies:${t.id}]`;
+    const { data: yaSel } = await db.from('crm_notes').select('id').eq('client_id', req.params.id).ilike('texto', `%${marca}%`).limit(1);
+    if (yaSel && yaSel.length) return res.status(409).json({ error: 'Esta cita ya se importó a este cliente' });
+
+    const base = { client_id: Number(req.params.id), agent_id: ok.client.agent_id, user_id: req.user.id, user_name: req.user.name };
+    const fecha = t.fecha ? new Date(t.fecha).toLocaleDateString('es-MX') : '';
+    const resumenTxt = `🎙️ Cita "${t.titulo}"${fecha ? ` (${fecha})` : ''} ${marca}\n\n${t.resumen || 'Sin resumen disponible.'}${t.temas.length ? `\n\nTemas: ${t.temas.join(', ')}` : ''}`;
+    const rows = [{ ...base, tipo: 'nota', texto: resumenTxt }];
+    for (const ai of t.action_items.slice(0, 30)) rows.push({ ...base, tipo: 'tarea', texto: `${ai} ${marca}`, done: false });
+
+    const { data, error } = await db.from('crm_notes').insert(rows).select();
+    if (error) throw new Error(error.message);
+    logActivity(req, 'importar', 'cita-fireflies', req.params.id, `${t.action_items.length} pendientes`);
+    res.status(201).json({ ok: true, nota: 1, tareas: rows.length - 1, action_items: t.action_items, notes: data });
+  } catch (e) { res.status(502).json({ error: e.message }); }
+});
+
 /* ═══════════════ TIMELINE unificado del cliente ═══════════════ */
 
 router.get('/clients/:id/timeline', async (req, res) => {
@@ -1582,17 +1691,40 @@ async function resolveClaveScope(req, res) {
   return { restricted: true, clave: agent.clave };
 }
 
+/* Números de póliza que HOY están vigentes en la fuente viva (crm_policies).
+   Reconcilia el snapshot del índice (crm_pru_polizas_indice, que viene del corte
+   del Business Review y puede quedar desfasado): una cobertura cuyo número de
+   póliza ya está vigente aquí NO debe listarse "por recuperar", aunque el corte
+   aún la traiga cancelada. Caso reportado por mesa de control: póliza 96959. */
+async function fetchPolizasVigentesLive(db) {
+  const rows = await fetchAllRows(() => db.from('crm_policies').select('poliza, estatus').order('id'));
+  const vig = new Set();
+  for (const r of rows) {
+    if (!['pagada', 'pendiente_pago'].includes(r.estatus)) continue;
+    const num = String(decryptFields(r, 'crm_policies').poliza || '').replace(/\.0$/, '').trim();
+    if (num) vig.add(num);
+  }
+  return vig;
+}
+
+const numPoliza = (v) => String(v || '').replace(/\.0$/, '').trim();
+
 async function fetchIngresosData(clave) {
   const db = getDB();
   let qA = db.from('crm_pru_agentes').select('*').order('nombre');
   let qP = db.from('crm_pru_primas').select('*');
   let qZ = db.from('crm_pru_polizas_indice').select('*');
   if (clave) { qA = qA.eq('clave', clave); qP = qP.eq('clave', clave); qZ = qZ.eq('clave', clave); }
-  const [{ data: agentes, error: e1 }, { data: primas, error: e2 }, { data: polizas, error: e3 }] =
-    await Promise.all([qA, qP, qZ]);
+  const [{ data: agentes, error: e1 }, { data: primas, error: e2 }, { data: polizas, error: e3 }, vigentesLive] =
+    await Promise.all([qA, qP, qZ, fetchPolizasVigentesLive(db)]);
   const err = e1 || e2 || e3;
   if (err) throw new Error(err.message);
-  return { agentes: agentes || [], primas: primas || [], polizas: polizas || [] };
+  /* Marca las coberturas cuya póliza ya revivió/está vigente en crm_policies:
+     downstream las excluye del listado de rehabilitación (sin tocar el índice). */
+  const reconciliadas = (polizas || []).map(p => ({
+    ...p, live_vigente: vigentesLive.has(numPoliza(p.poliza)),
+  }));
+  return { agentes: agentes || [], primas: primas || [], polizas: reconciliadas };
 }
 
 /* Resumen de todos los agentes (o el propio): índice + bonos del trimestre */
@@ -1729,6 +1861,7 @@ router.get('/ingresos/rehabilitaciones', async (req, res) => {
       por_etapa: { AUTOMATICA: 0, CORREO: 0, FIRMA: 0 }, por_urgencia: { EXTREMA: 0, ALTA: 0, MEDIA: 0, BAJA: 0 } };
     for (const p of polizas) {
       if (derivarEstatus(p, hoy) !== 'NO CONSERVADA') continue;
+      if (p.live_vigente) continue; // ya revivió en la fuente viva: no es "por recuperar"
       const c = clasificarRehabilitacion(p, hoy, personalizaC);
       if (!c) continue;
       const monto = Math.round((Number(p.base_a_conservar_mxn) || 0) * 100) / 100;
@@ -1858,9 +1991,9 @@ router.post('/ingresos/rehab-alerts', async (req, res) => {
         '— Incubadora S-COOL',
       ].filter(l => l !== null);
       try {
-        const pdf = await buildRehabPDFBuffer({ agentName: a.nombre, clave: a.clave, indiceHoy: r.indice.hoy?.actual ?? r.indice.actual, lista });
+        const pdf = await buildRehabPDFBuffer({ agentName: a.nombre, clave: a.clave, indiceHoy: r.indice.hoy?.actual ?? r.indice.actual, indiceConPendiente: r.indice.hoy?.conPendiente ?? r.indice.conPendiente, lista });
         await sendMailWithPdf({
-          to, subject: `♻️ Resumen de rehabilitaciones — ${a.nombre} (${lista.length} pólizas · ${money(monto)})`,
+          to, subject: `♻️ Resumen de rehabilitaciones — ${a.nombre} (${lista.length} coberturas · ${money(monto)})`,
           text: cuerpo.join('\n'),
           filename: `Rehabilitaciones-${a.clave}-${new Date().toISOString().slice(0, 10)}.pdf`, buffer: pdf,
         });
@@ -1907,7 +2040,7 @@ router.get('/ingresos/rehab-pdf/:clave', async (req, res) => {
     const a = agentes[0];
     const r = computeIngresos({ agente: a, primas, polizas, pir, personalizaPlanes });
     const { buildRehabPDFBuffer } = require('../utils/rehabReport');
-    const pdf = await buildRehabPDFBuffer({ agentName: a.nombre, clave: a.clave, indiceHoy: r.indice.hoy?.actual ?? r.indice.actual, lista: r.accionables.rehabilitables });
+    const pdf = await buildRehabPDFBuffer({ agentName: a.nombre, clave: a.clave, indiceHoy: r.indice.hoy?.actual ?? r.indice.actual, indiceConPendiente: r.indice.hoy?.conPendiente ?? r.indice.conPendiente, lista: r.accionables.rehabilitables });
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="Rehabilitaciones-${clave}.pdf"`);
     res.send(pdf);
@@ -2042,6 +2175,186 @@ router.post('/ingresos/simulate-promotoria', async (req, res) => {
       simulado: { indice: simHoy, bonos: round2sim(bonosSim) },
       delta: { indice: Math.round((simHoy - baseHoy) * 10000) / 10000, bonos: round2sim(bonosSim - bonosBase) },
     });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* ── "Mi Día" del asesor: próximos pasos priorizados (next-best-action). ──
+   Traduce lo que ya calcula computeIngresos (índice hoy, pendientes de pago,
+   canceladas rehabilitables, brecha al siguiente bono) en una lista de acciones
+   ordenadas por impacto. El asesor ve su propia clave; la agencia pasa ?clave.
+   Núcleo del reposicionamiento "Sistema de Productividad Comercial": no muestra
+   datos, dice QUÉ HACER hoy para subir índice, bonos y conservación. */
+router.get('/ingresos/proximos-pasos', async (req, res) => {
+  try {
+    const scope = await resolveClaveScope(req, res);
+    if (!scope) return;
+    const clave = String(req.query.clave || scope.clave || '').toUpperCase();
+    if (!clave) return res.status(400).json({ error: 'Selecciona un asesor (clave) para ver sus próximos pasos' });
+    if (scope.restricted && scope.clave !== clave) return res.status(403).json({ error: 'Solo puedes ver tu propia clave' });
+    const [pir, personalizaPlanes, { agentes, primas, polizas }] = await Promise.all([getPirTablas(), getPersonalizaPlanes(), fetchIngresosData(clave)]);
+    if (!agentes.length) return res.status(404).json({ error: `No hay data Prudential para la clave ${clave}` });
+    const r = computeIngresos({ agente: agentes[0], primas, polizas, pir, personalizaPlanes });
+
+    const p4 = (n) => Math.round((Number(n) || 0) * 10000) / 10000;
+    const base = r.indice.baseAConservar || 0;
+    const hoyC = r.indice.hoy.baseConservada || 0;
+    const hoyP = r.indice.hoy.basePendiente || 0;
+    const rehabBase = r.accionables.rehabilitables.reduce((s, x) => s + (x.monto || 0), 0);
+    const techo = base > 0 ? Math.min(1, (hoyC + hoyP + rehabBase) / base) : 1;
+
+    const pasos = [];
+    /* A. Rehabilitar canceladas (una acción por cobertura; urgencia manda) */
+    for (const p of r.accionables.rehabilitables) {
+      const pesoUrg = p.urgencia === 'EXTREMA' ? 1000 : p.urgencia === 'ALTA' ? 700 : p.urgencia === 'MEDIA' ? 400 : 150;
+      const score = pesoUrg - (p.dias_para_vencer_etapa || 0) + (p.impacto_indice || 0) * 200;
+      pasos.push({
+        tipo: 'rehabilitar', prioridad: Math.round(score), urgencia: p.urgencia,
+        titulo: `Rehabilita la póliza ${p.poliza}${p.plan_id ? ' · ' + p.plan_id : ''}`,
+        detalle: `${REHAB_ETAPAS[p.etapa]?.metodo || p.etapa} · quedan ${p.dias_para_vencer_etapa}d para vencer la etapa`,
+        monto: p.monto, impacto_indice: p4(p.impacto_indice), vence_en_dias: p.dias_para_vencer_etapa,
+        cta: { accion: 'rehabilitar', poliza_id: p.id },
+      });
+    }
+    /* B. Cobrar pendientes de pago (vigentes que arrastran el índice) */
+    for (const p of r.accionables.pendientesPago) {
+      pasos.push({
+        tipo: 'cobrar', prioridad: Math.round(500 + (p.impacto_indice || 0) * 200), urgencia: 'MEDIA',
+        titulo: `Cobra la póliza ${p.poliza}${p.plan_id ? ' · ' + p.plan_id : ''}`,
+        detalle: `Vigente con pago pendiente${p.pagado_hasta ? ` (desde ${p.pagado_hasta})` : ''} · al cobrar sube tu índice`,
+        monto: p.monto, impacto_indice: p4(p.impacto_indice),
+        cta: { accion: 'cobrar', poliza_id: p.id },
+      });
+    }
+    /* C. Brecha al siguiente umbral de bono */
+    if (r.indice.umbral !== '0.94') {
+      const meta = r.indice.operativo < 0.86 ? 0.86 : r.indice.operativo < 0.90 ? 0.90 : 0.94;
+      pasos.push({
+        tipo: 'indice', prioridad: r.indice.operativo < 0.86 ? 900 : 300, urgencia: r.indice.operativo < 0.86 ? 'ALTA' : 'BAJA',
+        titulo: r.indice.operativo < 0.86
+          ? 'Sube tu índice a 86% para desbloquear tus bonos'
+          : `Sube tu índice a ${Math.round(meta * 100)}% para el siguiente rango de bono`,
+        detalle: `Índice operativo hoy ${(r.indice.operativo * 100).toFixed(1)}% · techo alcanzable ${(techo * 100).toFixed(1)}% si cobras y rehabilitas todo`,
+        monto: 0, meta, cta: { accion: 'ver-simulador' },
+      });
+    }
+    pasos.sort((a, b) => b.prioridad - a.prioridad);
+
+    res.json({
+      clave, agente: agentes[0].nombre, cuaderno: agentes[0].cuaderno,
+      indice: {
+        cobrado: p4(r.indice.hoy.actual), realista: p4(r.indice.hoy.conPendiente),
+        operativo: p4(r.indice.operativo), techo: p4(techo), umbral: r.indice.umbral, minimoBono: 0.86,
+      },
+      bono_trimestre: r.bonos.total_trimestre,
+      resumen: {
+        rehabilitables: r.accionables.rehabResumen.total, monto_rehab: round2sim(rehabBase),
+        urgentes: (r.accionables.rehabResumen.por_urgencia.EXTREMA || 0) + (r.accionables.rehabResumen.por_urgencia.ALTA || 0),
+        pendientes: r.accionables.pendientesPago.length,
+        monto_pendiente: round2sim(r.accionables.pendientesPago.reduce((s, x) => s + (x.monto || 0), 0)),
+      },
+      pasos: pasos.slice(0, 40),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* ── Incubadora de vendedores ───────────────────────────────────────────────
+   Analiza qué sostienen los MEJORES asesores (índice, prima nueva, disciplina
+   de rehabilitación) y lo convierte en un playbook + brechas para los nuevos.
+   Todo desde datos ya existentes (PIR Prudential); sin schema nuevo. Agencia
+   ve la promotoría completa; un asesor ve su propia brecha vs el top. */
+router.get('/incubadora', async (req, res) => {
+  try {
+    const scope = await resolveClaveScope(req, res);
+    if (!scope) return;
+    const [pir, personalizaPlanes, { agentes, primas, polizas }] = await Promise.all([getPirTablas(), getPersonalizaPlanes(), fetchIngresosData(null)]);
+    const filas = agentes
+      .filter(a => String(a.estatus || '').toUpperCase() !== 'EXTERNO')
+      .map(a => {
+        const r = computeIngresos({ agente: a, primas: primas.filter(p => p.clave === a.clave), polizas: polizas.filter(p => p.clave === a.clave), pir, personalizaPlanes });
+        return {
+          clave: a.clave, nombre: a.nombre, cuaderno: a.cuaderno, estatus: a.estatus,
+          mes_agente: r.agente.mes_agente, es_nuevo: r.agente.es_nuevo,
+          indice: r.indice.operativo, indice_cobrado: r.indice.hoy.actual,
+          prima_nueva: r.primas.pagadaInicialQ, prima_renov: r.primas.renovacionQ,
+          bono: r.bonos.total_trimestre, base: r.indice.baseAConservar,
+          rehab_urgentes: (r.accionables.rehabResumen.por_urgencia.EXTREMA || 0) + (r.accionables.rehabResumen.por_urgencia.ALTA || 0),
+          pendientes: r.accionables.pendientesPago.length,
+        };
+      });
+    const conNegocio = filas.filter(f => f.base > 0 || f.prima_nueva > 0);
+    const maxPrima = Math.max(1, ...conNegocio.map(f => f.prima_nueva));
+    const score = (f) => f.indice * 0.6 + (f.prima_nueva / maxPrima) * 0.4;
+    const ranked = [...conNegocio].sort((a, b) => score(b) - score(a)).map((f, i) => ({ ...f, score: Math.round(score(f) * 1000) / 1000, rank: i + 1 }));
+    const nTop = Math.min(ranked.length, Math.max(3, Math.ceil(ranked.length * 0.25)));
+    const top = ranked.slice(0, nTop), resto = ranked.slice(nTop);
+    const median = (arr, key) => { const s = arr.map(x => x[key]).sort((a, b) => a - b); return s.length ? s[Math.floor(s.length / 2)] : 0; };
+    const r2 = (n) => Math.round(n * 100) / 100;
+    const playbook = [
+      { metrica: 'Índice de conservación', fmt: 'pct', top: median(top, 'indice'), resto: median(resto, 'indice'),
+        regla: 'Los mejores sostienen su índice arriba del mínimo de bono (86%). Cobran y rehabilitan antes del cierre del trimestre.' },
+      { metrica: 'Prima nueva del trimestre', fmt: 'money', top: r2(median(top, 'prima_nueva')), resto: r2(median(resto, 'prima_nueva')),
+        regla: 'Venden negocio nuevo cada mes; no dependen solo de la renovación.' },
+      { metrica: 'Rehabilitaciones urgentes sin atender', fmt: 'num', menorEsMejor: true, top: median(top, 'rehab_urgentes'), resto: median(resto, 'rehab_urgentes'),
+        regla: 'No dejan vencer rehabilitaciones: mantienen en cero las urgentes acumuladas.' },
+      { metrica: 'Pólizas por cobrar sin atender', fmt: 'num', menorEsMejor: true, top: median(top, 'pendientes'), resto: median(resto, 'pendientes'),
+        regla: 'Cobran a tiempo: la pendiente de pago es la fuga #1 del índice.' },
+    ];
+    const benchmark = { indice_top: median(top, 'indice'), prima_top: r2(median(top, 'prima_nueva')) };
+    const gap = (f) => ({ ...f, brecha_indice: r2(Math.max(0, benchmark.indice_top - f.indice)), brecha_prima: r2(Math.max(0, benchmark.prima_top - f.prima_nueva)) });
+    const nuevos = ranked.filter(f => f.es_nuevo).map(gap);
+
+    if (scope.restricted) {
+      const yo = ranked.find(f => f.clave === scope.clave);
+      return res.json({ scope: 'asesor', benchmark, playbook, yo: yo ? gap(yo) : null, top: top.map(t => ({ nombre: t.nombre, indice: t.indice, prima_nueva: t.prima_nueva })) });
+    }
+    res.json({ scope: 'promotoria', total: ranked.length, top_n: nTop, benchmark, playbook, top, leaderboard: ranked, nuevos });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* ── Campañas de incentivos (Rumbo a la Grandeza, etc.) ──────────────────────
+   Se suben varias veces al año a crm_campanas; el motor calcula por agente su
+   Prima de Campaña, puntos y categoría desde la base de primas de FSC. */
+const { computeCampana } = require('../utils/campanas');
+
+router.get('/campanas', async (req, res) => {
+  try {
+    const { data, error } = await getDB().from('crm_campanas').select('id, nombre, slug, inicio, fin, activa').order('inicio', { ascending: false });
+    if (error) throw new Error(error.message);
+    res.json({ campanas: data || [] });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.get('/campanas/:slug/avance', async (req, res) => {
+  try {
+    const scope = await resolveClaveScope(req, res);
+    if (!scope) return;
+    const { data: camp, error: ce } = await getDB().from('crm_campanas').select('*').eq('slug', req.params.slug).maybeSingle();
+    if (ce) throw new Error(ce.message);
+    if (!camp) return res.status(404).json({ error: 'Campaña no encontrada' });
+    const def = camp.definicion || {};
+    const anio = new Date(camp.inicio).getFullYear();
+    const [pir, personalizaPlanes, { agentes, primas, polizas }] = await Promise.all([getPirTablas(), getPersonalizaPlanes(), fetchIngresosData(scope.clave)]);
+
+    const calc = (a) => {
+      const pr = primas.filter(p => p.clave === a.clave);
+      const r = computeIngresos({ agente: a, primas: pr, polizas: polizas.filter(p => p.clave === a.clave), pir, personalizaPlanes });
+      return { clave: a.clave, nombre: a.nombre, ...computeCampana(def, pr, { anio, indiceConservacion: r.indice.operativo }) };
+    };
+    const meta = { nombre: camp.nombre, slug: camp.slug, inicio: camp.inicio, fin: camp.fin, categorias: def.categorias };
+    const ponderacionPendiente = def.producto_map?._draft === true;
+
+    if (scope.restricted || req.query.clave) {
+      const clave = String(scope.clave || req.query.clave || '').toUpperCase();
+      const a = agentes.find(x => x.clave === clave);
+      if (!a) return res.status(404).json({ error: `Sin datos Prudential para ${clave}` });
+      return res.json({ campana: meta, avance: calc(a), ponderacion_pendiente: ponderacionPendiente });
+    }
+    const leaderboard = agentes
+      .filter(a => String(a.estatus || '').toUpperCase() !== 'EXTERNO')
+      .map(calc)
+      .filter(f => f.prima_campana > 0 || f.puntos > 0)
+      .sort((a, b) => b.puntos - a.puntos || b.prima_campana - a.prima_campana);
+    res.json({ campana: meta, leaderboard, ponderacion_pendiente: ponderacionPendiente });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -2375,6 +2688,126 @@ router.patch('/ingresos/poliza/:id', async (req, res) => {
     logActivity(req, accion === 'pago' ? 'cobro' : 'rehabilitar', 'poliza-indice', pol.id, `${pol.clave} · ${pol.poliza} → pagada hasta ${patch.pagado_hasta}`);
     res.json({ poliza: data[0] });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* ═══════════════ SEMILLAS · base de leads customizable ═══════════════
+   Base viva estilo hoja de cálculo, SOLO para nivel agencia (superadmin+agencia,
+   NO admin). Cada lead es una semilla con servicios derivados + bitácora.
+   Borrar columnas: SOLO Arturo (superadmin). */
+const soloAgencia = (req, res) => {
+  if (!['superadmin', 'agencia'].includes(req.user.role)) { res.status(403).json({ error: 'Sección exclusiva de nivel agencia' }); return false; }
+  return true;
+};
+
+router.get('/semillas/columnas', async (req, res) => {
+  if (!soloAgencia(req, res)) return;
+  const { data, error } = await getDB().from('semillas_columnas').select('*').order('orden');
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ columnas: data || [], puede_borrar_columnas: req.user.role === 'superadmin' });
+});
+
+router.post('/semillas/columnas', async (req, res) => {
+  if (!soloAgencia(req, res)) return;
+  const b = req.body;
+  if (!b.label) return res.status(400).json({ error: 'label requerido' });
+  const col_key = String(b.col_key || b.label).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 58) || ('col_' + Date.now());
+  const row = { col_key, label: b.label, tipo: b.tipo || 'text', formula: b.formula || null,
+    visible: b.visible !== false, orden: b.orden ?? 999, ancho: b.ancho || 160, grupo: b.grupo || 'Personalizadas' };
+  const { data, error } = await getDB().from('semillas_columnas').insert([row]).select();
+  if (error) return res.status(500).json({ error: error.message });
+  res.status(201).json({ columna: data[0] });
+});
+
+router.patch('/semillas/columnas/:id', async (req, res) => {
+  if (!soloAgencia(req, res)) return;
+  const patch = {};
+  for (const k of ['label', 'tipo', 'visible', 'orden', 'ancho', 'formula', 'grupo']) if (k in req.body) patch[k] = req.body[k];
+  const { data, error } = await getDB().from('semillas_columnas').update(patch).eq('id', req.params.id).select();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ columna: data[0] });
+});
+
+router.delete('/semillas/columnas/:id', async (req, res) => {
+  if (!soloAgencia(req, res)) return;
+  if (req.user.role !== 'superadmin') return res.status(403).json({ error: 'Solo Arturo puede eliminar columnas' });
+  const { error } = await getDB().from('semillas_columnas').delete().eq('id', req.params.id);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ok: true });
+});
+
+router.get('/semillas/leads', async (req, res) => {
+  if (!soloAgencia(req, res)) return;
+  try {
+    let leads = await fetchAllRows(() => getDB().from('semillas_leads')
+      .select('*, semillas_servicios(id,categoria,estatus,monto_estimado)').order('id'));
+    const q = String(req.query.q || '').toLowerCase();
+    if (q) leads = leads.filter(l => JSON.stringify(l.data).toLowerCase().includes(q));
+    res.json({ leads });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.get('/semillas/leads/:id', async (req, res) => {
+  if (!soloAgencia(req, res)) return;
+  const db = getDB();
+  const { data: lead } = await db.from('semillas_leads').select('*').eq('id', req.params.id).maybeSingle();
+  if (!lead) return res.status(404).json({ error: 'Semilla no encontrada' });
+  const [{ data: servicios }, { data: seguimientos }] = await Promise.all([
+    db.from('semillas_servicios').select('*').eq('lead_id', lead.id).order('monto_estimado', { ascending: false }),
+    db.from('semillas_seguimientos').select('*').eq('lead_id', lead.id).order('created_at', { ascending: false }),
+  ]);
+  res.json({ lead, servicios: servicios || [], seguimientos: seguimientos || [] });
+});
+
+router.patch('/semillas/leads/:id/celda', async (req, res) => {
+  if (!soloAgencia(req, res)) return;
+  const { key, valor } = req.body;
+  if (!key) return res.status(400).json({ error: 'key requerido' });
+  const db = getDB();
+  const { data: lead } = await db.from('semillas_leads').select('data').eq('id', req.params.id).maybeSingle();
+  if (!lead) return res.status(404).json({ error: 'Semilla no encontrada' });
+  const nuevo = { ...(lead.data || {}), [key]: valor };
+  const { data, error } = await db.from('semillas_leads').update({ data: nuevo, updated_at: new Date().toISOString() }).eq('id', req.params.id).select();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ lead: data[0] });
+});
+
+router.patch('/semillas/leads/:id', async (req, res) => {
+  if (!soloAgencia(req, res)) return;
+  const patch = { updated_at: new Date().toISOString() };
+  for (const k of ['estatus', 'owner']) if (k in req.body) patch[k] = req.body[k];
+  const { data, error } = await getDB().from('semillas_leads').update(patch).eq('id', req.params.id).select();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ lead: data[0] });
+});
+
+router.post('/semillas/leads/:id/servicios', async (req, res) => {
+  if (!soloAgencia(req, res)) return;
+  const b = req.body;
+  const row = { lead_id: Number(req.params.id), categoria: b.categoria || 'Servicio', estatus: b.estatus || 'detectado', monto_estimado: b.monto_estimado || 0, notas: b.notas || null };
+  const { data, error } = await getDB().from('semillas_servicios').insert([row]).select();
+  if (error) return res.status(500).json({ error: error.message });
+  res.status(201).json({ servicio: data[0] });
+});
+
+router.patch('/semillas/servicios/:id', async (req, res) => {
+  if (!soloAgencia(req, res)) return;
+  const patch = { updated_at: new Date().toISOString() };
+  for (const k of ['categoria', 'estatus', 'monto_estimado', 'notas']) if (k in req.body) patch[k] = req.body[k];
+  const { data, error } = await getDB().from('semillas_servicios').update(patch).eq('id', req.params.id).select();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ servicio: data[0] });
+});
+
+router.post('/semillas/leads/:id/seguimientos', async (req, res) => {
+  if (!soloAgencia(req, res)) return;
+  const b = req.body;
+  if (!b.texto) return res.status(400).json({ error: 'texto requerido' });
+  const row = { lead_id: Number(req.params.id), servicio_id: b.servicio_id || null, texto: b.texto, tipo: b.tipo || 'nota', user_id: req.user.id, user_name: req.user.name };
+  const { data, error } = await getDB().from('semillas_seguimientos').insert([row]).select();
+  if (error) return res.status(500).json({ error: error.message });
+  logActivity(req, 'crear', 'semilla-seguimiento', req.params.id, b.tipo || 'nota');
+  res.status(201).json({ seguimiento: data[0] });
 });
 
 module.exports = router;
