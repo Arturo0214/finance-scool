@@ -77,15 +77,35 @@ function computeIndice(polizas) {
   };
 }
 
-/* Estatus de conservación derivado a una fecha. Regla del Business Review
-   (verificada contra las 782 pólizas del corte T2-2026, 0 excepciones):
-   Cancelada → NO CONSERVADA; Vigente pagada más allá de la fecha → CONSERVADA;
-   Vigente con pago vencido → PENDIENTE DE PAGO. Evaluar con hoy da el índice
-   en vivo entre cortes: cambia solo al vencer pagos o al registrarse cobros. */
+/* PERIODO DE GRACIA Prudential: cuando vence la renovación (pagado_hasta) y no
+   se paga, la póliza NO se cancela de inmediato — tiene 30 días de gracia en los
+   que sigue vigente y basta pagar para conservarla. Pasados los 30 días sin pago
+   se cancela y pasa a rehabilitación. (Regla confirmada por mesa de control /
+   Flavio, ago-2026.) */
+const GRACIA_DIAS = 30;
+const finGracia = (pagadoHasta) => pagadoHasta ? new Date(new Date(pagadoHasta).getTime() + GRACIA_DIAS * 86400000) : null;
+
+/* Estatus de conservación derivado a una fecha:
+   Cancelada → NO CONSERVADA; Vigente y pagada más allá de la fecha → CONSERVADA;
+   Vigente con pago vencido pero DENTRO del periodo de gracia → PENDIENTE DE PAGO;
+   Vigente con la gracia ya vencida (>30 días sin pagar) → NO CONSERVADA (se toma
+   como cancelada, entra a rehabilitación). Evaluar con hoy da el índice en vivo
+   entre cortes. */
 function derivarEstatus(p, fecha = new Date()) {
   if (String(p.estatus_calculo || '').toUpperCase() !== 'VIGENTE') return 'NO CONSERVADA';
   if (p.pagado_hasta && new Date(p.pagado_hasta) > fecha) return 'CONSERVADA';
-  return 'PENDIENTE DE PAGO';
+  const fg = finGracia(p.pagado_hasta);
+  if (fg && fecha > fg) return 'NO CONSERVADA';   // gracia vencida → cancelada de facto
+  return 'PENDIENTE DE PAGO';                      // en periodo de gracia
+}
+
+/* Info del periodo de gracia de una póliza con pago vencido (para el tablero):
+   fecha tope real y días restantes. */
+function graciaInfo(p, fecha = new Date()) {
+  const fg = finGracia(p.pagado_hasta);
+  if (!fg) return null;
+  const dias = Math.ceil((fg - fecha) / 86400000);
+  return { fecha_limite_gracia: isoLocal(fg), dias_restantes_gracia: Math.max(0, dias), en_gracia: dias >= 0 };
 }
 
 /* Meses que cubre un pago según la frecuencia (para avanzar pagado_hasta) */
@@ -190,6 +210,30 @@ function ordenRehab(a, b) {
   return u !== 0 ? u : (b.monto || 0) - (a.monto || 0);
 }
 
+/* Número de póliza normalizado (el índice trae "12345.0" a veces) */
+const numPolizaId = (v) => String(v || '').replace(/\.0$/, '').trim();
+
+/* Agrupa coberturas por número de póliza. El índice/Business Review trae UNA
+   FILA POR COBERTURA (plan_id); para los tableros cada PÓLIZA debe verse una sola
+   vez con la prima = suma de sus coberturas (feedback repetido de Rodolfo y
+   Flavio: "la misma póliza aparece 3-4 veces con montos distintos"). Devuelve
+   [{ principal, coberturas:[...], monto }] donde principal = cobertura de mayor
+   base (para plan_id, fechas, etc.). */
+function agruparPorPoliza(lista) {
+  const m = new Map();
+  for (const p of lista) {
+    const num = numPolizaId(p.poliza) || `sinnum-${p.id}`;
+    if (!m.has(num)) m.set(num, { num, principal: p, coberturas: [], monto: 0 });
+    const g = m.get(num);
+    g.coberturas.push(p);
+    const base = Number(p.base_a_conservar_mxn) || 0;
+    g.monto += base;
+    if (base > (Number(g.principal.base_a_conservar_mxn) || 0)) g.principal = p;
+  }
+  for (const g of m.values()) g.monto = Math.round(g.monto * 100) / 100;
+  return [...m.values()];
+}
+
 /**
  * Trayectoria del índice a N meses. La ventana del índice solo crece (alta del
  * agente → hoy−15 meses) y las canceladas nunca salen de ella, así que el
@@ -255,9 +299,9 @@ function computeIngresos({ agente, primas, polizas, pir, personalizaPlanes }, ov
     estatus_conservacion: derivarEstatus(p, cierreQ),
     base_conservada_mxn: p.base_a_conservar_mxn,
   })));
-  const vencenAntesDelCierre = polizasHoy
-    .filter(p => p.estatus_conservacion === 'CONSERVADA' && derivarEstatus(p, cierreQ) !== 'CONSERVADA')
-    .map(p => ({ id: p.id, poliza: p.poliza, plan_id: p.plan_id, frecuencia_pago: p.frecuencia_pago, pagado_hasta: p.pagado_hasta, monto: round2(p.base_a_conservar_mxn), impacto_indice: indiceInfo.baseAConservar > 0 ? (Number(p.base_a_conservar_mxn) || 0) / indiceInfo.baseAConservar : 0 }))
+  const vencenAntesDelCierre = agruparPorPoliza(
+    polizasHoy.filter(p => p.estatus_conservacion === 'CONSERVADA' && derivarEstatus(p, cierreQ) !== 'CONSERVADA'))
+    .map(({ principal: p, coberturas, monto }) => ({ id: p.id, poliza: numPolizaId(p.poliza), plan_id: p.plan_id, coberturas: coberturas.length, frecuencia_pago: p.frecuencia_pago, pagado_hasta: p.pagado_hasta, monto, impacto_indice: indiceInfo.baseAConservar > 0 ? monto / indiceInfo.baseAConservar : 0 }))
     .sort((a, b) => b.monto - a.monto);
   /* extraConservada sube el índice simulado (que parte de la base conservada
      del corte). Para el operativo lo PENDIENTE DE PAGO ya está contado dentro
@@ -321,20 +365,35 @@ function computeIngresos({ agente, primas, polizas, pir, personalizaPlanes }, ov
   const impacto = (monto) => indiceInfo.baseAConservar > 0 ? monto / indiceInfo.baseAConservar : 0;
 
   /* Accionables sobre el estatus derivado a hoy, no el del corte: una póliza
-     cuyo pago venció después del corte también aparece por cobrar */
-  const pendientesPago = polizasHoy
-    .filter(p => p.estatus_conservacion === 'PENDIENTE DE PAGO')
-    .map(p => ({ id: p.id, poliza: p.poliza, plan_id: p.plan_id, forma_pago: p.forma_pago, frecuencia_pago: p.frecuencia_pago, pagado_hasta: p.pagado_hasta, monto: round2(p.base_a_conservar_mxn), impacto_indice: impacto(Number(p.base_a_conservar_mxn) || 0) }))
+     cuyo pago venció después del corte también aparece por cobrar. Agrupadas por
+     número de póliza (monto = suma de coberturas) e incluyen su PERIODO DE GRACIA
+     (fecha tope real + días restantes) — están vigentes, basta pagar. */
+  const pendientesPago = agruparPorPoliza(
+    polizasHoy.filter(p => p.estatus_conservacion === 'PENDIENTE DE PAGO'))
+    .map(({ principal: p, coberturas, monto }) => {
+      const g = graciaInfo(p, hoy) || {};
+      return { id: p.id, poliza: numPolizaId(p.poliza), plan_id: p.plan_id, coberturas: coberturas.length, forma_pago: p.forma_pago, frecuencia_pago: p.frecuencia_pago, pagado_hasta: p.pagado_hasta, monto, impacto_indice: impacto(monto),
+        en_gracia: g.en_gracia ?? null, fecha_limite_gracia: g.fecha_limite_gracia ?? null, dias_restantes_gracia: g.dias_restantes_gracia ?? null };
+    })
     .sort((a, b) => b.monto - a.monto);
 
   /* Rehabilitables: canceladas clasificadas por etapa (auto/correo/firma) y
-     urgencia. Se excluyen las VENCIDAS (+180 días, o PERSONALIZA +30). */
-  const rehabilitables = polizasHoy
-    .filter(p => p.estatus_conservacion === 'NO CONSERVADA' && p.fecha_ultima_cancelacion && !p.live_vigente)
-    .map(p => {
-      const c = clasificarRehabilitacion(p, hoy, personalizaC);
+     urgencia. Se excluyen las VENCIDAS (+180 días, o PERSONALIZA +30). Agrupadas
+     por número de póliza. Para una Vigente con la gracia ya vencida (no trae
+     fecha de cancelación del corte) se usa el FIN DE GRACIA como fecha efectiva
+     de cancelación, así entra a rehabilitación en lugar de quedarse "pendiente". */
+  const rehabilitables = agruparPorPoliza(
+    polizasHoy.filter(p => p.estatus_conservacion === 'NO CONSERVADA' && !p.live_vigente))
+    .map(({ principal: p, coberturas, monto }) => {
+      const esVigente = String(p.estatus_calculo || '').toUpperCase() === 'VIGENTE';
+      const finG = p.pagado_hasta && finGracia(p.pagado_hasta) ? isoLocal(finGracia(p.pagado_hasta)) : null;
+      // Vigente con gracia vencida: rehab desde el fin de gracia. Cancelada: la
+      // fecha de cancelación del corte (con fallback al fin de gracia).
+      const fechaCancel = esVigente ? finG : (p.fecha_ultima_cancelacion || finG);
+      if (!fechaCancel) return null;
+      const c = clasificarRehabilitacion({ ...p, fecha_ultima_cancelacion: fechaCancel }, hoy, personalizaC);
       if (!c) return null;
-      return { id: p.id, poliza: p.poliza, plan_id: p.plan_id, forma_pago: p.forma_pago, frecuencia_pago: p.frecuencia_pago, fecha_ultima_cancelacion: p.fecha_ultima_cancelacion, monto: round2(p.base_a_conservar_mxn), impacto_indice: impacto(Number(p.base_a_conservar_mxn) || 0), ...c };
+      return { id: p.id, poliza: numPolizaId(p.poliza), plan_id: p.plan_id, coberturas: coberturas.length, forma_pago: p.forma_pago, frecuencia_pago: p.frecuencia_pago, fecha_ultima_cancelacion: fechaCancel, monto, impacto_indice: impacto(monto), ...c };
     })
     .filter(r => r && r.rehabilitable)
     .sort(ordenRehab);
@@ -393,4 +452,4 @@ function computeIngresos({ agente, primas, polizas, pir, personalizaPlanes }, ov
   };
 }
 
-module.exports = { computeIngresos, computeIndice, derivarEstatus, proyectarTrayectoria, clasificarRehabilitacion, compilePersonaliza, esPersonalizaPlan, ordenRehab, REHAB_ETAPAS, URGENCIA_RANK, umbralDe, cuadernoKey, MESES_FRECUENCIA, PIR_DEFAULT };
+module.exports = { computeIngresos, computeIndice, derivarEstatus, graciaInfo, finGracia, GRACIA_DIAS, agruparPorPoliza, isoLocal, numPolizaId, proyectarTrayectoria, clasificarRehabilitacion, compilePersonaliza, esPersonalizaPlan, ordenRehab, REHAB_ETAPAS, URGENCIA_RANK, umbralDe, cuadernoKey, MESES_FRECUENCIA, PIR_DEFAULT };

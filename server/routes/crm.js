@@ -1686,7 +1686,7 @@ router.get('/activity', async (req, res) => {
    Data del Business Review migrada a crm_pru_* (server/migrate-ingresos.js).
    Asesores solo ven su propia clave (crm_agents.clave ↔ crm_pru_agentes.clave). */
 
-const { computeIngresos, computeIndice, proyectarTrayectoria, derivarEstatus, clasificarRehabilitacion, compilePersonaliza, ordenRehab, REHAB_ETAPAS, MESES_FRECUENCIA, PIR_DEFAULT } = require('../utils/ingresos');
+const { computeIngresos, computeIndice, proyectarTrayectoria, derivarEstatus, graciaInfo, clasificarRehabilitacion, compilePersonaliza, ordenRehab, finGracia, isoLocal, numPolizaId, REHAB_ETAPAS, MESES_FRECUENCIA, PIR_DEFAULT } = require('../utils/ingresos');
 
 let _pirCache = null;
 async function getPirTablas() {
@@ -1886,15 +1886,29 @@ router.get('/ingresos/rehabilitaciones', async (req, res) => {
     const rehabilitables = [], vencidas = [];
     const resumen = { total: 0, monto: 0, automatizables: 0,
       por_etapa: { AUTOMATICA: 0, CORREO: 0, FIRMA: 0 }, por_urgencia: { EXTREMA: 0, ALTA: 0, MEDIA: 0, BAJA: 0 } };
-    for (const p of polizas) {
-      if (derivarEstatus(p, hoy) !== 'NO CONSERVADA') continue;
-      if (p.live_vigente) continue; // ya revivió en la fuente viva: no es "por recuperar"
-      const c = clasificarRehabilitacion(p, hoy, personalizaC);
+    /* Una fila por PÓLIZA (agrupa coberturas por clave+número). La fecha de
+       cancelación efectiva usa el fin de gracia para Vigentes con gracia vencida. */
+    const candidatas = polizas.filter(p => derivarEstatus(p, hoy) === 'NO CONSERVADA' && !p.live_vigente);
+    const grupos = new Map();
+    for (const p of candidatas) {
+      const k = `${p.clave}|${numPolizaId(p.poliza)}`;
+      if (!grupos.has(k)) grupos.set(k, { principal: p, monto: 0, coberturas: 0 });
+      const g = grupos.get(k);
+      const base = Number(p.base_a_conservar_mxn) || 0;
+      g.monto += base; g.coberturas++;
+      if (base > (Number(g.principal.base_a_conservar_mxn) || 0)) g.principal = p;
+    }
+    for (const { principal: p, monto: montoRaw, coberturas } of grupos.values()) {
+      const esVigente = String(p.estatus_calculo || '').toUpperCase() === 'VIGENTE';
+      const finG = p.pagado_hasta && finGracia(p.pagado_hasta) ? isoLocal(finGracia(p.pagado_hasta)) : null;
+      const fechaCancel = esVigente ? finG : (p.fecha_ultima_cancelacion || finG);
+      if (!fechaCancel) continue;
+      const c = clasificarRehabilitacion({ ...p, fecha_ultima_cancelacion: fechaCancel }, hoy, personalizaC);
       if (!c) continue;
-      const monto = Math.round((Number(p.base_a_conservar_mxn) || 0) * 100) / 100;
+      const monto = Math.round(montoRaw * 100) / 100;
       const item = { id: p.id, clave: p.clave, agente: nombrePorClave.get(p.clave) || p.clave,
-        poliza: p.poliza, plan_id: p.plan_id, forma_pago: p.forma_pago, frecuencia_pago: p.frecuencia_pago,
-        fecha_ultima_cancelacion: p.fecha_ultima_cancelacion, monto, ...c };
+        poliza: numPolizaId(p.poliza), plan_id: p.plan_id, coberturas, forma_pago: p.forma_pago, frecuencia_pago: p.frecuencia_pago,
+        fecha_ultima_cancelacion: fechaCancel, monto, ...c };
       if (c.rehabilitable) {
         rehabilitables.push(item);
         resumen.total++; resumen.monto += monto;
@@ -2667,8 +2681,28 @@ router.get('/ingresos/poliza/:id/expediente', async (req, res) => {
       notes = (n || []).filter(x => String(x.texto || '').includes(`[Póliza ${numero}]`));
     }
     const personalizaPlanes = await getPersonalizaPlanes();
-    const rehab = clasificarRehabilitacion(ctx.pol, new Date(), compilePersonaliza(personalizaPlanes));
-    res.json({ indice: ctx.pol, numero, policy, notes, rehab });
+    const hoy = new Date();
+    /* Todas las coberturas de esta póliza (misma clave + número) para dar la
+       base TOTAL y el número de coberturas, no solo la fila abierta. */
+    const { data: coberturasRaw } = await ctx.db.from('crm_pru_polizas_indice').select('*')
+      .eq('clave', ctx.pol.clave).eq('poliza', ctx.pol.poliza);
+    const coberturas = (coberturasRaw && coberturasRaw.length) ? coberturasRaw : [ctx.pol];
+    const baseTotal = Math.round(coberturas.reduce((s, c) => s + (Number(c.base_a_conservar_mxn) || 0), 0) * 100) / 100;
+
+    /* Estatus DERIVADO a hoy (incluye periodo de gracia): una Vigente con pago
+       vencido pero <30 días está en gracia; con la gracia vencida se toma como
+       cancelada y entra a rehabilitación desde el fin de gracia. */
+    const estatusDerivado = derivarEstatus(ctx.pol, hoy);
+    const gracia = estatusDerivado === 'PENDIENTE DE PAGO' ? graciaInfo(ctx.pol, hoy) : null;
+    const esVigente = String(ctx.pol.estatus_calculo || '').toUpperCase() === 'VIGENTE';
+    const finG = ctx.pol.pagado_hasta && finGracia(ctx.pol.pagado_hasta) ? isoLocal(finGracia(ctx.pol.pagado_hasta)) : null;
+    const fechaCancelEfectiva = esVigente ? finG : (ctx.pol.fecha_ultima_cancelacion || finG);
+    const rehab = (estatusDerivado === 'NO CONSERVADA' && fechaCancelEfectiva)
+      ? clasificarRehabilitacion({ ...ctx.pol, fecha_ultima_cancelacion: fechaCancelEfectiva }, hoy, compilePersonaliza(personalizaPlanes))
+      : null;
+    res.json({ indice: ctx.pol, numero, policy, notes, rehab,
+      estatus_derivado: estatusDerivado, gracia, base_total: baseTotal,
+      coberturas: coberturas.length, fecha_cancelacion_efectiva: fechaCancelEfectiva });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

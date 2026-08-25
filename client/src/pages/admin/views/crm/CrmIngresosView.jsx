@@ -308,11 +308,11 @@ function RehabPanel({ data, isAgency, busy, onReload, openExpediente }) {
               {filtrados.map(r => (
                 <tr key={r.id}>
                   {!perAsesor && <td style={{ fontSize: 12, cursor: 'pointer' }} onClick={() => openExpediente(r.id)}>{r.agente}</td>}
-                  <td style={{ fontFamily: 'monospace', fontSize: 12.5, cursor: 'pointer' }} onClick={() => openExpediente(r.id)}>{r.poliza} <span style={{ opacity: 0.5 }}>{r.plan_id}</span></td>
+                  <td style={{ fontFamily: 'monospace', fontSize: 12.5, cursor: 'pointer' }} onClick={() => openExpediente(r.id)}>{r.poliza} <span style={{ opacity: 0.5 }}>{r.plan_id}{r.coberturas > 1 ? ` +${r.coberturas - 1}` : ''}</span></td>
                   <td style={{ cursor: 'pointer' }} onClick={() => openExpediente(r.id)}>{esVencidas ? <span className="sub">Vencida</span> : <EtapaBadge e={r.etapa} />}</td>
                   <td><UrgBadge u={r.urgencia} /></td>
                   <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{r.dias_desde_cancelacion}d</td>
-                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: r.dias_para_vencer_etapa <= 7 ? C.red : r.dias_para_vencer_etapa <= 20 ? '#B45309' : C.ink }}>{esVencidas ? '—' : `${r.dias_para_vencer_etapa}d`}</td>
+                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: r.dias_para_vencer_etapa <= 7 ? C.red : r.dias_para_vencer_etapa <= 20 ? '#B45309' : C.ink }}>{esVencidas ? '—' : <>{r.fecha_limite_etapa ? fmtDate(r.fecha_limite_etapa) : '—'} <span style={{ opacity: 0.6, fontSize: 11 }}>({r.dias_para_vencer_etapa}d)</span></>}</td>
                   <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(r.monto)}</td>
                   {isAgency && !esVencidas && (
                     <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
@@ -1024,10 +1024,11 @@ function PromotoriaSimulator({ promo, openExpediente }) {
           <span style={{ minWidth: 0 }}>
             <b style={{ cursor: 'pointer', textDecoration: 'underline', textDecorationColor: 'rgba(11,27,51,.25)' }}
               onClick={(ev) => { ev.stopPropagation(); openExpediente(p.id); }}>{p.poliza}</b>
-            {' '}<span style={{ fontSize: 11, color: C.textMuted }}>{p.plan_id}</span>
+            {' '}<span style={{ fontSize: 11, color: C.textMuted }}>{p.plan_id}{p.coberturas > 1 ? ` · ${p.coberturas} cob.` : ''}</span>
             <br /><span style={{ fontSize: 11, color: C.textMuted }}>{p.agente}</span>
             {val === 'rehabilitar' && <span style={{ marginLeft: 6 }}><UrgBadge u={p.urgencia} /></span>}
-            {val === 'rehabilitar' && p.dias_restantes != null && <span style={{ fontSize: 10.5, color: p.dias_restantes <= 7 ? C.red : p.dias_restantes <= 30 ? '#B45309' : C.textMuted, marginLeft: 6 }}>vence en {p.dias_restantes}d</span>}
+            {val === 'rehabilitar' && p.fecha_limite_etapa && <span style={{ fontSize: 10.5, color: p.dias_para_vencer_etapa <= 7 ? C.red : p.dias_para_vencer_etapa <= 20 ? '#B45309' : C.textMuted, marginLeft: 6 }}>{p.etapa_label} · tope {fmtDate(p.fecha_limite_etapa)}{p.dias_para_vencer_etapa != null ? ` (${p.dias_para_vencer_etapa}d)` : ''}</span>}
+            {val !== 'rehabilitar' && p.fecha_limite_gracia && <span style={{ fontSize: 10.5, color: p.dias_restantes_gracia <= 7 ? C.red : p.dias_restantes_gracia <= 15 ? '#B45309' : C.textMuted, marginLeft: 6 }}>gracia · tope {fmtDate(p.fecha_limite_gracia)} ({p.dias_restantes_gracia}d)</span>}
           </span>
         </span>
         <span style={{ textAlign: 'right', flexShrink: 0 }}><b>{fmtMoney(p.monto)}</b> <span style={{ color: C.green, fontSize: 11 }}>+{pct(p.impacto_indice, 2)}</span></span>
@@ -1548,8 +1549,9 @@ export default function CrmIngresosView({ isAgency }) {
             {polExp.loading ? (
               <div className="loading-wrap" style={{ minHeight: 160 }}><div className="spinner" /></div>
             ) : (() => {
-              const { indice, numero, policy, notes, rehab } = polExp.data;
-              const cancelada = String(indice.estatus_calculo || '').toUpperCase() !== 'VIGENTE';
+              const { indice, numero, policy, notes, rehab, estatus_derivado, gracia, base_total, coberturas, fecha_cancelacion_efectiva } = polExp.data;
+              const cancelada = estatus_derivado === 'NO CONSERVADA';
+              const enGracia = estatus_derivado === 'PENDIENTE DE PAGO';
               const cliente = policy?.crm_clients;
               const urgColor = rehab ? (URG_META[rehab.urgencia] || URG_META.BAJA).color : C.ink;
               return (
@@ -1558,7 +1560,8 @@ export default function CrmIngresosView({ isAgency }) {
                     <div>
                       <h2>Póliza {numero}</h2>
                       <div style={{ display: 'flex', gap: 8, marginTop: 5, alignItems: 'center', flexWrap: 'wrap' }}>
-                        {!cancelada && <span className="badge" style={{ background: C.amberBg, color: C.amber }}>Pendiente de pago</span>}
+                        {enGracia && <span className="badge" style={{ background: C.amberBg, color: C.amber }}>⏳ En periodo de gracia</span>}
+                        {base_total != null && <span style={{ fontSize: 11.5, color: C.textMuted }}>Base en el índice <b>{fmtMoney(base_total)}</b>{coberturas > 1 ? ` · ${coberturas} coberturas` : ''}</span>}
                         {cliente?.telefono && (
                           <a href={`https://wa.me/${String(cliente.telefono).replace(/\D/g, '')}`} target="_blank" rel="noreferrer"
                             style={{ color: '#25D366', fontWeight: 600, textDecoration: 'none', fontSize: 12.5 }}>WhatsApp ↗</a>
@@ -1568,13 +1571,24 @@ export default function CrmIngresosView({ isAgency }) {
                     <button className="close-btn" onClick={() => setPolExp(null)}><X size={20} /></button>
                   </div>
                   <div className="modal-body">
+                    {/* Banner de PERIODO DE GRACIA — vigente con pago vencido pero <30 días */}
+                    {enGracia && gracia && (
+                      <div style={{ border: `1px solid ${C.amber}55`, background: `${C.amber}10`, borderRadius: 12, padding: '12px 14px', marginBottom: 14 }}>
+                        <div style={{ fontSize: 15, fontWeight: 700, color: '#B45309', display: 'flex', alignItems: 'center', gap: 7 }}>
+                          ⏳ En periodo de gracia · fecha tope {gracia.fecha_limite_gracia ? fmtDate(gracia.fecha_limite_gracia) : '—'}
+                        </div>
+                        <div style={{ fontSize: 13, marginTop: 4, color: C.ink }}>
+                          Vigente pero con el pago vencido. Quedan <b style={{ color: gracia.dias_restantes_gracia <= 7 ? C.red : '#B45309' }}>{gracia.dias_restantes_gracia} días</b> de gracia (30 días desde {fmtDate(indice.pagado_hasta)}). Si se paga sigue conservada; si no, pasará a rehabilitación.
+                        </div>
+                      </div>
+                    )}
                     {/* Banner de cancelación / rehabilitación — grande y visible */}
                     {cancelada && (
                       <div style={{ border: `1px solid ${urgColor}55`, background: `${urgColor}10`, borderRadius: 12, padding: '12px 14px', marginBottom: 14 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
                           <div>
                             <div style={{ fontSize: 15, fontWeight: 700, color: urgColor, display: 'flex', alignItems: 'center', gap: 7 }}>
-                              <AlertTriangle size={16} /> Cancelada el {indice.fecha_ultima_cancelacion ? fmtDate(indice.fecha_ultima_cancelacion) : 'fecha no disponible'}
+                              <AlertTriangle size={16} /> Cancelada el {fecha_cancelacion_efectiva ? fmtDate(fecha_cancelacion_efectiva) : (indice.fecha_ultima_cancelacion ? fmtDate(indice.fecha_ultima_cancelacion) : 'fecha no disponible')}
                             </div>
                             {rehab
                               ? <div style={{ fontSize: 13, marginTop: 4, color: C.ink }}>
@@ -1969,7 +1983,8 @@ export default function CrmIngresosView({ isAgency }) {
               {detail.accionables.pendientesPago.length === 0 && <p className="empty">Nada pendiente 🎉</p>}
               {detail.accionables.pendientesPago.slice(0, 8).map(p => (
                 <div key={p.id} className="crm-mc-row" style={{ borderBottom: '1px solid rgba(11,27,51,.06)', padding: '7px 0' }}>
-                  <span>Póliza <b>{p.poliza}</b> <span style={{ fontSize: 11, color: C.textMuted }}>{p.plan_id} · pagada hasta {fmtDate(p.pagado_hasta)}</span></span>
+                  <span>Póliza <b>{p.poliza}</b> <span style={{ fontSize: 11, color: C.textMuted }}>{p.plan_id}{p.coberturas > 1 ? ` · ${p.coberturas} cob.` : ''} · pagada hasta {fmtDate(p.pagado_hasta)}</span>
+                    {p.fecha_limite_gracia && <><br /><span style={{ fontSize: 10.5, color: p.dias_restantes_gracia <= 7 ? C.red : p.dias_restantes_gracia <= 15 ? '#B45309' : C.textMuted }}>⏳ Periodo de gracia · vence {fmtDate(p.fecha_limite_gracia)} ({p.dias_restantes_gracia} días)</span></>}</span>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <b>{fmtMoney(p.monto)} <span style={{ color: C.green, fontSize: 11 }}>+{pct(p.impacto_indice, 1)}</span></b>
                     {isAgency && <button className="btn-secondary" style={{ padding: '3px 9px', fontSize: 11.5 }} onClick={() => registrar(p, 'pago')}>Registrar cobro</button>}
@@ -1983,7 +1998,8 @@ export default function CrmIngresosView({ isAgency }) {
               {detail.accionables.rehabilitables.length === 0 && <p className="empty">Sin canceladas recientes</p>}
               {detail.accionables.rehabilitables.slice(0, 8).map(p => (
                 <div key={p.id} className="crm-mc-row" style={{ borderBottom: '1px solid rgba(11,27,51,.06)', padding: '7px 0' }}>
-                  <span>Póliza <b>{p.poliza}</b> <span style={{ fontSize: 11, color: C.textMuted }}>{p.plan_id} · cancelada {fmtDate(p.fecha_ultima_cancelacion)}</span></span>
+                  <span>Póliza <b>{p.poliza}</b> <span style={{ fontSize: 11, color: C.textMuted }}>{p.plan_id}{p.coberturas > 1 ? ` · ${p.coberturas} cob.` : ''} · cancelada {fmtDate(p.fecha_ultima_cancelacion)}</span>
+                    {p.fecha_limite_etapa && <><br /><span style={{ fontSize: 10.5, color: p.dias_para_vencer_etapa <= 7 ? C.red : p.dias_para_vencer_etapa <= 20 ? '#B45309' : C.textMuted }}>♻️ {p.etapa_label} · fecha tope {fmtDate(p.fecha_limite_etapa)} ({p.dias_para_vencer_etapa} días)</span></>}</span>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <b>{fmtMoney(p.monto)} <span style={{ color: C.green, fontSize: 11 }}>+{pct(p.impacto_indice, 1)}</span></b>
                     {isAgency && <button className="btn-secondary" style={{ padding: '3px 9px', fontSize: 11.5 }} onClick={() => registrar(p, 'rehabilitar')}>Rehabilitada</button>}
