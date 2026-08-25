@@ -148,8 +148,11 @@ async function fetchAllRows(build) {
 const monthOf = (dateStr) => (dateStr ? parseInt(String(dateStr).slice(5, 7), 10) : null);
 const yearOf = (dateStr) => (dateStr ? parseInt(String(dateStr).slice(0, 4), 10) : null);
 
-/* ── KPIs de un conjunto de pólizas para un año ── */
-function computeKpis(policies, goals, anio, pruPrimas = []) {
+/* ── KPIs de un conjunto de pólizas para un año ──
+   idxOficial (crm_pru_polizas_indice vía computeIndice): índice de conservación
+   oficial del Business Review Prudential. Cuando existe MANDA sobre lo derivado
+   de crm_policies — es la única fuente que cuadra con el Excel de Prudential. */
+function computeKpis(policies, goals, anio, pruPrimas = [], idxOficial = null) {
   const months = Array.from({ length: 12 }, (_, i) => ({
     mes: i + 1,
     primaNueva: 0,        // pagada, tipo nueva
@@ -185,16 +188,23 @@ function computeKpis(policies, goals, anio, pruPrimas = []) {
     }
   }
 
-  /* Cortes oficiales Prudential (crm_pru_primas): en los meses con corte, la
-     prima pagada inicial/renovación reportada por Prudential ES la venta real
-     del mes — sustituye lo derivado de pólizas (que solo trae el índice de
-     conservación y deja las ventas nuevas en 0). */
-  for (const pr of pruPrimas) {
-    if (Number(pr.anio) !== anio) continue;
-    const m = months[Number(pr.mes) - 1];
-    if (!m) continue;
-    m.primaNueva = Number(pr.prima_pagada_inicial) || 0;
-    m.primaRenovacion = Number(pr.prima_pagada_renovacion) || 0;
+  /* Cortes oficiales Prudential (crm_pru_primas): la prima pagada inicial/
+     renovación reportada por Prudential ES la venta real. Para un agente CON
+     datos oficiales, el Business Review usa EXCLUSIVAMENTE los cortes: se
+     descarta lo derivado de crm_policies, que puede traer renovaciones con
+     fecha de pago futura y por lo tanto inflar la cartera (caso reportado por
+     mesa de control: Gaby/Rodolfo con renovaciones de sep-dic contadas como ya
+     pagadas). Sin datos oficiales, se conserva lo capturado en el CRM. */
+  const tieneOficial = pruPrimas.some(pr => Number(pr.anio) === anio);
+  if (tieneOficial) {
+    for (const m of months) { m.primaNueva = 0; m.primaRenovacion = 0; }
+    for (const pr of pruPrimas) {
+      if (Number(pr.anio) !== anio) continue;
+      const m = months[Number(pr.mes) - 1];
+      if (!m) continue;
+      m.primaNueva = Number(pr.prima_pagada_inicial) || 0;
+      m.primaRenovacion = Number(pr.prima_pagada_renovacion) || 0;
+    }
   }
 
   for (const g of goals) {
@@ -205,6 +215,15 @@ function computeKpis(policies, goals, anio, pruPrimas = []) {
   const totalRenovacion = months.reduce((s, m) => s + m.primaRenovacion, 0);
   const totalMeta = months.reduce((s, m) => s + m.meta, 0);
   const totalPipeline = months.reduce((s, m) => s + m.pipeline, 0);
+
+  /* Índice de conservación: si hay corte oficial de Prudential, ese manda
+     (base a conservar / conservada / pendiente vienen del detalle por póliza,
+     crm_pru_polizas_indice). Solo sin oficial se usa lo derivado de crm_policies. */
+  if (idxOficial) {
+    baseConservar = idxOficial.baseAConservar || 0;
+    baseConservada = idxOficial.baseConservada || 0;
+    basePendiente = idxOficial.basePendiente || 0;
+  }
   const indiceActual = baseConservar > 0 ? baseConservada / baseConservar : 1;
   const indiceProyectado = baseConservar > 0 ? (baseConservada + basePendiente) / baseConservar : 1;
 
@@ -1013,23 +1032,31 @@ async function loadAgentData(db, anio, agentIds = null) {
   if (agentIds) agentsQ = agentsQ.in('id', agentIds);
   const { data: agents } = await agentsQ;
   const ids = (agents || []).map(a => a.id);
-  if (!ids.length) return { agents: [], policies: [], goals: [], clients: [] };
+  if (!ids.length) return { agents: [], policies: [], goals: [], clients: [], pruPrimas: [], indiceOficial: {} };
 
   const claves = (agents || []).map(a => a.clave).filter(Boolean);
-  const [policies, clients, { data: goals }, { data: pruPrimas }] = await Promise.all([
+  const [policies, clients, { data: goals }, { data: pruPrimas }, pruPolizas] = await Promise.all([
     fetchAllRows(() => db.from('crm_policies').select('*').in('agent_id', ids).order('id')),
     fetchAllRows(() => db.from('crm_clients').select('id, agent_id, etapa').in('agent_id', ids).order('id')),
     db.from('crm_goals').select('*').eq('anio', anio).in('agent_id', ids),
     claves.length ? db.from('crm_pru_primas').select('*').eq('anio', anio).in('clave', claves) : Promise.resolve({ data: [] }),
+    claves.length ? fetchAllRows(() => db.from('crm_pru_polizas_indice').select('clave, base_a_conservar_mxn, base_conservada_mxn, estatus_conservacion').in('clave', claves).order('clave')) : Promise.resolve([]),
   ]);
-  return { agents: agents || [], policies, goals: goals || [], clients, pruPrimas: pruPrimas || [] };
+  /* Índice de conservación oficial por clave (fuente de verdad del Business
+     Review). Un mismo agente puede traer varios cortes; el último periodo es el
+     vigente, pero el detalle importado ya trae solo el corte actual. */
+  const polizasPorClave = {};
+  for (const p of (pruPolizas || [])) (polizasPorClave[p.clave] = polizasPorClave[p.clave] || []).push(p);
+  const indiceOficial = {};
+  for (const clave of Object.keys(polizasPorClave)) indiceOficial[clave] = computeIndice(polizasPorClave[clave]);
+  return { agents: agents || [], policies, goals: goals || [], clients, pruPrimas: pruPrimas || [], indiceOficial };
 }
 
-function buildAgentSummary(agent, policies, goals, clients, anio, pruPrimas = []) {
+function buildAgentSummary(agent, policies, goals, clients, anio, pruPrimas = [], indiceOficial = {}) {
   const own = policies.filter(p => p.agent_id === agent.id);
   const ownGoals = goals.filter(g => g.agent_id === agent.id);
   const ownClients = clients.filter(c => c.agent_id === agent.id);
-  const kpis = computeKpis(own, ownGoals, anio, pruPrimas.filter(pr => pr.clave && pr.clave === agent.clave));
+  const kpis = computeKpis(own, ownGoals, anio, pruPrimas.filter(pr => pr.clave && pr.clave === agent.clave), indiceOficial[agent.clave] || null);
   const forecast = computeForecast(kpis, anio);
 
   // Bonos: trimestre actual
@@ -1065,9 +1092,9 @@ router.get('/dashboard', async (req, res) => {
   if (!scope) return;
   const anio = parseInt(req.query.anio) || new Date().getFullYear();
   const db = getDB();
-  const { agents, policies, goals, clients, pruPrimas } = await loadAgentData(db, anio, scope.restricted ? [scope.agentId] : null);
+  const { agents, policies, goals, clients, pruPrimas, indiceOficial } = await loadAgentData(db, anio, scope.restricted ? [scope.agentId] : null);
 
-  const porAgente = agents.map(a => buildAgentSummary(a, policies, goals, clients, anio, pruPrimas));
+  const porAgente = agents.map(a => buildAgentSummary(a, policies, goals, clients, anio, pruPrimas, indiceOficial));
 
   // Totales de la promotoría: suma de los meses por agente (respeta los cortes Prudential)
   const globalKpis = aggregateKpis(porAgente.map(a => a.kpis));
@@ -1091,9 +1118,9 @@ router.get('/agents/:id/summary', async (req, res) => {
   if (scope.restricted && agentId !== scope.agentId) return res.status(403).json({ error: 'Sin acceso a este asesor' });
   const anio = parseInt(req.query.anio) || new Date().getFullYear();
   const db = getDB();
-  const { agents, policies, goals, clients, pruPrimas } = await loadAgentData(db, anio, [agentId]);
+  const { agents, policies, goals, clients, pruPrimas, indiceOficial } = await loadAgentData(db, anio, [agentId]);
   if (!agents.length) return res.status(404).json({ error: 'Asesor no encontrado' });
-  res.json({ anio, ...buildAgentSummary(agents[0], policies, goals, clients, anio, pruPrimas) });
+  res.json({ anio, ...buildAgentSummary(agents[0], policies, goals, clients, anio, pruPrimas, indiceOficial) });
 });
 
 /* ═══════════════ CONSULTORES (tablero PRU / Insignia Life) ═══════════════
@@ -1236,9 +1263,9 @@ router.delete('/products/:id', async (req, res) => {
 /* ═══════════════ REPORTE PDF DEL BUSINESS REVIEW ═══════════════ */
 
 async function buildReportData(db, agentId, anio) {
-  const { agents, policies, goals, clients, pruPrimas } = await loadAgentData(db, anio, [agentId]);
+  const { agents, policies, goals, clients, pruPrimas, indiceOficial } = await loadAgentData(db, anio, [agentId]);
   if (!agents.length) return null;
-  const summary = buildAgentSummary(agents[0], policies, goals, clients, anio, pruPrimas);
+  const summary = buildAgentSummary(agents[0], policies, goals, clients, anio, pruPrimas, indiceOficial);
 
   // Renovaciones próximas 90 días (descifrando nombre de cliente vía join simple)
   const today = new Date().toISOString().slice(0, 10);
@@ -1659,7 +1686,7 @@ router.get('/activity', async (req, res) => {
    Data del Business Review migrada a crm_pru_* (server/migrate-ingresos.js).
    Asesores solo ven su propia clave (crm_agents.clave ↔ crm_pru_agentes.clave). */
 
-const { computeIngresos, proyectarTrayectoria, derivarEstatus, clasificarRehabilitacion, compilePersonaliza, ordenRehab, REHAB_ETAPAS, MESES_FRECUENCIA, PIR_DEFAULT } = require('../utils/ingresos');
+const { computeIngresos, computeIndice, proyectarTrayectoria, derivarEstatus, clasificarRehabilitacion, compilePersonaliza, ordenRehab, REHAB_ETAPAS, MESES_FRECUENCIA, PIR_DEFAULT } = require('../utils/ingresos');
 
 let _pirCache = null;
 async function getPirTablas() {
