@@ -1686,7 +1686,7 @@ router.get('/activity', async (req, res) => {
    Data del Business Review migrada a crm_pru_* (server/migrate-ingresos.js).
    Asesores solo ven su propia clave (crm_agents.clave ↔ crm_pru_agentes.clave). */
 
-const { computeIngresos, computeIndice, proyectarTrayectoria, derivarEstatus, graciaInfo, clasificarRehabilitacion, compilePersonaliza, ordenRehab, finGracia, isoLocal, numPolizaId, REHAB_ETAPAS, MESES_FRECUENCIA, PIR_DEFAULT } = require('../utils/ingresos');
+const { computeIngresos, computeIndice, proyectarTrayectoria, derivarEstatus, estatusHoy, esTerminalReporte, graciaInfo, clasificarRehabilitacion, compilePersonaliza, ordenRehab, finGracia, isoLocal, numPolizaId, REHAB_ETAPAS, MESES_FRECUENCIA, PIR_DEFAULT } = require('../utils/ingresos');
 
 let _pirCache = null;
 async function getPirTablas() {
@@ -1723,15 +1723,20 @@ async function resolveClaveScope(req, res) {
    del Business Review y puede quedar desfasado): una cobertura cuyo número de
    póliza ya está vigente aquí NO debe listarse "por recuperar", aunque el corte
    aún la traiga cancelada. Caso reportado por mesa de control: póliza 96959. */
-async function fetchPolizasVigentesLive(db) {
-  const rows = await fetchAllRows(() => db.from('crm_policies').select('poliza, estatus').order('id'));
-  const vig = new Set();
+async function fetchEstadoVivoPorPoliza(db) {
+  const rows = await fetchAllRows(() => db.from('crm_policies').select('poliza, estatus, estatus_reporte').order('id'));
+  const map = new Map();
   for (const r of rows) {
-    if (!['pagada', 'pendiente_pago'].includes(r.estatus)) continue;
     const num = String(decryptFields(r, 'crm_policies').poliza || '').replace(/\.0$/, '').trim();
-    if (num) vig.add(num);
+    if (!num) continue;
+    const prev = map.get(num);
+    if (!prev) { map.set(num, { estatus: r.estatus, estatus_reporte: r.estatus_reporte || null }); continue; }
+    // Consolida varias filas del mismo número: gana el estatus vigente y se
+    // conserva el estatus_reporte más informativo.
+    if (!prev.estatus_reporte && r.estatus_reporte) prev.estatus_reporte = r.estatus_reporte;
+    if (['pagada', 'pendiente_pago'].includes(r.estatus) && !['pagada', 'pendiente_pago'].includes(prev.estatus)) prev.estatus = r.estatus;
   }
-  return vig;
+  return map;
 }
 
 const numPoliza = (v) => String(v || '').replace(/\.0$/, '').trim();
@@ -1742,15 +1747,21 @@ async function fetchIngresosData(clave) {
   let qP = db.from('crm_pru_primas').select('*');
   let qZ = db.from('crm_pru_polizas_indice').select('*');
   if (clave) { qA = qA.eq('clave', clave); qP = qP.eq('clave', clave); qZ = qZ.eq('clave', clave); }
-  const [{ data: agentes, error: e1 }, { data: primas, error: e2 }, { data: polizas, error: e3 }, vigentesLive] =
-    await Promise.all([qA, qP, qZ, fetchPolizasVigentesLive(db)]);
+  const [{ data: agentes, error: e1 }, { data: primas, error: e2 }, { data: polizas, error: e3 }, estadoVivo] =
+    await Promise.all([qA, qP, qZ, fetchEstadoVivoPorPoliza(db)]);
   const err = e1 || e2 || e3;
   if (err) throw new Error(err.message);
-  /* Marca las coberturas cuya póliza ya revivió/está vigente en crm_policies:
-     downstream las excluye del listado de rehabilitación (sin tocar el índice). */
-  const reconciliadas = (polizas || []).map(p => ({
-    ...p, live_vigente: vigentesLive.has(numPoliza(p.poliza)),
-  }));
+  /* Overlay del estado vivo (Reporte de pólizas / crm_policies), más fresco que
+     el corte: live_vigente (revivió) excluye de rehabilitación; estatus_reporte
+     distingue rescatadas (terminales, no rehabilitables) de canceladas por impago
+     y detecta EN VIGOR para dar por conservada una que el corte traía cancelada. */
+  const reconciliadas = (polizas || []).map(p => {
+    const ev = estadoVivo.get(numPoliza(p.poliza));
+    return { ...p,
+      live_vigente: ev ? ['pagada', 'pendiente_pago'].includes(ev.estatus) : false,
+      live_estatus: ev ? ev.estatus : null,
+      estatus_reporte: ev ? ev.estatus_reporte : null };
+  });
   return { agentes: agentes || [], primas: primas || [], polizas: reconciliadas };
 }
 
@@ -1888,7 +1899,7 @@ router.get('/ingresos/rehabilitaciones', async (req, res) => {
       por_etapa: { AUTOMATICA: 0, CORREO: 0, FIRMA: 0 }, por_urgencia: { EXTREMA: 0, ALTA: 0, MEDIA: 0, BAJA: 0 } };
     /* Una fila por PÓLIZA (agrupa coberturas por clave+número). La fecha de
        cancelación efectiva usa el fin de gracia para Vigentes con gracia vencida. */
-    const candidatas = polizas.filter(p => derivarEstatus(p, hoy) === 'NO CONSERVADA' && !p.live_vigente);
+    const candidatas = polizas.filter(p => estatusHoy(p, hoy) === 'NO CONSERVADA' && !p.live_vigente && !esTerminalReporte(p));
     const grupos = new Map();
     for (const p of candidatas) {
       const k = `${p.clave}|${numPolizaId(p.poliza)}`;

@@ -99,6 +99,29 @@ function derivarEstatus(p, fecha = new Date()) {
   return 'PENDIENTE DE PAGO';                      // en periodo de gracia
 }
 
+/* Estatus terminales del "Reporte de pólizas" Prudential que NO son
+   rehabilitables (a diferencia de CANCELADA por impago, que sí): el cliente ya
+   rescató, la póliza no se emitió/no se tomó, o caducó. */
+const TERMINAL_REPORTE = new Set(['RESCATADA', 'PÓLIZA NO EMITIDA', 'NO TOMADA', 'CADUCADA']);
+const esTerminalReporte = (p) => TERMINAL_REPORTE.has(String(p && p.estatus_reporte || '').toUpperCase());
+
+/* Estatus de conservación derivado con OVERLAY del estado vivo (Reporte de
+   pólizas / crm_policies), que es más fresco que el corte del Business Review:
+   - Reporte EN VIGOR (o crm 'pagada'): la póliza está activa. Si el corte la
+     daba por NO CONSERVADA (cancelada o gracia vencida) en realidad sobrevivió
+     (se pagó) → CONSERVADA. Si estaba en gracia, sigue en gracia.
+   - Reporte terminal (rescatada/no emitida/no tomada/caducada) o CANCELADA →
+     NO CONSERVADA.
+   Sin dato del reporte, cae al derivado puro del corte. */
+function estatusHoy(p, fecha = new Date()) {
+  const base = derivarEstatus(p, fecha);
+  const rep = String(p.estatus_reporte || '').toUpperCase();
+  const live = String(p.live_estatus || '').toLowerCase();
+  if (rep === 'EN VIGOR' || live === 'pagada') return base === 'NO CONSERVADA' ? 'CONSERVADA' : base;
+  if (TERMINAL_REPORTE.has(rep) || rep === 'CANCELADA') return 'NO CONSERVADA';
+  return base;
+}
+
 /* Info del periodo de gracia de una póliza con pago vencido (para el tablero):
    fecha tope real y días restantes. */
 function graciaInfo(p, fecha = new Date()) {
@@ -286,7 +309,7 @@ function computeIngresos({ agente, primas, polizas, pir, personalizaPlanes }, ov
   const hoyRef = new Date();
   const polizasHoy = polizas.map(p => ({
     ...p,
-    estatus_conservacion: derivarEstatus(p, hoyRef),
+    estatus_conservacion: estatusHoy(p, hoyRef),
     base_conservada_mxn: p.base_a_conservar_mxn,
   }));
   const indiceHoyInfo = computeIndice(polizasHoy);
@@ -296,11 +319,11 @@ function computeIngresos({ agente, primas, polizas, pir, personalizaPlanes }, ov
   const cierreQ = finTrimestre(hoyRef);
   const indiceCierre = computeIndice(polizas.map(p => ({
     ...p,
-    estatus_conservacion: derivarEstatus(p, cierreQ),
+    estatus_conservacion: estatusHoy(p, cierreQ),
     base_conservada_mxn: p.base_a_conservar_mxn,
   })));
   const vencenAntesDelCierre = agruparPorPoliza(
-    polizasHoy.filter(p => p.estatus_conservacion === 'CONSERVADA' && derivarEstatus(p, cierreQ) !== 'CONSERVADA'))
+    polizasHoy.filter(p => p.estatus_conservacion === 'CONSERVADA' && estatusHoy(p, cierreQ) !== 'CONSERVADA'))
     .map(({ principal: p, coberturas, monto }) => ({ id: p.id, poliza: numPolizaId(p.poliza), plan_id: p.plan_id, coberturas: coberturas.length, frecuencia_pago: p.frecuencia_pago, pagado_hasta: p.pagado_hasta, monto, impacto_indice: indiceInfo.baseAConservar > 0 ? monto / indiceInfo.baseAConservar : 0 }))
     .sort((a, b) => b.monto - a.monto);
   /* extraConservada sube el índice simulado (que parte de la base conservada
@@ -383,7 +406,7 @@ function computeIngresos({ agente, primas, polizas, pir, personalizaPlanes }, ov
      fecha de cancelación del corte) se usa el FIN DE GRACIA como fecha efectiva
      de cancelación, así entra a rehabilitación en lugar de quedarse "pendiente". */
   const rehabilitables = agruparPorPoliza(
-    polizasHoy.filter(p => p.estatus_conservacion === 'NO CONSERVADA' && !p.live_vigente))
+    polizasHoy.filter(p => p.estatus_conservacion === 'NO CONSERVADA' && !p.live_vigente && !esTerminalReporte(p)))
     .map(({ principal: p, coberturas, monto }) => {
       const esVigente = String(p.estatus_calculo || '').toUpperCase() === 'VIGENTE';
       const finG = p.pagado_hasta && finGracia(p.pagado_hasta) ? isoLocal(finGracia(p.pagado_hasta)) : null;
@@ -452,4 +475,4 @@ function computeIngresos({ agente, primas, polizas, pir, personalizaPlanes }, ov
   };
 }
 
-module.exports = { computeIngresos, computeIndice, derivarEstatus, graciaInfo, finGracia, GRACIA_DIAS, agruparPorPoliza, isoLocal, numPolizaId, proyectarTrayectoria, clasificarRehabilitacion, compilePersonaliza, esPersonalizaPlan, ordenRehab, REHAB_ETAPAS, URGENCIA_RANK, umbralDe, cuadernoKey, MESES_FRECUENCIA, PIR_DEFAULT };
+module.exports = { computeIngresos, computeIndice, derivarEstatus, estatusHoy, esTerminalReporte, TERMINAL_REPORTE, graciaInfo, finGracia, GRACIA_DIAS, agruparPorPoliza, isoLocal, numPolizaId, proyectarTrayectoria, clasificarRehabilitacion, compilePersonaliza, esPersonalizaPlan, ordenRehab, REHAB_ETAPAS, URGENCIA_RANK, umbralDe, cuadernoKey, MESES_FRECUENCIA, PIR_DEFAULT };

@@ -123,7 +123,7 @@ async function importarReporte(db, { workbook, archivo, usuario, userId }) {
     const existentes = polPorNumero.get(numero);
     if (existentes && existentes.length) {
       for (const ex of existentes) {
-        const patch = { updated_at: nowIso() };
+        const patch = { updated_at: nowIso(), estatus_reporte: estatusOrig };
         if (contenedores.has(ex.client_id)) patch.client_id = clientId;
         if (fechaRenov) patch.fecha_renovacion = fechaRenov;
         if (CANCELA.has(estatusOrig) && ex.estatus !== 'cancelada') { patch.estatus = 'cancelada'; resumen.canceladas++; }
@@ -137,7 +137,7 @@ async function importarReporte(db, { workbook, archivo, usuario, userId }) {
       const { data, error } = await db.from('crm_policies').insert([encryptFields({
         agent_id: agente.id, client_id: clientId, poliza: numero,
         plan: null, tipo: 'renovacion', prima, moneda, aseguradora: 'PRU',
-        fecha_renovacion: fechaRenov,
+        fecha_renovacion: fechaRenov, estatus_reporte: estatusOrig,
         estatus: estatusOrig === 'EN VIGOR' ? 'pagada' : estatusOrig === 'PENDIENTE' ? 'pendiente_pago' : 'cancelada',
         notas: `Reporte de pólizas Prudential · estatus original: ${estatusOrig}${notaAseg} · solicitud ${r[1] || ''}`,
         updated_at: nowIso(),
