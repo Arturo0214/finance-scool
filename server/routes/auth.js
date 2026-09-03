@@ -17,7 +17,9 @@ router.post('/login', async (req, res) => {
     const token = generateToken(user);
     // sameSite lax: requests go through Netlify proxy (same domain), no need for 'none'
     // 'none' causes Safari ITP to restrict/delete the cookie on mobile
-    res.cookie('token', token, { httpOnly: true, secure: true, maxAge: 86400000, sameSite: 'lax', path: '/' });
+    // maxAge 400 días (tope de Chrome): la sesión no debe caducar sola — el JWT
+    // de administración ya no expira y el de asesor dura 30 días.
+    res.cookie('token', token, { httpOnly: true, secure: true, maxAge: 400 * 86400000, sameSite: 'lax', path: '/' });
     // Bitácora de sesiones (fire-and-forget)
     getDB().from('crm_activity').insert([{ user_id: user.id, user_name: user.name, user_role: user.role, action: 'login', entity: 'sesion' }])
       .then(({ error: e }) => { if (e) console.error('activity log:', e.message); });

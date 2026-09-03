@@ -10,7 +10,7 @@ import { api } from '../../../../utils/api';
 import { C } from '../../constants';
 import {
   Search, RefreshCw, Plus, X, Trash2, Users, ShieldCheck,
-  AlertTriangle, Pencil, CheckCircle2, CircleOff,
+  AlertTriangle, Pencil, CheckCircle2, CircleOff, BellRing,
 } from 'lucide-react';
 import { getCrmCSS, fmtMoney, fmtDate } from './crmShared';
 import CrmClientsView from './CrmClientsView';
@@ -19,6 +19,15 @@ const ASEG = {
   PRU: { label: 'Prudential', corto: 'PRU', color: '#003DA5', bg: 'rgba(0,61,165,.09)' },
   IL:  { label: 'Insignia Life', corto: 'IL', color: '#0E7C6B', bg: 'rgba(14,124,107,.10)' },
 };
+
+/* Clasificación comercial de 3 estados. Los inactivos CON producción conservan
+   cartera y SÍ reciben recordatorios de venta — por eso su color propio (ámbar). */
+const CLASIF = {
+  activo:                  { label: 'Activo',                     corto: 'Activo',        color: C.green,     bg: C.greenBg,            icon: CheckCircle2, hint: 'Produce actualmente' },
+  inactivo_con_produccion: { label: 'Inactivo · con producción',  corto: 'Inact. c/prod', color: '#B45309',   bg: 'rgba(180,83,9,.12)', icon: BellRing,     hint: 'Tiene pólizas: mandarle recordatorios de venta' },
+  inactivo_sin_produccion: { label: 'Inactivo · sin producción',  corto: 'Inact. s/prod', color: C.textMuted, bg: 'rgba(11,27,51,.08)', icon: CircleOff,    hint: 'Sin cartera: no se le recuerda' },
+};
+const clasifInfo = (c) => CLASIF[c] || CLASIF.activo;
 
 const mesesSinVenta = (fecha) => {
   if (!fecha) return null;
@@ -79,8 +88,7 @@ export default function CrmConsultoresView({ isAgency }) {
     if (fAseg === 'PRU' && !c.registrado_pru) return false;
     if (fAseg === 'IL' && !c.registrado_il) return false;
     if (fAseg === 'ambas' && !(c.registrado_pru && c.registrado_il)) return false;
-    if (fActividad === 'activos' && c.sin_actividad) return false;
-    if (fActividad === 'sin_actividad' && !c.sin_actividad) return false;
+    if (fActividad !== 'todos' && (c.clasificacion || 'activo') !== fActividad) return false;
     if (fVenta) {
       const m = mesesSinVenta(c.ultima_venta);
       if (m !== null && m < Number(fVenta)) return false;
@@ -90,15 +98,15 @@ export default function CrmConsultoresView({ isAgency }) {
 
   const kpis = {
     total: consultores.length,
-    ambas: consultores.filter(c => c.registrado_pru && c.registrado_il).length,
-    soloPru: consultores.filter(c => c.registrado_pru && !c.registrado_il).length,
-    sinActividad: consultores.filter(c => c.sin_actividad).length,
+    activos: consultores.filter(c => (c.clasificacion || 'activo') === 'activo').length,
+    inactConProd: consultores.filter(c => c.clasificacion === 'inactivo_con_produccion').length,
+    inactSinProd: consultores.filter(c => c.clasificacion === 'inactivo_sin_produccion').length,
     huerfanas: data?.huerfanas?.total || 0,
   };
 
   const openDetail = (c) => {
     setDetail(c);
-    setEditAgent({ alta_pru: c.alta_pru || '', alta_il: c.alta_il || '', activo_fsc: c.activo_fsc });
+    setEditAgent({ alta_pru: c.alta_pru || '', alta_il: c.alta_il || '', clasificacion: c.clasificacion || 'activo' });
     setNewClient(null);
   };
 
@@ -108,7 +116,8 @@ export default function CrmConsultoresView({ isAgency }) {
       await api.crmUpdateAgent(detail.id, {
         alta_pru: editAgent.alta_pru || null,
         alta_il: editAgent.alta_il || null,
-        activo_fsc: !!editAgent.activo_fsc,
+        clasificacion: editAgent.clasificacion,
+        activo_fsc: editAgent.clasificacion === 'activo',
       });
       flash('Consultor actualizado ✓'); setDetail(null); load();
     } catch (e) { alert(e.message); }
@@ -252,10 +261,10 @@ export default function CrmConsultoresView({ isAgency }) {
           {/* KPIs */}
           <div className="crm-kpi-detail">
             <div className="crm-kpi-box"><div className="k-label"><Users size={12} style={{ verticalAlign: -2 }} /> Consultores</div><div className="k-value">{kpis.total}</div></div>
-            <div className="crm-kpi-box"><div className="k-label">En ambas (PRU + IL)</div><div className="k-value">{kpis.ambas}</div><div className="k-sub">dados de alta en las dos</div></div>
-            <div className="crm-kpi-box"><div className="k-label">Solo Prudential</div><div className="k-value">{kpis.soloPru}</div><div className="k-sub">candidatos a alta en IL</div></div>
-            <div className="crm-kpi-box"><div className="k-label">Sin actividad</div><div className="k-value" style={{ color: kpis.sinActividad ? C.red : C.ink }}>{kpis.sinActividad}</div></div>
-            <div className="crm-kpi-box"><div className="k-label">Pólizas huérfanas</div><div className="k-value" style={{ color: kpis.huerfanas ? C.amber : C.ink }}>{kpis.huerfanas}</div><div className="k-sub">de consultores sin actividad</div></div>
+            <div className="crm-kpi-box"><div className="k-label"><CheckCircle2 size={12} style={{ verticalAlign: -2, color: C.green }} /> Activos</div><div className="k-value" style={{ color: C.green }}>{kpis.activos}</div><div className="k-sub">con producción</div></div>
+            <div className="crm-kpi-box"><div className="k-label"><BellRing size={12} style={{ verticalAlign: -2, color: '#B45309' }} /> Inactivos c/producción</div><div className="k-value" style={{ color: '#B45309' }}>{kpis.inactConProd}</div><div className="k-sub">mandarles recordatorio de ventas</div></div>
+            <div className="crm-kpi-box"><div className="k-label"><CircleOff size={12} style={{ verticalAlign: -2 }} /> Inactivos s/producción</div><div className="k-value" style={{ color: C.textMuted }}>{kpis.inactSinProd}</div><div className="k-sub">sin cartera, sin recordatorios</div></div>
+            <div className="crm-kpi-box"><div className="k-label">Pólizas huérfanas</div><div className="k-value" style={{ color: kpis.huerfanas ? C.amber : C.ink }}>{kpis.huerfanas}</div><div className="k-sub">de consultores inactivos</div></div>
           </div>
 
           {/* Filtros */}
@@ -265,7 +274,12 @@ export default function CrmConsultoresView({ isAgency }) {
             ))}
           </div>
           <div className="filter-tabs" style={{ marginBottom: 18, gap: 8, display: 'flex', flexWrap: 'wrap', alignItems: 'center' }}>
-            {[['todos', 'Todos'], ['activos', 'Activos'], ['sin_actividad', 'Sin actividad']].map(([id, label]) => (
+            {[
+              ['todos', 'Todos'],
+              ['activo', `Activos (${kpis.activos})`],
+              ['inactivo_con_produccion', `Inactivos c/producción (${kpis.inactConProd})`],
+              ['inactivo_sin_produccion', `Inactivos s/producción (${kpis.inactSinProd})`],
+            ].map(([id, label]) => (
               <button key={id} className={`f-tab${fActividad === id ? ' active' : ''}`} onClick={() => setFActividad(id)}>{label}</button>
             ))}
             <select className="crm-select" style={{ padding: '6px 10px', fontSize: 12.5 }} value={fVenta} onChange={e => setFVenta(e.target.value)}>
@@ -291,17 +305,21 @@ export default function CrmConsultoresView({ isAgency }) {
                 {filtered.length === 0 && <tr><td colSpan={9} className="empty">Sin consultores con estos filtros</td></tr>}
                 {filtered.map(c => {
                   const meses = mesesSinVenta(c.ultima_venta);
+                  const cl = clasifInfo(c.clasificacion);
+                  const ClIcon = cl.icon;
                   return (
-                    <tr key={c.id} className="crm-rank-row" onClick={() => openDetail(c)}>
+                    <tr key={c.id} className="crm-rank-row" onClick={() => openDetail(c)}
+                      style={c.clasificacion === 'inactivo_con_produccion' ? { background: 'rgba(180,83,9,.045)' } : c.clasificacion === 'inactivo_sin_produccion' ? { opacity: .72 } : undefined}>
                       <td><b>{c.nombre}</b><br /><span style={{ fontSize: 11, color: C.textMuted }}>{c.clave || 'sin clave'} {c.cuaderno ? `· ${c.cuaderno}` : ''}</span></td>
                       <td><AsegBadge aseg="PRU" activo={c.registrado_pru} fecha={c.alta_pru} /></td>
                       <td><AsegBadge aseg="IL" activo={c.registrado_il} fecha={c.alta_il} /></td>
                       <td style={{ fontVariantNumeric: 'tabular-nums' }}><b>{c.polizas.pru.vigentes}</b> <span style={{ fontSize: 11, color: C.textMuted }}>vigentes de {c.polizas.pru.total}</span></td>
                       <td style={{ fontVariantNumeric: 'tabular-nums' }}><b>{c.polizas.il.vigentes}</b> <span style={{ fontSize: 11, color: C.textMuted }}>vigentes de {c.polizas.il.total}</span></td>
                       <td>
-                        {c.sin_actividad
-                          ? <span className="badge" style={{ background: C.redBg, color: C.red }}><CircleOff size={10} style={{ verticalAlign: -1 }} /> Sin actividad</span>
-                          : <span className="badge" style={{ background: C.greenBg, color: C.green }}><CheckCircle2 size={10} style={{ verticalAlign: -1 }} /> Activo</span>}
+                        <span className="badge" style={{ background: cl.bg, color: cl.color }} title={cl.hint}>
+                          <ClIcon size={10} style={{ verticalAlign: -1 }} /> {cl.label}
+                        </span>
+                        {c.clasificacion === 'inactivo_con_produccion' && <div style={{ fontSize: 10, color: '#B45309', marginTop: 2, fontWeight: 700 }}>→ recordarle ventas</div>}
                         {c.estatus_pru && /INACTIVO/i.test(c.estatus_pru) && <div style={{ fontSize: 10, color: C.textMuted, marginTop: 2 }}>PRU: sin ventas nuevas</div>}
                       </td>
                       <td style={{ fontSize: 12.5 }}>
@@ -332,9 +350,9 @@ export default function CrmConsultoresView({ isAgency }) {
               <div key={c.id} className="crm-mobile-card" onClick={() => openDetail(c)}>
                 <div className="crm-mc-top">
                   <div className="crm-mc-name">{c.nombre}</div>
-                  {c.sin_actividad
-                    ? <span className="badge" style={{ background: C.redBg, color: C.red }}>Sin actividad</span>
-                    : <span className="badge" style={{ background: C.greenBg, color: C.green }}>Activo</span>}
+                  <span className="badge" style={{ background: clasifInfo(c.clasificacion).bg, color: clasifInfo(c.clasificacion).color }}>
+                    {clasifInfo(c.clasificacion).corto}
+                  </span>
                 </div>
                 <div className="crm-mc-row"><span>Carteras</span><b><AsegBadge aseg="PRU" activo={c.registrado_pru} /> <AsegBadge aseg="IL" activo={c.registrado_il} /></b></div>
                 <div className="crm-mc-row"><span>Pólizas vigentes</span><b>PRU {c.polizas.pru.vigentes} · IL {c.polizas.il.vigentes}</b></div>
@@ -428,9 +446,11 @@ export default function CrmConsultoresView({ isAgency }) {
                     <div className="field"><label>Alta Insignia Life</label>
                       <input type="date" value={editAgent.alta_il || ''} onChange={e => setEditAgent({ ...editAgent, alta_il: e.target.value })} />
                     </div>
-                    <div className="field"><label>Actividad en FSC</label>
-                      <select value={editAgent.activo_fsc ? '1' : '0'} onChange={e => setEditAgent({ ...editAgent, activo_fsc: e.target.value === '1' })}>
-                        <option value="1">Activo</option><option value="0">Sin actividad</option>
+                    <div className="field"><label>Clasificación</label>
+                      <select value={editAgent.clasificacion} onChange={e => setEditAgent({ ...editAgent, clasificacion: e.target.value })}>
+                        <option value="activo">Activo (con producción)</option>
+                        <option value="inactivo_con_produccion">Inactivo con producción — recordarle ventas</option>
+                        <option value="inactivo_sin_produccion">Inactivo sin producción</option>
                       </select>
                     </div>
                   </div>

@@ -346,7 +346,7 @@ export default function AdminPanel() {
                 <FSCConversationsView onOpenMenu={() => setMobileMenuOpen(o => !o)} />}
               {/* ── CRM Asesores ── */}
               {!loading && activeView === 'crm-mi-dia' && <CrmMiDiaView isAgency={userSeesAllCrm} />}
-              {!loading && activeView === 'crm' && <CrmDashboardView />}
+              {!loading && activeView === 'crm' && <CrmDashboardView isAgency={userSeesAllCrm} />}
               {!loading && activeView === 'crm-pipeline' && <CrmPipelineView isAgency={userSeesAllCrm} />}
               {!loading && activeView === 'crm-clientes' && <CrmConsultoresView isAgency={userSeesAllCrm} />}
               {!loading && activeView === 'crm-polizas' && <CrmPoliciesView isAgency={userSeesAllCrm} />}

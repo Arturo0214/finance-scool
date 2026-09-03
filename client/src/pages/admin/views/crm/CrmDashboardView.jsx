@@ -3,14 +3,14 @@
  * Admin/agencia: ranking de asesores + KPIs de la promotoría + drill-down.
  * Asesor: su propio tablero (RESUMEN ANUAL) con bonos y conservación.
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../../../../utils/api';
 import { C } from '../../constants';
 import {
   ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis,
   Tooltip, Legend, CartesianGrid, PieChart, Pie, Cell, Area, LabelList,
 } from 'recharts';
-import { TrendingUp, TrendingDown, Target, Shield, Award, Users, RefreshCw, X, Briefcase, Bell, FileDown, Trophy, Medal } from 'lucide-react';
+import { TrendingUp, TrendingDown, Target, Shield, Award, Users, RefreshCw, X, Briefcase, Bell, FileDown, Trophy, Medal, Upload } from 'lucide-react';
 import { getCrmCSS, MESES, fmtMoney, fmtMoneyFull, fmtPct, fmtDate, etapaInfo, ETAPAS, tipoRecordatorio } from './crmShared';
 import CrmCarteraSection from './CrmCarteraSection';
 
@@ -595,7 +595,7 @@ function KpiModal({ id, onClose, data, anio, pir, promoIdx, single, bonoTotal, c
   );
 }
 
-export default function CrmDashboardView() {
+export default function CrmDashboardView({ isAgency }) {
   const [anio, setAnio] = useState(2026);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -605,6 +605,10 @@ export default function CrmDashboardView() {
   const [pir, setPir] = useState(null);     // motor PIR: índice real + bonos (ingresos)
   const [promoIdx, setPromoIdx] = useState(null); // índice agregado de la promotoría
   const [kpiModal, setKpiModal] = useState(null); // tarjeta KPI abierta en modal de desglose
+  const [ultimaImport, setUltimaImport] = useState(null); // última carga del Reporte de pólizas
+  const [importando, setImportando] = useState(false);
+  const [carteraKey, setCarteraKey] = useState(0); // fuerza recarga de la cartera tras importar
+  const importRef = useRef(null);
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -615,11 +619,27 @@ export default function CrmDashboardView() {
          Review Prudential (motor PIR), no de las pólizas capturadas */
       api.crmIngresosOverview().then(r => setPir(r.agentes || [])).catch(() => {});
       if (d.porAgente.length > 1) api.crmIngresosPromotoria().then(setPromoIdx).catch(() => {});
+      api.crmLastImport().then(r => setUltimaImport(r.ultima || null)).catch(() => {});
     } catch (e) { setError(e.message); }
     finally { setLoading(false); }
   }, [anio]);
 
   useEffect(() => { load(); }, [load]);
+
+  /* Carga diaria del Reporte de pólizas desde el propio tablero: un solo archivo
+     actualiza cartera, índice (overlay vivo), pipeline, ingresos y Mi Día. */
+  const onImportFile = async (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    setImportando(true);
+    try {
+      const { resumen } = await api.crmImportPolizas(f);
+      alert(`Reporte cargado ✓\n${resumen.filas} filas · ${resumen.insertadas} nuevas · ${resumen.actualizadas} actualizadas · ${resumen.canceladas} canceladas · ${resumen.revividas} revividas · ${resumen.clientesNuevos} clientes nuevos\n\nTodas las secciones del CRM ya reflejan este corte.`);
+      setCarteraKey(k => k + 1);
+      load();
+    } catch (err) { alert(err.message); }
+    finally { setImportando(false); if (importRef.current) importRef.current.value = ''; }
+  };
 
   if (loading) return <><style>{getCrmCSS()}</style><div className="loading-wrap"><div className="spinner" /><p>Cargando tableros...</p></div></>;
   if (error) return <><style>{getCrmCSS()}</style><div className="view"><div className="info-box"><p>⚠️ {error}</p></div></div></>;
@@ -651,9 +671,25 @@ export default function CrmDashboardView() {
           <h1 className="view-title">{single ? 'Mi Tablero' : 'Tableros CRM'}</h1>
           <p className="view-subtitle" style={{ marginBottom: 0 }}>
             {single ? `Business Review de ${data.porAgente[0].agent.nombre}` : 'Business Review — Incubadora S-COOL'}
+            {ultimaImport && (
+              <span style={{ display: 'block', fontSize: 11.5, color: C.textMuted, marginTop: 2 }}>
+                Reporte de pólizas: {new Date(ultimaImport.created_at).toLocaleString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                {ultimaImport.usuario ? ` por ${ultimaImport.usuario}` : ''}
+                {ultimaImport.resumen ? ` · ${ultimaImport.resumen.filas || 0} filas · ${ultimaImport.resumen.insertadas || 0} nuevas · ${ultimaImport.resumen.canceladas || 0} canceladas` : ''}
+              </span>
+            )}
           </p>
         </div>
         <div className="crm-toolbar-right">
+          {isAgency && (
+            <>
+              <input ref={importRef} type="file" accept=".xlsx,.xls" hidden onChange={onImportFile} />
+              <button className="btn-primary" disabled={importando} onClick={() => importRef.current?.click()}
+                title="Sube el Reporte de pólizas Prudential del día: actualiza cartera, índice, pipeline, ingresos y Mi Día sin duplicar">
+                <Upload size={15} /> {importando ? 'Cargando...' : 'Cargar reporte del día'}
+              </button>
+            </>
+          )}
           <select className="crm-select" value={anio} onChange={e => setAnio(Number(e.target.value))}>
             {ANIOS.map(a => <option key={a} value={a}>{a}</option>)}
           </select>
@@ -719,7 +755,7 @@ export default function CrmDashboardView() {
       )}
 
       {/* ── Cartera del Reporte de pólizas: segmentada por año + comparativo histórico ── */}
-      <CrmCarteraSection titulo="Cartera Prudential — por año de emisión" />
+      <CrmCarteraSection key={carteraKey} titulo="Cartera Prudential — por año de emisión" />
 
       {/* ── Asesor: tabs Resumen | Mis Ventas. Admin: tabs Resumen | Rendimiento ── */}
       {single ? (

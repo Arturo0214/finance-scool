@@ -3,7 +3,14 @@ const { queryOne } = require('../models/database');
 const JWT_SECRET = process.env.JWT_SECRET || 'financescool_secret';
 
 function generateToken(user) {
-  return jwt.sign({ id: user.id, name: user.name, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
+  const payload = { id: user.id, name: user.name, email: user.email, role: user.role };
+  /* Administración (superadmin/agencia/admin): sesión SIN expiración — pedían
+     re-login cada 24h y a Flavio le aparecía "Token inválido" a diario.
+     Asesores: 30 días. Un token solo muere si cambia JWT_SECRET o se cierra sesión. */
+  if (['superadmin', 'agencia', 'admin'].includes(user.role)) {
+    return jwt.sign(payload, JWT_SECRET);
+  }
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: '30d' });
 }
 
 function verifyToken(req, res, next) {

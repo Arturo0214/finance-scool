@@ -46,6 +46,64 @@ function IndiceBar({ cobrado, realista, techo }) {
   );
 }
 
+/* Arma el shape de "próximos pasos" a partir del tablero de la promotoría:
+   misma estructura que /ingresos/proximos-pasos pero agregando TODA la cartera
+   (cada paso trae el asesor dueño). El umbral de la promotoría es 84%. */
+function buildPromoData(promo, overviewAgentes) {
+  const p4 = (n) => Math.round((Number(n) || 0) * 10000) / 10000;
+  const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+  const acc = promo.accionables || {};
+  const rehabilitables = acc.rehabilitables || [];
+  const pendientes = acc.pendientesPago || [];
+
+  const pasos = [];
+  for (const p of rehabilitables) {
+    const pesoUrg = p.urgencia === 'EXTREMA' ? 1000 : p.urgencia === 'ALTA' ? 700 : p.urgencia === 'MEDIA' ? 400 : 150;
+    pasos.push({
+      tipo: 'rehabilitar', urgencia: p.urgencia,
+      prioridad: Math.round(pesoUrg - (p.dias_para_vencer_etapa || 0) + (p.impacto_indice || 0) * 200),
+      titulo: `Rehabilita la póliza ${p.poliza}${p.plan_id ? ' · ' + p.plan_id : ''}`,
+      detalle: `${p.agente || p.clave || ''}${p.dias_para_vencer_etapa != null ? ` · quedan ${p.dias_para_vencer_etapa}d para vencer la etapa` : ''}`,
+      agente: p.agente, clave: p.clave,
+      monto: p.monto, impacto_indice: p4(p.impacto_indice),
+      cta: {}, // sin simulador en modo promotoría: elige un asesor para simular
+    });
+  }
+  for (const p of pendientes) {
+    pasos.push({
+      tipo: 'cobrar', urgencia: 'MEDIA',
+      prioridad: Math.round(500 + (p.impacto_indice || 0) * 200),
+      titulo: `Cobra la póliza ${p.poliza}${p.plan_id ? ' · ' + p.plan_id : ''}`,
+      detalle: `${p.agente || p.clave || ''} · vigente con pago pendiente · al cobrar sube el índice`,
+      agente: p.agente, clave: p.clave,
+      monto: p.monto, impacto_indice: p4(p.impacto_indice),
+      cta: {},
+    });
+  }
+  pasos.sort((a, b) => b.prioridad - a.prioridad);
+
+  const rr = promo.rehabResumen || { total: 0, monto: 0, por_urgencia: {} };
+  const bono = (overviewAgentes || []).reduce((s, a) => s + (a.bonos?.total_trimestre || 0), 0);
+  return {
+    promotoria: true,
+    numAgentes: promo.agentes,
+    indice: {
+      cobrado: p4(promo.indice.hoy.actual),
+      realista: p4(promo.indice.hoy.conPendiente),
+      techo: p4(promo.indice.siCobraYRehabilitaTodo),
+      minimoBono: promo.umbral || 0.84,
+    },
+    bono_trimestre: r2(bono),
+    resumen: {
+      rehabilitables: rr.total, monto_rehab: r2(rr.monto),
+      urgentes: (rr.por_urgencia?.EXTREMA || 0) + (rr.por_urgencia?.ALTA || 0),
+      pendientes: pendientes.length,
+      monto_pendiente: r2(pendientes.reduce((s, x) => s + (x.monto || 0), 0)),
+    },
+    pasos: pasos.slice(0, 60),
+  };
+}
+
 export default function CrmMiDiaView({ isAgency }) {
   const [agentes, setAgentes] = useState([]);
   const [clave, setClave] = useState('');
@@ -61,30 +119,28 @@ export default function CrmMiDiaView({ isAgency }) {
   // Pipeline accionable ("próxima acción obligatoria")
   const [pipe, setPipe] = useState(null);
 
+  /* Agencia/admin sin clave = tablero de TODA la promotoría; con clave (o rol
+     asesor) = el día de ese asesor. El asesor nunca ve a los demás. */
   const loadPasos = useCallback(async (cv) => {
     setLoading(true); setErr('');
     try {
-      const d = await api.crmIngresosProximosPasos(cv || '');
-      setData(d); setPicked({}); setSimResult(null);
-      if (d?.clave) setClave(d.clave);
+      if (isAgency && !cv) {
+        const [promo, ov] = await Promise.all([api.crmIngresosPromotoria(), api.crmIngresosOverview()]);
+        setAgentes((ov.agentes || []).filter(a => a.clave));
+        setData(buildPromoData(promo, ov.agentes));
+        setPicked({}); setSimResult(null); setClave('');
+      } else {
+        const d = await api.crmIngresosProximosPasos(cv || '');
+        setData(d); setPicked({}); setSimResult(null);
+        if (d?.clave) setClave(d.clave);
+      }
     } catch (e) { setErr(e.message || 'No se pudo cargar'); setData(null); }
     finally { setLoading(false); }
-  }, []);
+  }, [isAgency]);
 
-  // Agencia: cargar lista de asesores para el selector; asesor: su propia clave
+  // Agencia: arranca con la promotoría completa; asesor: su propia clave
   useEffect(() => {
-    (async () => {
-      if (isAgency) {
-        try {
-          const ov = await api.crmIngresosOverview();
-          const list = (ov.agentes || []).filter(a => a.clave);
-          setAgentes(list);
-          await loadPasos(list[0]?.clave || '');
-        } catch (e) { setErr(e.message); setLoading(false); }
-      } else {
-        await loadPasos('');
-      }
-    })();
+    loadPasos('');
     // Pipeline accionable (independiente del índice; asesor=suyo, agencia=promotoría)
     api.crmPipelineAcciones().then(setPipe).catch(() => setPipe(null));
   }, [isAgency, loadPasos]);
@@ -134,12 +190,19 @@ export default function CrmMiDiaView({ isAgency }) {
       {/* ── Toolbar ── */}
       <div className="crm-toolbar">
         <div>
-          <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}><Sparkles size={20} color={C.gold} /> Mi Día</h2>
-          <p className="sub" style={{ margin: '2px 0 0' }}>Tus próximos pasos para subir índice, bonos y conservación.</p>
+          <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Sparkles size={20} color={C.gold} /> {data?.promotoria ? 'El Día de la Promotoría' : 'Mi Día'}
+          </h2>
+          <p className="sub" style={{ margin: '2px 0 0' }}>
+            {data?.promotoria
+              ? `Los próximos pasos de los ${data.numAgentes} asesores para subir índice, bonos y conservación.`
+              : 'Tus próximos pasos para subir índice, bonos y conservación.'}
+          </p>
         </div>
         <div className="crm-toolbar-right">
           {isAgency && agentes.length > 0 && (
             <select className="crm-select" value={clave} onChange={e => loadPasos(e.target.value)}>
+              <option value="">🏢 Toda la promotoría</option>
               {agentes.map(a => <option key={a.clave} value={a.clave}>{a.nombre} · {a.clave}</option>)}
             </select>
           )}
@@ -176,10 +239,13 @@ export default function CrmMiDiaView({ isAgency }) {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.15fr) minmax(0,1fr)', gap: 20, alignItems: 'start' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: data.promotoria ? 'minmax(0,1fr)' : 'minmax(0,1.15fr) minmax(0,1fr)', gap: 20, alignItems: 'start' }}>
             {/* ── Próximos pasos ── */}
             <div>
-              <h3 style={{ margin: '0 0 12px', display: 'flex', alignItems: 'center', gap: 7 }}><Target size={17} color={C.accent} /> Próximos pasos</h3>
+              <h3 style={{ margin: '0 0 12px', display: 'flex', alignItems: 'center', gap: 7 }}><Target size={17} color={C.accent} /> Próximos pasos{data.promotoria ? ' de la promotoría' : ''}</h3>
+              {data.promotoria && data.pasos.length > 0 && (
+                <p className="sub" style={{ margin: '-6px 0 12px' }}>Cada paso indica a qué asesor pertenece. Para usar el simulador de índice, elige un asesor en el selector de arriba.</p>
+              )}
               {data.pasos.length === 0 && <div className="crm-chart-card" style={{ textAlign: 'center', color: C.textMuted }}><Trophy size={26} color={C.gold} /><p style={{ margin: '8px 0 0' }}>Cartera sana. Sin acciones urgentes hoy. 🎉</p></div>}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {data.pasos.map((p, i) => {
@@ -196,6 +262,7 @@ export default function CrmMiDiaView({ isAgency }) {
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                           <b style={{ fontSize: 13.5, color: C.ink }}>{p.titulo}</b>
                           {p.urgencia && p.tipo !== 'indice' && <span className="midia-chip" style={{ background: u.bg, color: u.color }}>{p.urgencia === 'EXTREMA' && <Flame size={11} />}{u.label}</span>}
+                          {data.promotoria && p.agente && <span className="midia-chip" style={{ background: '#EEF1F6', color: C.textMuted }}>{p.agente}</span>}
                         </div>
                         <div style={{ fontSize: 12, color: C.textMuted, marginTop: 3 }}>{p.detalle}</div>
                         <div style={{ display: 'flex', gap: 14, marginTop: 6, fontSize: 11.5, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -215,7 +282,8 @@ export default function CrmMiDiaView({ isAgency }) {
               </div>
             </div>
 
-            {/* ── Simulador de arrastre ── */}
+            {/* ── Simulador de arrastre (por asesor; en promotoría se elige uno) ── */}
+            {!data.promotoria && (
             <div className="crm-chart-card" style={{ position: 'sticky', top: 12 }}>
               <h3 style={{ margin: '0 0 4px', display: 'flex', alignItems: 'center', gap: 7 }}><ShieldCheck size={17} color={C.green} /> Simulador de índice</h3>
               <p className="sub" style={{ margin: '0 0 12px' }}>Arrastra pólizas a “Si las trabajo hoy” y mira cuánto suben tu índice y tu bono.</p>
@@ -278,6 +346,7 @@ export default function CrmMiDiaView({ isAgency }) {
                 <button className="crm-btn ghost" style={{ marginTop: 12, width: '100%' }} onClick={() => setPicked({})}><RotateCcw size={14} /> Limpiar</button>
               )}
             </div>
+            )}
           </div>
 
           {/* ── Pipeline accionable: próxima acción obligatoria ── */}

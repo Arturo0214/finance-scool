@@ -332,7 +332,7 @@ router.post('/agents', async (req, res) => {
 router.put('/agents/:id', async (req, res) => {
   if (!isAgency(req.user.role)) return res.status(403).json({ error: 'Solo administración puede editar asesores' });
   const allowed = ['clave', 'nombre', 'cuaderno', 'fecha_inicio_calculos', 'estatus', 'telefono', 'email', 'user_id', 'fireflies_api_key',
-    'alta_pru', 'alta_il', 'activo_fsc'];
+    'alta_pru', 'alta_il', 'activo_fsc', 'clasificacion'];
   const patch = {};
   for (const k of allowed) if (k in req.body) patch[k] = req.body[k];
   patch.updated_at = new Date().toISOString();
@@ -1134,9 +1134,11 @@ router.get('/consultores/overview', async (req, res) => {
   const db = getDB();
   let agQ = db.from('crm_agents').select('*').order('nombre');
   if (scope.restricted) agQ = agQ.eq('id', scope.agentId);
-  const { data: agents, error: eA } = await agQ;
+  const { data: agentsAll, error: eA } = await agQ;
   if (eA) return res.status(500).json({ error: eA.message });
-  const ids = (agents || []).map(a => a.id);
+  /* El personal administrativo (p. ej. Karina) no figura como asesor */
+  const agents = (agentsAll || []).filter(a => a.clasificacion !== 'administrativo');
+  const ids = agents.map(a => a.id);
   if (!ids.length) return res.json({ consultores: [], huerfanas: { total: 0, detalle: [] } });
 
   const [policies, clients, { data: pruPrimas }, { data: users }] = await Promise.all([
@@ -1176,8 +1178,13 @@ router.get('/consultores/overview', async (req, res) => {
     }
 
     const inactivoPru = /INACTIVO/i.test(a.estatus || '');
+    /* Clasificación comercial de 3 estados (lista de Arturo 2026-09-03):
+       inactivo_con_produccion = tiene cartera y SÍ recibe recordatorios de venta */
+    const clasificacion = a.clasificacion
+      || (a.activo_fsc === false || inactivoPru ? 'inactivo_sin_produccion' : 'activo');
     return {
       id: a.id, clave: a.clave, nombre: a.nombre, user_id: a.user_id,
+      clasificacion,
       estatus_pru: a.estatus || null, activo_fsc: a.activo_fsc !== false,
       alta_pru: a.alta_pru || a.fecha_inicio_calculos || null,
       alta_il: a.alta_il || null,
@@ -1186,7 +1193,7 @@ router.get('/consultores/overview', async (req, res) => {
       cuaderno: a.cuaderno || null,
       polizas: { pru: porAseg('PRU'), il: porAseg('IL') },
       ultima_venta: ultimaVenta,
-      sin_actividad: a.activo_fsc === false || inactivoPru,
+      sin_actividad: clasificacion !== 'activo',
       puede_editar: a.user_id ? (canEditByUser.get(a.user_id) || false) : false,
       tiene_usuario: !!a.user_id,
     };

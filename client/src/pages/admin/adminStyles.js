@@ -49,7 +49,7 @@ export const getAdminCSS = () => `
   }
   .sb > * { position:relative; z-index:1; }
   .sb.closed { width:74px; }
-  .sb-head { display:flex; align-items:center; justify-content:space-between; padding:0 16px; margin-bottom:26px; }
+  .sb-head { display:flex; align-items:center; justify-content:space-between; padding:0 16px; margin-bottom:26px; flex-shrink:0; }
   .sb-logo { display:flex; align-items:center; gap:10px; }
   .sb-logo-icon { width:34px; height:34px; background:linear-gradient(140deg, rgba(193,151,91,.32), rgba(193,151,91,.12)); border:1px solid rgba(193,151,91,.35); border-radius:10px; display:flex; align-items:center; justify-content:center; color:#E8CFA6; }
   .sb-logo span { font-size:15px; font-weight:700; white-space:nowrap; letter-spacing:-.3px; }
@@ -63,8 +63,13 @@ export const getAdminCSS = () => `
   .sb.closed .sb-logo-mini { display:inline-flex; }
   .sb-toggle { background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.1); color:rgba(255,255,255,.65); cursor:pointer; padding:6px; display:flex; border-radius:8px; transition:all .2s; }
   .sb-toggle:hover { background:rgba(255,255,255,.12); color:#fff; }
-  .sb-nav { flex:1; display:flex; flex-direction:column; gap:3px; padding:0 12px; overflow-y:auto; }
-  .sb-nav::-webkit-scrollbar { width:0; }
+  /* min-height:0 es obligatorio: sin él el flex-item no puede encogerse y el
+     menú empuja "Cerrar Sesión" fuera de pantalla en vez de scrollear */
+  .sb-nav { flex:1; min-height:0; display:flex; flex-direction:column; gap:3px; padding:0 12px; overflow-y:auto; scrollbar-width:thin; scrollbar-color:rgba(255,255,255,.22) transparent; }
+  .sb-nav::-webkit-scrollbar { width:5px; }
+  .sb-nav::-webkit-scrollbar-thumb { background:rgba(255,255,255,.18); border-radius:4px; border:none; background-clip:border-box; }
+  .sb-nav::-webkit-scrollbar-thumb:hover { background:rgba(255,255,255,.32); border:none; background-clip:border-box; }
+  .sb-nav::-webkit-scrollbar-track { background:transparent; }
   .sb-item {
     background:none; border:none; color:rgba(255,255,255,.66); padding:11px 13px; border-radius:10px;
     cursor:pointer; display:flex; align-items:center; gap:12px; font-size:13.5px; font-weight:500;
@@ -77,7 +82,7 @@ export const getAdminCSS = () => `
   .sb-item.active svg { opacity:1; color:#E8CFA6; }
   .sb-item.active::before { content:''; position:absolute; left:-12px; top:20%; bottom:20%; width:3px; border-radius:0 3px 3px 0; background:linear-gradient(180deg,#E8CFA6,${C.gold}); box-shadow:0 0 12px rgba(232,207,166,.5); }
   .sb-divider { padding:18px 13px 7px; font-size:9.5px; text-transform:uppercase; letter-spacing:2.2px; color:rgba(232,207,166,.5); font-weight:600; pointer-events:none; }
-  .sb-logout { background:none; border:none; color:rgba(255,255,255,.55); padding:11px 13px; border-radius:10px; cursor:pointer; display:flex; align-items:center; gap:12px; font-size:13.5px; margin:6px 12px 0; transition:all .2s; font-family:inherit; white-space:nowrap; border-top:none; }
+  .sb-logout { background:none; border:none; color:rgba(255,255,255,.55); padding:11px 13px; border-radius:10px; cursor:pointer; display:flex; align-items:center; gap:12px; font-size:13.5px; margin:6px 12px 0; transition:all .2s; font-family:inherit; white-space:nowrap; border-top:none; flex-shrink:0; }
   .sb-logout:hover { color:#fff; background:rgba(201,58,58,.28); }
 
   /* ══ Área principal ══ */
