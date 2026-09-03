@@ -223,6 +223,8 @@ export const api = {
   },
   crmIngresosAgent: (clave) => request(`/crm/ingresos/agent/${encodeURIComponent(clave)}`),
   crmIngresosProximosPasos: (clave) => request(`/crm/ingresos/proximos-pasos${clave ? `?clave=${encodeURIComponent(clave)}` : ''}`),
+  crmIngresosProyeccion: (clave) => request(`/crm/ingresos/proyeccion${clave ? `?clave=${encodeURIComponent(clave)}` : ''}`),
+  crmChat: (messages) => request('/crm/chat', { method: 'POST', body: JSON.stringify({ messages }) }),
   crmPipelineAcciones: (agentId) => request(`/crm/pipeline/acciones${agentId ? `?agent_id=${encodeURIComponent(agentId)}` : ''}`),
   crmIncubadora: () => request('/crm/incubadora'),
   crmSemillasColumnas: () => request('/crm/semillas/columnas'),

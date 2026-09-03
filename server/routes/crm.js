@@ -2316,6 +2316,211 @@ router.get('/ingresos/proximos-pasos', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+/* ── PROYECCIÓN COMERCIAL: el CRM que predice, no que cuenta el pasado ──────
+   Por asesor: cuánto falta para el SIGUIENTE rango de bono (trimestral y de
+   renovación/conservación), prima promedio de su cartera (MXN), a cuántas
+   pólizas equivale el faltante, meta del mes y ESCENARIOS "si vendes $X más
+   este trimestre, tu bono del Q sube a $Y" — calculados re-corriendo el motor
+   PIR real (computeIngresos) con la venta simulada, no con aproximaciones. ── */
+function simularVentaExtra(primas, clave, extra, hoy = new Date()) {
+  const propias = primas.filter(p => p.clave === clave);
+  if (!propias.length) {
+    return [...primas, { clave, anio: hoy.getFullYear(), mes: hoy.getMonth() + 1, trimestre: Math.ceil((hoy.getMonth() + 1) / 3), prima_pagada_inicial: extra, prima_ubicacion: extra, prima_pagada_renovacion: 0 }];
+  }
+  /* La venta extra cae en el último corte disponible (mismo trimestre que ve el motor) */
+  const ultimo = [...propias].sort((a, b) => (a.anio - b.anio) || (a.mes - b.mes)).pop();
+  return primas.map(p => p === ultimo
+    ? { ...p, prima_pagada_inicial: (Number(p.prima_pagada_inicial) || 0) + extra, prima_ubicacion: (Number(p.prima_ubicacion) || 0) + extra }
+    : p);
+}
+
+/* Prima promedio anual por póliza (MXN) desde el detalle del índice */
+function primaPromedioDe(polizas) {
+  const porPoliza = new Map();
+  for (const p of polizas) {
+    const k = numPoliza(p.poliza);
+    if (!k) continue;
+    porPoliza.set(k, (porPoliza.get(k) || 0) + (Number(p.base_a_conservar_mxn) || 0));
+  }
+  const bases = [...porPoliza.values()].filter(v => v > 0);
+  return { promedio: bases.length ? Math.round((bases.reduce((a, b) => a + b, 0) / bases.length) * 100) / 100 : 0, polizas: bases.length };
+}
+
+function buildProyeccion({ agente, primas, polizas, pir, personalizaPlanes, goals, primaPromedioFallback = 0, hoy = new Date() }) {
+  const r = computeIngresos({ agente, primas, polizas, pir, personalizaPlanes });
+  const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+
+  const pp = primaPromedioDe(polizas);
+  /* Asesor nuevo sin cartera de renovación: usa el promedio de la promotoría
+     para que "¿a cuántas pólizas equivale el faltante?" siempre tenga respuesta */
+  const usaFallback = pp.promedio <= 0 && primaPromedioFallback > 0;
+  const primaPromedio = usaFallback ? primaPromedioFallback : pp.promedio;
+  const basesPoliza = { length: pp.polizas };
+
+  const umbral = r.indice.umbral || '0.86';
+  const siguiente = (lista) => {
+    const orden = [...(lista || [])].sort((a, b) => a.prima_min - b.prima_min);
+    const alcanzados = orden.filter(x => x.alcanzado);
+    const n = orden.find(x => !x.alcanzado);
+    return {
+      rango_actual: alcanzados.length ? alcanzados[alcanzados.length - 1].rango : null,
+      siguiente: n ? {
+        rango: n.rango, prima_min: n.prima_min, faltante: n.faltante,
+        bono_al_llegar: n.bonos[umbral] || 0,
+        polizas_equivalentes: primaPromedio > 0 ? Math.ceil(n.faltante / primaPromedio) : null,
+      } : null,
+      rangos: orden.map(x => ({ rango: x.rango, prima_min: x.prima_min, alcanzado: x.alcanzado, bono: x.bonos[umbral] || 0 })),
+    };
+  };
+
+  /* Escenarios: motor PIR real con venta adicional del trimestre */
+  const escenarios = [25000, 50000, 100000, 200000].map(extra => {
+    const rs = computeIngresos({ agente, primas: simularVentaExtra(primas, agente.clave, extra, hoy), polizas, pir, personalizaPlanes });
+    return {
+      venta_extra: extra,
+      bono_trimestre: rs.bonos.total_trimestre,
+      delta_bono: r2(rs.bonos.total_trimestre - r.bonos.total_trimestre),
+      comision_marginal: rs.bonos.total_trimestre > 0 ? r2((rs.bonos.total_trimestre - r.bonos.total_trimestre) / extra) : 0,
+    };
+  });
+
+  /* Meta del mes en curso (crm_goals por clave) vs vendido según cortes */
+  const anioHoy = hoy.getFullYear(), mesHoy = hoy.getMonth() + 1;
+  const metaMes = (goals || []).filter(g => g.clave === agente.clave && Number(g.anio) === anioHoy && Number(g.mes) === mesHoy)
+    .reduce((s, g) => s + (Number(g.meta_prima) || 0), 0);
+  const vendidoMes = primas.filter(p => p.clave === agente.clave && Number(p.anio) === anioHoy && Number(p.mes) === mesHoy)
+    .reduce((s, p) => s + (Number(p.prima_pagada_inicial) || 0), 0);
+
+  return {
+    clave: agente.clave, nombre: agente.nombre, cuaderno: agente.cuaderno,
+    periodo: r.periodo,
+    indice: { operativo: r.indice.operativo, umbral: r.indice.umbral, bloqueado: !r.indice.umbral, minimoBono: 0.86 },
+    prima_promedio: primaPromedio,
+    prima_promedio_es_promotoria: usaFallback,
+    polizas_en_cartera: basesPoliza.length,
+    venta: { ubicacionQ: r.primas.ubicacionQ, pagadaInicialQ: r.primas.pagadaInicialQ, renovacionQ: r.primas.renovacionQ },
+    bonos_hoy: r.bonos,
+    trimestral: siguiente(r.enJuego?.trimestral),
+    conservacion: siguiente(r.enJuego?.conservacion),
+    escenarios,
+    meta_mes: { anio: anioHoy, mes: mesHoy, meta: r2(metaMes), vendido: r2(vendidoMes), faltante: r2(Math.max(0, metaMes - vendidoMes)), pct: metaMes > 0 ? r2(vendidoMes / metaMes) : null },
+  };
+}
+
+router.get('/ingresos/proyeccion', async (req, res) => {
+  try {
+    const scope = await resolveClaveScope(req, res);
+    if (!scope) return;
+    const clave = String(req.query.clave || scope.clave || '').toUpperCase() || null;
+    const db = getDB();
+    const [pir, personalizaPlanes, { agentes, primas, polizas }, goalsQ] = await Promise.all([
+      getPirTablas(), getPersonalizaPlanes(), fetchIngresosData(clave),
+      db.from('crm_goals').select('clave, anio, mes, meta_prima'),
+    ]);
+    const goals = goalsQ.data || [];
+    /* Promedio de TODA la promotoría como fallback para asesores sin cartera.
+       Con clave el fetch ya viene filtrado: trae el global en una consulta extra. */
+    let todasPolizas = polizas;
+    if (clave) {
+      todasPolizas = await fetchAllRows(() => db.from('crm_pru_polizas_indice').select('poliza, base_a_conservar_mxn').order('id'));
+    }
+    const ppGlobal = primaPromedioDe(todasPolizas).promedio;
+    const rows = agentes.map(a => buildProyeccion({
+      agente: a,
+      primas: primas.filter(p => p.clave === a.clave),
+      polizas: polizas.filter(p => p.clave === a.clave),
+      pir, personalizaPlanes, goals, primaPromedioFallback: ppGlobal,
+    }));
+    if (clave) return res.json(rows[0] || null);
+    /* Promotoría: carrera de asesores del trimestre */
+    const carrera = rows
+      .map(x => ({ clave: x.clave, nombre: x.nombre, pagadaInicialQ: x.venta.pagadaInicialQ, bono: x.bonos_hoy.total_trimestre, indice: x.indice.operativo, bloqueado: x.indice.bloqueado, meta_mes: x.meta_mes }))
+      .sort((a, b) => b.pagadaInicialQ - a.pagadaInicialQ);
+    res.json({ agentes: rows, carrera });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* ── COPILOTO GENERAL DEL CRM (chatbot con contexto vivo de la base) ────────
+   Responde sobre índice, bonos, cuánto falta para el siguiente rango, cartera,
+   pipeline, metas, etc. Asesor: SOLO sus datos. Agencia/admin: la promotoría
+   completa con detalle por asesor. El contexto se arma en cada pregunta con
+   los mismos motores del CRM — el bot siempre habla del corte más reciente. ── */
+router.post('/chat', async (req, res) => {
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (!key) return res.status(503).json({ error: 'El copiloto requiere ANTHROPIC_API_KEY en el servidor.' });
+  try {
+    const scope = await resolveClaveScope(req, res);
+    if (!scope) return;
+    const db = getDB();
+    const [pir, personalizaPlanes, { agentes, primas, polizas }, goalsQ, li] = await Promise.all([
+      getPirTablas(), getPersonalizaPlanes(), fetchIngresosData(scope.clave),
+      db.from('crm_goals').select('clave, anio, mes, meta_prima'),
+      db.from('crm_import_runs').select('archivo, created_at, resumen').eq('tipo', 'reporte-polizas').order('created_at', { ascending: false }).limit(1),
+    ]);
+    const goals = goalsQ.data || [];
+    const money = (n) => `$${(Number(n) || 0).toLocaleString('es-MX', { maximumFractionDigits: 0 })}`;
+    const pct = (n) => `${((Number(n) || 0) * 100).toFixed(1)}%`;
+    const hoy = new Date().toISOString().slice(0, 10);
+
+    const lineaAsesor = (x, detallado) => {
+      const partes = [
+        `${x.nombre} (${x.clave})${x.cuaderno ? ' · ' + x.cuaderno : ''}: índice ${pct(x.indice.operativo)}${x.indice.bloqueado ? ' ⚠ BAJO 86% — BONOS BLOQUEADOS' : ''}`,
+        `venta nueva Q ${money(x.venta.pagadaInicialQ)} · renovación Q ${money(x.venta.renovacionQ)} · bono del Q hoy ${money(x.bonos_hoy.total_trimestre)}`,
+        x.trimestral.siguiente ? `siguiente rango trimestral (R${x.trimestral.siguiente.rango}): faltan ${money(x.trimestral.siguiente.faltante)} ≈ ${x.trimestral.siguiente.polizas_equivalentes ?? '?'} pólizas (prima promedio ${money(x.prima_promedio)}) → bono ${money(x.trimestral.siguiente.bono_al_llegar)}` : 'rango trimestral máximo alcanzado',
+        x.conservacion.siguiente ? `siguiente rango de renovación: faltan ${money(x.conservacion.siguiente.faltante)} → bono ${money(x.conservacion.siguiente.bono_al_llegar)}` : null,
+        x.meta_mes.meta > 0 ? `meta del mes ${money(x.meta_mes.meta)}: lleva ${money(x.meta_mes.vendido)} (${x.meta_mes.pct != null ? pct(x.meta_mes.pct) : '?'})` : 'sin meta capturada este mes',
+      ];
+      if (detallado) partes.push(`escenarios: ` + x.escenarios.map(e => `+${money(e.venta_extra)} venta → bono Q ${money(e.bono_trimestre)} (+${money(e.delta_bono)})`).join(' | '));
+      return '  - ' + partes.filter(Boolean).join('\n    ');
+    };
+
+    let contexto;
+    if (scope.clave) {
+      const a = agentes[0];
+      if (!a) return res.status(404).json({ error: 'Sin datos Prudential para tu clave' });
+      const globales = await fetchAllRows(() => db.from('crm_pru_polizas_indice').select('poliza, base_a_conservar_mxn').order('id'));
+      const x = buildProyeccion({ agente: a, primas, polizas, pir, personalizaPlanes, goals, primaPromedioFallback: primaPromedioDe(globales).promedio });
+      const r = computeIngresos({ agente: a, primas, polizas, pir, personalizaPlanes });
+      contexto = [
+        `HOY: ${hoy} · Trimestre ${x.periodo.trimestre}Q${x.periodo.anio}`,
+        `ASESOR:`, lineaAsesor(x, true),
+        `ACCIONABLES: ${r.accionables.pendientesPago.length} pólizas por cobrar (${money(r.accionables.pendientesPago.reduce((s, p) => s + p.monto, 0))}) · ${r.accionables.rehabilitables.length} rehabilitables (${money(r.accionables.rehabResumen.monto)})`,
+        `DETALLE REHABILITABLES (top 10): ` + r.accionables.rehabilitables.slice(0, 10).map(p => `póliza ${p.poliza} ${money(p.monto)} etapa ${p.etapa} quedan ${p.dias_para_vencer_etapa}d`).join(' | '),
+      ].join('\n');
+    } else {
+      const ppGlobal = primaPromedioDe(polizas).promedio;
+      const rows = agentes.map(a => buildProyeccion({ agente: a, primas: primas.filter(p => p.clave === a.clave), polizas: polizas.filter(p => p.clave === a.clave), pir, personalizaPlanes, goals, primaPromedioFallback: ppGlobal }));
+      const tot = (f) => rows.reduce((s, x) => s + f(x), 0);
+      contexto = [
+        `HOY: ${hoy} · PROMOTORÍA Incubadora S-COOL: ${rows.length} asesores con datos Prudential`,
+        `TOTALES DEL TRIMESTRE: venta nueva ${money(tot(x => x.venta.pagadaInicialQ))} · renovación ${money(tot(x => x.venta.renovacionQ))} · bonos ${money(tot(x => x.bonos_hoy.total_trimestre))}`,
+        `ÚLTIMA CARGA DEL REPORTE DE PÓLIZAS: ${li.data?.[0] ? `${li.data[0].created_at.slice(0, 10)} (${li.data[0].resumen?.filas || '?'} filas)` : 'sin registro'}`,
+        `ASESORES:`,
+        ...rows.sort((a, b) => b.venta.pagadaInicialQ - a.venta.pagadaInicialQ).map(x => lineaAsesor(x, false)),
+      ].join('\n');
+    }
+
+    const mensajes = Array.isArray(req.body.messages) && req.body.messages.length
+      ? req.body.messages.slice(-12).map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.content || '').slice(0, 2000) }))
+      : [{ role: 'user', content: String(req.body.question || '¿Cómo voy y qué debo hacer hoy para ganar más bonos?').slice(0, 2000) }];
+
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: process.env.COPILOT_MODEL || 'claude-haiku-4-5-20251001',
+        max_tokens: 900,
+        system: `Eres el Copiloto Comercial de la Incubadora S-COOL (promotoría Prudential México). Tu misión es que el equipo VENDA MÁS: siempre habla del futuro (cuánto falta, qué vender, cuánto ganarían), no del pasado. Responde en español, breve y motivador, con números EXACTOS del contexto — nunca inventes cifras. Cuando pregunten "cuánto me falta", usa faltantes de rango y pólizas equivalentes. Recuerda: sin índice ≥86% no hay bonos. Si piden algo fuera del contexto (documentos, clientes específicos), dilo y sugiere dónde verlo en el CRM.\n\nCONTEXTO EN VIVO DEL CRM:\n${contexto}`,
+        messages: mensajes,
+      }),
+    });
+    const data = await r.json();
+    if (data.error) return res.status(502).json({ error: data.error.message });
+    logActivity(req, 'copilot', 'crm-chat', null, null);
+    res.json({ respuesta: data.content?.[0]?.text || 'Sin respuesta' });
+  } catch (e) { res.status(500).json({ error: 'Copiloto: ' + e.message }); }
+});
+
 /* ── Incubadora de vendedores ───────────────────────────────────────────────
    Analiza qué sostienen los MEJORES asesores (índice, prima nueva, disciplina
    de rehabilitación) y lo convierte en un playbook + brechas para los nuevos.

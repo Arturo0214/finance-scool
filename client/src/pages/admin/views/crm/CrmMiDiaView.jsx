@@ -18,6 +18,7 @@ import {
   KanbanSquare, CalendarClock, MessageCircle, PhoneMissed,
 } from 'lucide-react';
 import { getCrmCSS, fmtMoney, etapaInfo, fmtDate } from './crmShared';
+import { BonoRaceTrack, PromotoriaRace, raceCSS } from './CrmRaceTrack';
 
 const pctTxt = (n, dec = 2) => `${((Number(n) || 0) * 100).toFixed(dec)}%`;
 const deltaPct = (n, dec = 2) => `${n >= 0 ? '+' : ''}${(n * 100).toFixed(dec)}%`;
@@ -119,10 +120,13 @@ export default function CrmMiDiaView({ isAgency }) {
   // Pipeline accionable ("próxima acción obligatoria")
   const [pipe, setPipe] = useState(null);
 
+  // Proyección comercial: carrera a bonos, escenarios y faltantes (motor PIR)
+  const [proye, setProye] = useState(null);
+
   /* Agencia/admin sin clave = tablero de TODA la promotoría; con clave (o rol
      asesor) = el día de ese asesor. El asesor nunca ve a los demás. */
   const loadPasos = useCallback(async (cv) => {
-    setLoading(true); setErr('');
+    setLoading(true); setErr(''); setProye(null);
     try {
       if (isAgency && !cv) {
         const [promo, ov] = await Promise.all([api.crmIngresosPromotoria(), api.crmIngresosOverview()]);
@@ -134,6 +138,7 @@ export default function CrmMiDiaView({ isAgency }) {
         setData(d); setPicked({}); setSimResult(null);
         if (d?.clave) setClave(d.clave);
       }
+      api.crmIngresosProyeccion(cv || '').then(setProye).catch(() => setProye(null));
     } catch (e) { setErr(e.message || 'No se pudo cargar'); setData(null); }
     finally { setLoading(false); }
   }, [isAgency]);
@@ -185,6 +190,9 @@ export default function CrmMiDiaView({ isAgency }) {
         .drag-item{display:flex;align-items:center;gap:8px;background:${C.card};border:1px solid rgba(11,27,51,.1);border-radius:9px;padding:8px 10px;margin-bottom:7px;cursor:grab;font-size:12.5px}
         .drag-item:active{cursor:grabbing}
         .midia-chip{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:20px}
+        .esc-chip{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);border-radius:11px;padding:8px 12px;font-size:11.5px;flex:1;min-width:150px}
+        .esc-chip b{display:block;font-size:15px;color:#7CE7B1}
+        ${raceCSS}
       `}</style>
 
       {/* ── Toolbar ── */}
@@ -238,6 +246,68 @@ export default function CrmMiDiaView({ isAgency }) {
               </div>
             </div>
           </div>
+
+          {/* ── 🏁 Carrera a tus bonos: el CRM que predice (proyección PIR viva) ── */}
+          {proye && !data.promotoria && proye.trimestral && (
+            <div className="race-wrap">
+              <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 4 }}>
+                <b style={{ fontSize: 14.5 }}>🏁 Carrera a tus bonos — {proye.periodo?.trimestre}Q{proye.periodo?.anio}</b>
+                <span style={{ fontSize: 11.5, opacity: .85 }}>
+                  Prima promedio {proye.prima_promedio_es_promotoria ? 'de la promotoría (aún sin cartera propia)' : 'de tu cartera'}: <b>{fmtMoney(proye.prima_promedio)}</b>{proye.polizas_en_cartera > 0 ? <> · {proye.polizas_en_cartera} pólizas</> : null}
+                </span>
+              </div>
+              {proye.indice.bloqueado && (
+                <div style={{ background: 'rgba(248,113,113,.16)', border: '1px solid rgba(248,113,113,.4)', borderRadius: 10, padding: '7px 12px', fontSize: 12, marginBottom: 8 }}>
+                  🚧 Tu índice ({(proye.indice.operativo * 100).toFixed(1)}%) está bajo el 86%: los bonos están bloqueados aunque llegues al rango. Primero cobra y rehabilita.
+                </div>
+              )}
+              <BonoRaceTrack
+                titulo="Bono trimestral · venta nueva"
+                progreso={proye.venta.ubicacionQ}
+                rangos={proye.trimestral.rangos}
+                bloqueado={proye.indice.bloqueado}
+                faltanteTxt={proye.trimestral.siguiente
+                  ? <>Te faltan <b>{fmtMoney(proye.trimestral.siguiente.faltante)}</b>{proye.trimestral.siguiente.polizas_equivalentes ? <> ≈ <b>{proye.trimestral.siguiente.polizas_equivalentes} pólizas</b></> : null} para R{proye.trimestral.siguiente.rango} → bono {fmtMoney(proye.trimestral.siguiente.bono_al_llegar)}</>
+                  : <>🏆 Rango máximo alcanzado</>}
+              />
+              <BonoRaceTrack
+                titulo="Bono de renovación · conservación"
+                emoji="🚙"
+                progreso={proye.venta.ubicacionQ}
+                rangos={proye.conservacion.rangos}
+                bloqueado={proye.indice.bloqueado}
+                faltanteTxt={proye.conservacion.siguiente
+                  ? <>Te faltan <b>{fmtMoney(proye.conservacion.siguiente.faltante)}</b> de ubicación → bono renovación {fmtMoney(proye.conservacion.siguiente.bono_al_llegar)}</>
+                  : <>🏆 Rango máximo alcanzado</>}
+              />
+              {proye.meta_mes?.meta > 0 && (
+                <div style={{ margin: '10px 0 4px', fontSize: 11.5 }}>
+                  Meta del mes: <b>{fmtMoney(proye.meta_mes.vendido)}</b> de {fmtMoney(proye.meta_mes.meta)} ({Math.round((proye.meta_mes.pct || 0) * 100)}%)
+                  {proye.meta_mes.faltante > 0 && <> · te faltan <b>{fmtMoney(proye.meta_mes.faltante)}</b></>}
+                  <div style={{ height: 7, background: 'rgba(255,255,255,.1)', borderRadius: 4, marginTop: 4 }}>
+                    <div style={{ height: 7, width: `${Math.min(100, (proye.meta_mes.pct || 0) * 100)}%`, borderRadius: 4, background: 'linear-gradient(90deg,#C1975B,#E8CFA6)', transition: 'width .8s' }} />
+                  </div>
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
+                {(proye.escenarios || []).map(e => (
+                  <div key={e.venta_extra} className="esc-chip" title={`Cada peso vendido te regresa ~${(e.comision_marginal * 100).toFixed(1)}% en bonos del trimestre`}>
+                    Si vendes <b style={{ display: 'inline', color: '#fff' }}>+{fmtMoney(e.venta_extra)}</b> este Q
+                    <b>bono {fmtMoney(e.bono_trimestre)} {e.delta_bono > 0 ? `(+${fmtMoney(e.delta_bono)})` : ''}</b>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {proye?.carrera && data.promotoria && (
+            <div className="race-wrap">
+              <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
+                <b style={{ fontSize: 14.5 }}>🏁 Carrera de la promotoría — venta nueva del trimestre</b>
+                <span style={{ fontSize: 11.5, opacity: .85 }}>Posición vs. el líder · el 🚧 indica índice bajo 86% (bonos bloqueados)</span>
+              </div>
+              <PromotoriaRace carrera={proye.carrera} max={12} />
+            </div>
+          )}
 
           <div style={{ display: 'grid', gridTemplateColumns: data.promotoria ? 'minmax(0,1fr)' : 'minmax(0,1.15fr) minmax(0,1fr)', gap: 20, alignItems: 'start' }}>
             {/* ── Próximos pasos ── */}

@@ -55,6 +55,7 @@ const CrmCommissionsView  = lazy(() => import('./admin/views/crm/CrmCommissionsV
 const CrmIngresosView     = lazy(() => import('./admin/views/crm/CrmIngresosView'));
 const CrmQuoteView        = lazy(() => import('./admin/views/crm/CrmQuoteView'));
 const HealthView          = lazy(() => import('./admin/views/HealthView'));
+const CrmChatWidget       = lazy(() => import('../components/CrmChatWidget'));
 
 /* ── Spinner de suspense ── */
 function ViewSpinner() {
@@ -364,6 +365,11 @@ export default function AdminPanel() {
             </Suspense>
           </main>
         </div>
+
+        {/* Copiloto S-COOL: chatbot con el contexto vivo del CRM, en todo el panel */}
+        {user && activeView !== 'whatsapp' && activeView !== 'sofia-bot' && (
+          <Suspense fallback={null}><CrmChatWidget isAgency={userSeesAllCrm} /></Suspense>
+        )}
       </div>
     </>
   );
