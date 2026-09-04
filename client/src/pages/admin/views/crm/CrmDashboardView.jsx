@@ -494,7 +494,7 @@ function KpiModal({ id, onClose, data, anio, pir, promoIdx, single, bonoTotal, c
       },
     },
     indice: {
-      titulo: `Índice de conservación ${single ? '' : 'de la promotoría'} — ${idxOficial ? fmtPct(idxOficial.actual, 1) : '…'}`,
+      titulo: `Índice de conservación ${single ? '' : 'de la promotoría'} — hoy ${idxOficial ? fmtPct(idxOficial.hoy, 1) : '…'}`,
       que: single
         ? 'Mide cuánta de tu cartera en renovación sigue pagada. Sale del Business Review Prudential: base conservada ÷ base a conservar. Necesitas 86% mínimo para cobrar bonos.'
         : 'Mide cuánta de la cartera en renovación de TODA la promotoría sigue pagada, según el Business Review Prudential. La promotoría necesita 84% mínimo (cada agente, 86%).',
@@ -649,10 +649,12 @@ export default function CrmDashboardView({ isAgency }) {
   const g = data.global.kpis.totales;
   const bonoTotal = pir ? pir.reduce((s, a) => s + (a.bonos?.total_trimestre || 0), 0) : null;
   const clientesTotal = data.porAgente.reduce((s, a) => s + a.clientes.total, 0);
-  /* Índice oficial: promotoría agregada (umbral 84%) o el del asesor (86%) */
+  /* Índice: el TITULAR es el estado de HOY (corte oficial + overlay del Reporte
+     de pólizas diario — revividas/cobradas cuentan); el corte del Business
+     Review queda como referencia. Promotoría umbral 84%, asesor 86%. */
   const idxOficial = single
-    ? (pir && pir[0] ? { actual: pir[0].indice.actual, hoy: pir[0].indice.hoy?.actual, todo: pir[0].indice.conPendiente, umbral: 0.86 } : null)
-    : (promoIdx ? { actual: promoIdx.indice.actual, hoy: promoIdx.indice.hoy.actual, todo: promoIdx.indice.siCobraTodo, umbral: 0.84 } : null);
+    ? (pir && pir[0] ? { hoy: pir[0].indice.hoy?.actual ?? pir[0].indice.actual, corte: pir[0].indice.actual, todo: pir[0].indice.hoy?.conPendiente ?? pir[0].indice.conPendiente, umbral: 0.86 } : null)
+    : (promoIdx ? { hoy: promoIdx.indice.hoy.actual, corte: promoIdx.indice.actual, todo: promoIdx.indice.siCobraTodo, umbral: 0.84 } : null);
 
   const globalChart = data.global.kpis.months.map((m, i) => ({
     mes: MESES[i],
@@ -714,15 +716,15 @@ export default function CrmDashboardView({ isAgency }) {
           <div><p className="stat-label">Cumplimiento meta</p><p className="stat-value">{fmtPct(g.cumplimiento)}</p></div>
         </div>
         <div className="stat-card" style={{ cursor: 'pointer' }} title="Ver desglose" onClick={() => setKpiModal('indice')}>
-          <div className="stat-icon" style={{ background: C.greenBg, color: idxOficial && idxOficial.actual >= idxOficial.umbral ? C.green : C.red }}><Shield size={20} /></div>
+          <div className="stat-icon" style={{ background: C.greenBg, color: idxOficial && idxOficial.hoy >= idxOficial.umbral ? C.green : C.red }}><Shield size={20} /></div>
           <div>
-            <p className="stat-label">Índice conservación {single ? '' : '(promotoría)'}</p>
-            <p className="stat-value" style={{ color: idxOficial ? (idxOficial.actual >= idxOficial.umbral ? C.green : C.red) : undefined }}>
-              {idxOficial ? fmtPct(idxOficial.actual, 1) : '…'}
+            <p className="stat-label">Índice conservación {single ? '' : '(promotoría)'} · hoy</p>
+            <p className="stat-value" style={{ color: idxOficial ? (idxOficial.hoy >= idxOficial.umbral ? C.green : C.red) : undefined }}>
+              {idxOficial ? fmtPct(idxOficial.hoy, 1) : '…'}
             </p>
             {idxOficial && (
               <p style={{ fontSize: 10.5, color: C.textMuted, margin: '2px 0 0' }}>
-                hoy {fmtPct(idxOficial.hoy, 1)} · cobrando todo {fmtPct(idxOficial.todo, 1)} · mín. {fmtPct(idxOficial.umbral, 0)}
+                realista (si cobras pendientes) {fmtPct(idxOficial.todo, 1)} · corte BR {fmtPct(idxOficial.corte, 1)} · mín. {fmtPct(idxOficial.umbral, 0)}
               </p>
             )}
           </div>

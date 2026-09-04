@@ -1030,14 +1030,16 @@ router.post('/auto-reminders', async (req, res) => {
 async function loadAgentData(db, anio, agentIds = null) {
   let agentsQ = db.from('crm_agents').select('*').order('nombre');
   if (agentIds) agentsQ = agentsQ.in('id', agentIds);
-  const { data: agents } = await agentsQ;
+  const { data: agentsRaw } = await agentsQ;
+  /* El personal administrativo no es asesor: fuera del ranking y de los KPIs */
+  const agents = (agentsRaw || []).filter(a => a.clasificacion !== 'administrativo');
   const ids = (agents || []).map(a => a.id);
   if (!ids.length) return { agents: [], policies: [], goals: [], clients: [], pruPrimas: [], indiceOficial: {} };
 
   const claves = (agents || []).map(a => a.clave).filter(Boolean);
   const [policies, clients, { data: goals }, { data: pruPrimas }, pruPolizas] = await Promise.all([
     fetchAllRows(() => db.from('crm_policies').select('*').in('agent_id', ids).order('id')),
-    fetchAllRows(() => db.from('crm_clients').select('id, agent_id, etapa').in('agent_id', ids).order('id')),
+    fetchAllRows(() => db.from('crm_clients').select('id, agent_id, etapa, origen').in('agent_id', ids).order('id')),
     db.from('crm_goals').select('*').eq('anio', anio).in('agent_id', ids),
     claves.length ? db.from('crm_pru_primas').select('*').eq('anio', anio).in('clave', claves) : Promise.resolve({ data: [] }),
     claves.length ? fetchAllRows(() => db.from('crm_pru_polizas_indice').select('clave, base_a_conservar_mxn, base_conservada_mxn, estatus_conservacion').in('clave', claves).order('clave')) : Promise.resolve([]),
@@ -1055,7 +1057,9 @@ async function loadAgentData(db, anio, agentIds = null) {
 function buildAgentSummary(agent, policies, goals, clients, anio, pruPrimas = [], indiceOficial = {}) {
   const own = policies.filter(p => p.agent_id === agent.id);
   const ownGoals = goals.filter(g => g.agent_id === agent.id);
-  const ownClients = clients.filter(c => c.agent_id === agent.id);
+  /* Sin contenedores "Cartera Prudential/Insignia": son bolsas técnicas, no
+     clientes — así "Clientes en cartera" cuadra con la sección Cartera. */
+  const ownClients = clients.filter(c => c.agent_id === agent.id && c.origen !== 'Prudential' && c.origen !== 'Insignia');
   const kpis = computeKpis(own, ownGoals, anio, pruPrimas.filter(pr => pr.clave && pr.clave === agent.clave), indiceOficial[agent.clave] || null);
   const forecast = computeForecast(kpis, anio);
 
@@ -2407,17 +2411,29 @@ function buildProyeccion({ agente, primas, polizas, pir, personalizaPlanes, goal
   };
 }
 
+/* crm_goals guarda agent_id (no clave): traduce a clave vía crm_agents para
+   cruzar con los cortes Prudential. Un select con 'clave' aquí falla mudo. */
+async function fetchGoalsPorClave(db) {
+  const [goalsQ, agQ] = await Promise.all([
+    db.from('crm_goals').select('agent_id, anio, mes, meta_prima'),
+    db.from('crm_agents').select('id, clave'),
+  ]);
+  const claveDe = new Map((agQ.data || []).map(a => [a.id, a.clave]));
+  return (goalsQ.data || [])
+    .map(g => ({ ...g, clave: claveDe.get(g.agent_id) || null }))
+    .filter(g => g.clave);
+}
+
 router.get('/ingresos/proyeccion', async (req, res) => {
   try {
     const scope = await resolveClaveScope(req, res);
     if (!scope) return;
     const clave = String(req.query.clave || scope.clave || '').toUpperCase() || null;
     const db = getDB();
-    const [pir, personalizaPlanes, { agentes, primas, polizas }, goalsQ] = await Promise.all([
+    const [pir, personalizaPlanes, { agentes, primas, polizas }, goals] = await Promise.all([
       getPirTablas(), getPersonalizaPlanes(), fetchIngresosData(clave),
-      db.from('crm_goals').select('clave, anio, mes, meta_prima'),
+      fetchGoalsPorClave(db),
     ]);
-    const goals = goalsQ.data || [];
     /* Promedio de TODA la promotoría como fallback para asesores sin cartera.
        Con clave el fetch ya viene filtrado: trae el global en una consulta extra. */
     let todasPolizas = polizas;
@@ -2452,12 +2468,11 @@ router.post('/chat', async (req, res) => {
     const scope = await resolveClaveScope(req, res);
     if (!scope) return;
     const db = getDB();
-    const [pir, personalizaPlanes, { agentes, primas, polizas }, goalsQ, li] = await Promise.all([
+    const [pir, personalizaPlanes, { agentes, primas, polizas }, goals, li] = await Promise.all([
       getPirTablas(), getPersonalizaPlanes(), fetchIngresosData(scope.clave),
-      db.from('crm_goals').select('clave, anio, mes, meta_prima'),
+      fetchGoalsPorClave(db),
       db.from('crm_import_runs').select('archivo, created_at, resumen').eq('tipo', 'reporte-polizas').order('created_at', { ascending: false }).limit(1),
     ]);
-    const goals = goalsQ.data || [];
     const money = (n) => `$${(Number(n) || 0).toLocaleString('es-MX', { maximumFractionDigits: 0 })}`;
     const pct = (n) => `${((Number(n) || 0) * 100).toFixed(1)}%`;
     const hoy = new Date().toISOString().slice(0, 10);
@@ -2639,7 +2654,7 @@ router.get('/ingresos/forecast', async (req, res) => {
       getPirTablas(), getPersonalizaPlanes(), fetchIngresosData(null),
       db.from('crm_pru_primas').select('clave,anio,mes,trimestre,prima_pagada_inicial,prima_pagada_renovacion,prima_ubicacion').then(r => r.data || []),
       db.from('crm_pru_indices_hist').select('clave,periodo,base_a_conservar,base_conservada').then(r => r.data || []),
-      db.from('crm_goals').select('clave,anio,mes,meta_prima').then(r => r.data || []),
+      fetchGoalsPorClave(db),
     ]);
     const div = (n, d) => (d > 0 ? Math.round((n / d) * 10000) / 10000 : 0);
 
