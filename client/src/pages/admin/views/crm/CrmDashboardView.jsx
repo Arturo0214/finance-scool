@@ -173,7 +173,7 @@ function DeltaBadge({ actual, anterior }) {
 }
 
 /* Matriz de calor asesor × mes (estilo matrix de Power BI) */
-function HeatMatrix({ agentes }) {
+function HeatMatrix({ agentes, mostrarTotal = true }) {
   const cell = (a, i) => (a.kpis.months[i].primaNueva + a.kpis.months[i].primaRenovacion);
   const max = Math.max(1, ...agentes.flatMap(a => Array.from({ length: 12 }, (_, i) => cell(a, i))));
   const totalMes = (i) => agentes.reduce((s, a) => s + cell(a, i), 0);
@@ -210,11 +210,14 @@ function HeatMatrix({ agentes }) {
               </tr>
             );
           })}
-          <tr style={{ background: '#F7F8FA' }}>
-            <td style={{ position: 'sticky', left: 0, background: '#F7F8FA', zIndex: 1 }}><b>Promotoría</b></td>
-            {MESES.map((_, i) => <td key={i} style={{ textAlign: 'center', fontSize: 11.5, fontWeight: 700 }}>{totalMes(i) > 0 ? fmtMoney(totalMes(i)) : '·'}</td>)}
-            <td style={{ textAlign: 'right' }}><b>{fmtMoney(MESES.reduce((s, _, i) => s + totalMes(i), 0))}</b></td>
-          </tr>
+          {/* Fila de la promotoría: SOLO agencia — un asesor no ve datos de otros */}
+          {mostrarTotal && (
+            <tr style={{ background: '#F7F8FA' }}>
+              <td style={{ position: 'sticky', left: 0, background: '#F7F8FA', zIndex: 1 }}><b>Promotoría</b></td>
+              {MESES.map((_, i) => <td key={i} style={{ textAlign: 'center', fontSize: 11.5, fontWeight: 700 }}>{totalMes(i) > 0 ? fmtMoney(totalMes(i)) : '·'}</td>)}
+              <td style={{ textAlign: 'right' }}><b>{fmtMoney(MESES.reduce((s, _, i) => s + totalMes(i), 0))}</b></td>
+            </tr>
+          )}
         </tbody>
       </table>
     </div>
@@ -407,7 +410,7 @@ function PerformanceTab({ data, anio, personal = false }) {
       <div className="crm-chart-card" style={{ marginTop: 20 }}>
         <h3>{personal ? 'Mi producción mes a mes' : 'Matriz de producción — asesor × mes'}</h3>
         <p className="sub">Intensidad = prima pagada del mes (estilo matrix de Power BI)</p>
-        <HeatMatrix agentes={data.porAgente} />
+        <HeatMatrix agentes={data.porAgente} mostrarTotal={!personal} />
       </div>
 
       {/* ═══ Cohortes de conservación ═══ */}
