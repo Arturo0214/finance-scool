@@ -46,8 +46,9 @@ function AsegBadge({ aseg, activo, fecha }) {
 }
 
 export default function CrmConsultoresView({ isAgency }) {
-  // Si el buscador global (⌘K) dejó un cliente pendiente de abrir, entra directo a la cartera
-  const [tab, setTab] = useState(() => (sessionStorage.getItem('crm_open_client') ? 'clientes' : 'tablero'));
+  // Asesor: la sección es "Clientes" — sin tablero de consultores, directo a su
+  // cartera. Si el buscador global (⌘K) dejó un cliente pendiente, ídem.
+  const [tab, setTab] = useState(() => (!isAgency || sessionStorage.getItem('crm_open_client') ? 'clientes' : 'tablero'));
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
@@ -179,8 +180,10 @@ export default function CrmConsultoresView({ isAgency }) {
 
       <div className="crm-toolbar">
         <div>
-          <h1 className="view-title">Consultores</h1>
-          <p className="view-subtitle" style={{ marginBottom: 0 }}>Carteras Prudential e Insignia Life por consultor</p>
+          <h1 className="view-title">{isAgency ? 'Consultores' : 'Clientes'}</h1>
+          <p className="view-subtitle" style={{ marginBottom: 0 }}>
+            {isAgency ? 'Carteras Prudential e Insignia Life por consultor' : 'Tu cartera de clientes y el catálogo de productos'}
+          </p>
         </div>
         {tab === 'tablero' && (
           <div className="crm-toolbar-right">
@@ -197,7 +200,7 @@ export default function CrmConsultoresView({ isAgency }) {
       {err && <div className="info-box" style={{ background: C.redBg, borderColor: `${C.red}40`, color: C.red, marginBottom: 16 }}><p>{err}</p></div>}
 
       <div className="crm-detail-tabs">
-        <button className={`crm-dtab${tab === 'tablero' ? ' active' : ''}`} onClick={() => setTab('tablero')}>Tablero</button>
+        {isAgency && <button className={`crm-dtab${tab === 'tablero' ? ' active' : ''}`} onClick={() => setTab('tablero')}>Tablero</button>}
         <button className={`crm-dtab${tab === 'clientes' ? ' active' : ''}`} onClick={() => setTab('clientes')}>Cartera de clientes</button>
         <button className={`crm-dtab${tab === 'productos' ? ' active' : ''}`} onClick={() => setTab('productos')}>Productos</button>
       </div>

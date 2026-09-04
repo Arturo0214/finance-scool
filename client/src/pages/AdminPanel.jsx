@@ -118,7 +118,8 @@ export default function AdminPanel() {
     { id: 'crm-mi-dia',       label: 'Mi Día',                        icon: Sparkles   },
     { id: 'crm',              label: 'Tableros CRM',                  icon: LayoutDashboard },
     { id: 'crm-pipeline',     label: 'Pipeline',                      icon: KanbanSquare },
-    { id: 'crm-clientes',     label: 'Consultores',                   icon: Contact    },
+    // Agencia gestiona consultores; el asesor solo ve SUS clientes
+    { id: 'crm-clientes',     label: userSeesAllCrm ? 'Consultores' : 'Clientes', icon: Contact },
     { id: 'crm-polizas',      label: 'Pólizas',                       icon: FileText   },
     { id: 'crm-ingresos',     label: 'Ingresos',                      icon: HandCoins  },
     { id: 'crm-campanas',     label: 'Campañas',                      icon: Plane      },
