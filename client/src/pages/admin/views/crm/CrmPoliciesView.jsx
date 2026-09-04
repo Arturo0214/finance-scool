@@ -22,7 +22,9 @@ export default function CrmPoliciesView({ isAgency }) {
   const [agents, setAgents] = useState([]);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState('todas');
+  // Multi-selección de estatus: [] = todas; clic = toggle (se pueden combinar)
+  const [statusFilter, setStatusFilter] = useState([]);
+  const toggleStatus = (id) => setStatusFilter(f => f.includes(id) ? f.filter(x => x !== id) : [...f, id]);
   const [agentFilter, setAgentFilter] = useState('');
   const [search, setSearch] = useState(() => { const s = sessionStorage.getItem('crm_polizas_search') || ''; sessionStorage.removeItem('crm_polizas_search'); return s; });
   /* Filtros por columna (fila bajo los encabezados) */
@@ -101,8 +103,9 @@ export default function CrmPoliciesView({ isAgency }) {
     catch (e) { alert(e.message); }
   };
 
-  const filtered = policies.filter(p => {
-    if (statusFilter !== 'todas' && p.estatus !== statusFilter) return false;
+  /* Filtros SIN el de estatus: los contadores de las pestañas deben reflejar
+     lo que el usuario ya filtró (asesor, búsqueda, plan…) — no toda la base */
+  const matchBase = (p) => {
     if (agentFilter && String(p.agent_id) !== agentFilter) return false;
     if (search) {
       const q = search.toLowerCase();
@@ -118,7 +121,9 @@ export default function CrmPoliciesView({ isAgency }) {
     if (fFecha === 'renueva' && !(p.fecha_renovacion && !p.fecha_pago)) return false;
     if (fFecha === 'sin_fecha' && (p.fecha_pago || p.fecha_renovacion || p.fecha_emision)) return false;
     return true;
-  });
+  };
+  const filteredBase = policies.filter(matchBase);
+  const filtered = filteredBase.filter(p => statusFilter.length === 0 || statusFilter.includes(p.estatus));
 
   const fechaRef = (p) => p.fecha_pago || p.fecha_renovacion || p.fecha_emision || '';
   const sorted = sort.key ? [...filtered].sort((a, b) => {
@@ -197,10 +202,11 @@ export default function CrmPoliciesView({ isAgency }) {
       </div>
 
       <div className="filter-tabs" style={{ marginBottom: 18 }}>
-        <button className={`f-tab${statusFilter === 'todas' ? ' active' : ''}`} onClick={() => setStatusFilter('todas')}>Todas</button>
+        <button className={`f-tab${statusFilter.length === 0 ? ' active' : ''}`} onClick={() => setStatusFilter([])}>Todas ({filteredBase.length})</button>
         {ESTATUS_POLIZA.map(s => (
-          <button key={s.id} className={`f-tab${statusFilter === s.id ? ' active' : ''}`} onClick={() => setStatusFilter(s.id)}>
-            {s.label} ({policies.filter(p => p.estatus === s.id).length})
+          <button key={s.id} className={`f-tab${statusFilter.includes(s.id) ? ' active' : ''}`} onClick={() => toggleStatus(s.id)}
+            title="Clic para combinar varios estatus">
+            {s.label} ({filteredBase.filter(p => p.estatus === s.id).length})
           </button>
         ))}
       </div>
@@ -247,8 +253,8 @@ export default function CrmPoliciesView({ isAgency }) {
                     </select>
                   </th>
                   <th style={{ padding: '6px 10px' }}>
-                    <select style={fs} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-                      <option value="todas">Todas</option>
+                    <select style={fs} value={statusFilter.length === 1 ? statusFilter[0] : 'todas'} onChange={e => setStatusFilter(e.target.value === 'todas' ? [] : [e.target.value])}>
+                      <option value="todas">{statusFilter.length > 1 ? `${statusFilter.length} estatus` : 'Todas'}</option>
                       {ESTATUS_POLIZA.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
                     </select>
                   </th>
