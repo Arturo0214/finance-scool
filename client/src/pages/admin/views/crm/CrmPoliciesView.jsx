@@ -351,7 +351,7 @@ export default function CrmPoliciesView({ isAgency }) {
                     : nombreCliente}</td>
                   {isAgency && <td style={{ fontSize: 12.5 }}>{p.crm_agents?.nombre || '—'}</td>}
                   <td style={{ textTransform: 'capitalize' }}>{p.tipo === 'renovacion' ? 'Renovación' : 'Nueva'}</td>
-                  <td><b>{fmtMoney(p.prima)}</b><br /><span style={{ fontSize: 11, color: C.textMuted, textTransform: 'capitalize' }}>{p.forma_pago}</span></td>
+                  <td><b>{fmtMoney(p.prima)}</b><br /><span style={{ fontSize: 11, color: C.textMuted, textTransform: 'capitalize' }}>{p.forma_pago}{p.moneda && p.moneda !== 'MXN' && p.prima_original ? ` · ${Number(p.prima_original).toLocaleString()} ${p.moneda}` : ''}</span></td>
                   <td style={{ fontSize: 12.5 }}>{p.fecha_pago ? `Pagada ${fmtDate(p.fecha_pago)}` : p.fecha_renovacion ? `Renueva ${fmtDate(p.fecha_renovacion)}` : fmtDate(p.fecha_emision)}</td>
                   <td onClick={e => e.stopPropagation()}>
                     <span className="badge" style={{ background: s.bg, color: s.text }}>{s.label}</span>
@@ -428,7 +428,8 @@ export default function CrmPoliciesView({ isAgency }) {
                   </select>
                 </div>
                 <div className="field"><label>Tipo</label><select value={form.tipo} onChange={e => setForm({ ...form, tipo: e.target.value })}><option value="nueva">Nueva</option><option value="renovacion">Renovación</option></select></div>
-                <div className="field"><label>Prima anual (MXN)</label><input type="number" value={form.prima ?? ''} onChange={e => setForm({ ...form, prima: e.target.value })} /></div>
+                <div className="field"><label>Prima anual (MXN)</label><input type="number" value={form.prima ?? ''} onChange={e => setForm({ ...form, prima: e.target.value })} />
+                  {form.moneda && form.moneda !== 'MXN' && form.prima_original ? <span style={{ fontSize: 10.5, color: C.textMuted }}>del reporte: {Number(form.prima_original).toLocaleString()} {form.moneda} convertidas a pesos</span> : null}</div>
                 <div className="field"><label>Forma de pago</label><select value={form.forma_pago} onChange={e => setForm({ ...form, forma_pago: e.target.value })}>{['anual', 'semestral', 'trimestral', 'mensual'].map(f => <option key={f}>{f}</option>)}</select></div>
                 <div className="field"><label>Suma asegurada</label><input type="number" value={form.suma_asegurada ?? ''} onChange={e => setForm({ ...form, suma_asegurada: e.target.value })} /></div>
                 <div className="field"><label>Fecha emisión</label><input type="date" value={form.fecha_emision ?? ''} onChange={e => setForm({ ...form, fecha_emision: e.target.value })} /></div>

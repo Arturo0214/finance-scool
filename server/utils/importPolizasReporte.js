@@ -90,6 +90,15 @@ async function importarReporte(db, { workbook, archivo, usuario, userId }) {
 
   const resumen = { filas: rows.length, clientesNuevos: 0, actualizadas: 0, canceladas: 0, revividas: 0, insertadas: 0, saltadas: 0, protegidasPagoManual: 0, placeholders };
 
+  /* El reporte trae la prima en UDIS (o dólares), NUNCA en pesos — caso Flavio:
+     "2,492" que en realidad eran 2,492 UDIS ≈ $22 mil. crm_policies.prima se
+     guarda SIEMPRE en MXN (todo el CRM suma en pesos); la original queda en
+     prima_original + moneda. Tipos de cambio en crm_config.tipos_cambio
+     (8.84 = conversión observada del propio Business Review Prudential). */
+  const { data: tcRow } = await db.from('crm_config').select('value').eq('key', 'tipos_cambio').maybeSingle();
+  const TC = { UDIS: 8.84, USD: 18.5, MXN: 1, ...(tcRow && tcRow.value ? tcRow.value : {}) };
+  const aMxn = (monto, mon) => Math.round(monto * (TC[mon] || 1) * 100) / 100;
+
   /* Pago confirmado a mano con comprobante (< 60 días): el corte de Prudential
      llega con retraso, así que el reporte NO puede re-cancelar esa póliza. */
   const pagoManualVigente = (p) => p.pago_manual_at && (Date.now() - new Date(p.pago_manual_at).getTime()) < 60 * 86400000;
@@ -130,6 +139,8 @@ async function importarReporte(db, { workbook, archivo, usuario, userId }) {
         const patch = { updated_at: nowIso(), estatus_reporte: estatusOrig };
         if (contenedores.has(ex.client_id)) patch.client_id = clientId;
         if (fechaRenov) patch.fecha_renovacion = fechaRenov;
+        // La prima del reporte manda (convertida a MXN); la original queda de referencia
+        if (prima > 0) { patch.prima = aMxn(prima, moneda); patch.prima_original = prima; patch.moneda = moneda; }
         if (CANCELA.has(estatusOrig) && ex.estatus !== 'cancelada') {
           if (pagoManualVigente(ex)) resumen.protegidasPagoManual++;
           else { patch.estatus = 'cancelada'; resumen.canceladas++; }
@@ -143,7 +154,7 @@ async function importarReporte(db, { workbook, archivo, usuario, userId }) {
     } else {
       const { data, error } = await db.from('crm_policies').insert([encryptFields({
         agent_id: agente.id, client_id: clientId, poliza: numero,
-        plan: null, tipo: 'renovacion', prima, moneda, aseguradora: 'PRU',
+        plan: null, tipo: 'renovacion', prima: aMxn(prima, moneda), prima_original: prima, moneda, aseguradora: 'PRU',
         fecha_renovacion: fechaRenov, estatus_reporte: estatusOrig,
         estatus: estatusOrig === 'EN VIGOR' ? 'pagada' : estatusOrig === 'PENDIENTE' ? 'pendiente_pago' : 'cancelada',
         notas: `Reporte de pólizas Prudential · estatus original: ${estatusOrig}${notaAseg} · solicitud ${r[1] || ''}`,
