@@ -138,6 +138,13 @@ export default function CrmPoliciesView({ isAgency }) {
 
   const totalPrima = filtered.reduce((s, p) => s + (Number(p.prima) || 0), 0);
 
+  /* Desglose por estatus de lo filtrado (asesor/búsqueda/etc.): cuántas son y
+     cuánta prima suma cada estatus, visible SIEMPRE hasta arriba */
+  const desglose = ESTATUS_POLIZA.map(s => {
+    const del = filteredBase.filter(p => p.estatus === s.id);
+    return { ...s, n: del.length, prima: del.reduce((t, p) => t + (Number(p.prima) || 0), 0) };
+  }).filter(d => d.n > 0);
+
   if (loading) return <><style>{getCrmCSS()}</style><div className="loading-wrap"><div className="spinner" /><p>Cargando pólizas...</p></div></>;
 
   return (
@@ -149,8 +156,22 @@ export default function CrmPoliciesView({ isAgency }) {
           <h1 className="view-title">Pólizas</h1>
           <p className="view-subtitle" style={{ marginBottom: 0 }}>
             {filtered.length} pólizas · prima total {fmtMoney(totalPrima)}
+            {/* Desglose por estatus de la selección actual (clic = filtrar ese estatus) */}
+            <span style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 5 }}>
+              {desglose.map(d => (
+                <button key={d.id} onClick={() => toggleStatus(d.id)}
+                  title={`${d.label}: ${d.n} pólizas · prima ${fmtMoney(d.prima)} — clic para filtrar`}
+                  style={{
+                    border: `1px solid ${statusFilter.includes(d.id) ? d.text : 'rgba(11,27,51,.12)'}`,
+                    background: d.bg, color: d.text, borderRadius: 14, padding: '2.5px 10px',
+                    fontSize: 11.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+                  }}>
+                  {d.label}: {d.n} · {fmtMoney(d.prima)}
+                </button>
+              ))}
+            </span>
             {ultimaImport && (
-              <span style={{ display: 'block', fontSize: 11.5, color: C.textMuted, marginTop: 2 }}>
+              <span style={{ display: 'block', fontSize: 11.5, color: C.textMuted, marginTop: 4 }}>
                 Última actualización del reporte: {new Date(ultimaImport.created_at).toLocaleString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                 {ultimaImport.usuario ? ` por ${ultimaImport.usuario}` : ''}
                 {ultimaImport.resumen ? ` · ${ultimaImport.resumen.insertadas || 0} nuevas, ${ultimaImport.resumen.canceladas || 0} canceladas` : ''}

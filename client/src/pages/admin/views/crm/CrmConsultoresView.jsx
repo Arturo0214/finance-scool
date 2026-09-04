@@ -431,7 +431,7 @@ export default function CrmConsultoresView({ isAgency }) {
                             <td style={{ fontSize: 12 }}>{p.tipo || '—'}</td>
                             <td style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(p.prima)}{p.moneda && p.moneda !== 'MXN' ? <span style={{ fontSize: 10.5, color: C.textMuted }}> {p.moneda}</span> : null}</td>
                             <td>
-                              <span className="badge" style={{ background: st.bg || 'rgba(11,27,51,.07)', color: st.color || C.text }}>{st.label || p.estatus}</span>
+                              <span className="badge" style={{ background: st.bg || 'rgba(11,27,51,.07)', color: st.text || C.text }}>{st.label || p.estatus}</span>
                               {p.estatus_reporte && <div style={{ fontSize: 10, color: C.textMuted, marginTop: 2 }}>reporte: {p.estatus_reporte}</div>}
                             </td>
                             <td style={{ fontSize: 12 }}>{fmtDate(p.fecha_renovacion) || '—'}</td>
