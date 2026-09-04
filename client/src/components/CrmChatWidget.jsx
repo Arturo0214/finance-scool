@@ -110,7 +110,7 @@ export function ChatPanel({ modo = null, sugerencias = SUGERENCIAS, intro, alto 
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, ...(alto ? { height: alto } : {}) }}>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, ...(alto ? { height: alto, flex: '0 0 auto' } : {}) }}>
       <div className="ccw-msgs">
         {msgs.length === 0 && <div className="ccw-m bot">{intro}</div>}
         {msgs.map((m, i) => m.role === 'user'
