@@ -105,21 +105,30 @@ function derivarEstatus(p, fecha = new Date()) {
 const TERMINAL_REPORTE = new Set(['RESCATADA', 'PÓLIZA NO EMITIDA', 'NO TOMADA', 'CADUCADA']);
 const esTerminalReporte = (p) => TERMINAL_REPORTE.has(String(p && p.estatus_reporte || '').toUpperCase());
 
-/* Estatus de conservación derivado con OVERLAY del estado vivo (Reporte de
-   pólizas / crm_policies), que es más fresco que el corte del Business Review:
-   - Reporte EN VIGOR (o crm 'pagada'): la póliza está activa. Si el corte la
-     daba por NO CONSERVADA (cancelada o gracia vencida) en realidad sobrevivió
-     (se pagó) → CONSERVADA. Si estaba en gracia, sigue en gracia.
-   - Reporte terminal (rescatada/no emitida/no tomada/caducada) o CANCELADA →
-     NO CONSERVADA.
-   Sin dato del reporte, cae al derivado puro del corte. */
+/* Estatus de conservación a hoy: OVERLAY del estado vivo (Reporte de pólizas
+   diario / crm_policies) sobre el ESTATUS OFICIAL del corte BR.
+   Regla de oro: NUNCA re-derivar desde pagado_hasta cuando hay mejor dato —
+   el corte envejece entre cargas y la re-derivación daba por vencido lo que
+   Prudential mismo marca CONSERVADA (caso C17270: cobrado 9% cuando el corte
+   oficial decía 72.3% conservado). Prioridad:
+   1. Reporte terminal (rescatada/no emitida/no tomada/caducada) → NO CONSERVADA.
+   2. crm 'pagada' (reporte EN VIGOR al corriente o pago manual con
+      comprobante) → CONSERVADA, aunque el corte la dé por vencida/cancelada.
+   3. Reporte/crm CANCELADA → NO CONSERVADA (cancelación posterior al corte).
+   4. crm 'pendiente_pago' (reporte PENDIENTE) → PENDIENTE DE PAGO: accionable
+      en "cobrar hoy"; al marcarla pagada el índice sube al momento.
+   5. Sin dato vivo → el estatus_conservacion OFICIAL del corte.
+   6. Sin corte ni dato vivo → derivado de pagado_hasta (gracia). */
 function estatusHoy(p, fecha = new Date()) {
-  const base = derivarEstatus(p, fecha);
   const rep = String(p.estatus_reporte || '').toUpperCase();
   const live = String(p.live_estatus || '').toLowerCase();
-  if (rep === 'EN VIGOR' || live === 'pagada') return base === 'NO CONSERVADA' ? 'CONSERVADA' : base;
-  if (TERMINAL_REPORTE.has(rep) || rep === 'CANCELADA') return 'NO CONSERVADA';
-  return base;
+  if (TERMINAL_REPORTE.has(rep)) return 'NO CONSERVADA';
+  if (live === 'pagada') return 'CONSERVADA';
+  if (rep === 'CANCELADA' || live === 'cancelada') return 'NO CONSERVADA';
+  if (live === 'pendiente_pago' || rep === 'PENDIENTE') return 'PENDIENTE DE PAGO';
+  const oficial = String(p.estatus_conservacion || '').toUpperCase();
+  if (['CONSERVADA', 'PENDIENTE DE PAGO', 'NO CONSERVADA'].includes(oficial)) return oficial;
+  return derivarEstatus(p, fecha);
 }
 
 /* Info del periodo de gracia de una póliza con pago vencido (para el tablero):
@@ -268,7 +277,7 @@ function agruparPorPoliza(lista) {
 function proyectarTrayectoria({ polizas, ventaMensual = 0, tasaConservacion = 0.9, cobrarPendientes = false, meses = 15, hoy = new Date() }) {
   let base = 0, conservada = 0;
   for (const p of polizas) {
-    const st = derivarEstatus(p, hoy);
+    const st = estatusHoy(p, hoy);
     base += Number(p.base_a_conservar_mxn) || 0;
     if (st === 'CONSERVADA' || (cobrarPendientes && st === 'PENDIENTE DE PAGO'))
       conservada += Number(p.base_a_conservar_mxn) || 0;
