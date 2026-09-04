@@ -1751,17 +1751,10 @@ export default function CrmIngresosView({ isAgency }) {
               <p className="sub">
                 Toda la cartera ({promo.agentes} asesores) · base a conservar {fmtMoneyFull(promo.indice.baseAConservar)} · cobrada hoy {fmtMoneyFull(promo.indice.hoy.baseConservada)} · por cobrar hoy {fmtMoneyFull(promo.indice.hoy.basePendiente)} · <b>mínimo promotoría 84%</b> (agentes 86%)
               </p>
-              <div className="info-box" style={{ background: '#E7F5F3', borderColor: `${C.gold}40`, margin: '4px 0 12px' }}>
-                <p style={{ margin: 0, fontSize: 12.5 }}>
-                  Los mismos 4 números de Mi Día: <b>Operativo hoy {pct(promo.indice.siCobraTodo)}</b> (cobrado + por cobrar — el titular en todo el CRM) · <b>Ya cobrado {pct(promo.indice.hoy.actual)}</b> · <b>Techo {pct(promo.indice.siCobraYRehabilitaTodo)}</b> (si además se rehabilita todo) · <b>Corte oficial BR {pct(promo.indice.actual)}</b> (lo estricto ya pagado al último corte — el piso).
-                </p>
-              </div>
               <IndiceBar actual={promo.indice.siCobraTodo} operativo={promo.indice.siCobraYRehabilitaTodo} marks={[0.84]} />
               <div className="crm-kpi-detail">
                 <BonoCard icon={ShieldCheck} label="Operativo hoy" value={<span style={{ color: promoColor(promo.indice.siCobraTodo) }}>{pct(promo.indice.siCobraTodo)}</span>} sub="cobrado + por cobrar — el titular del CRM" color={C.gold} />
-                <BonoCard icon={TrendingUp} label="Ya cobrado hoy" value={<span style={{ color: promoColor(promo.indice.hoy.actual) }}>{pct(promo.indice.hoy.actual)}</span>} sub="solo pagos confirmados al día" />
                 <BonoCard icon={RotateCcw} label="Techo: cobrando y rehabilitando todo" value={<span style={{ color: promoColor(promo.indice.siCobraYRehabilitaTodo) }}>{pct(promo.indice.siCobraYRehabilitaTodo)}</span>} sub="cobrar pendientes + rehabilitar canceladas" color={C.green} />
-                <BonoCard icon={RefreshCw} label="Corte oficial BR" value={<span style={{ color: promoColor(promo.indice.actual) }}>{pct(promo.indice.actual)}</span>} sub="estricto al último Business Review (piso)" />
                 <BonoCard icon={Target} label="Pólizas en el índice" value={promo.polizas.total}
                   sub={`${promo.polizas.conservadas} conservadas · ${promo.polizas.pendientes} por cobrar · ${promo.polizas.noConservadas} canceladas (${promo.polizas.rehabilitables} rehabilitables)`} />
               </div>
