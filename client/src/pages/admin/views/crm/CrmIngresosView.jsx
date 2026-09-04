@@ -2012,8 +2012,8 @@ export default function CrmIngresosView({ isAgency }) {
             <h3><Calculator size={16} style={{ verticalAlign: -2, color: C.gold }} /> Simulador — {detail.agente.nombre}</h3>
             <p className="sub">
               ¿Qué pasa con tu índice y tus bonos si vendes más, cobras lo pendiente o rehabilitas canceladas?
-              El punto de partida ya asume cobrados los pendientes de pago (así arma Prudential el preliminar del trimestre),
-              por eso palomearlos confirma ese escenario sin volver a sumarlos — lo que mueve la aguja son las <b>rehabilitaciones</b> y la <b>venta nueva</b>.
+              Palomear una póliza <b>por cobrar</b> o <b>rehabilitable</b> suma su base al <b>índice cobrado</b> al momento;
+              la <b>venta nueva</b> mueve además tus bonos del trimestre.
             </p>
 
             <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 16 }}>
