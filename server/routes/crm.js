@@ -2307,6 +2307,7 @@ router.get('/ingresos/proximos-pasos', async (req, res) => {
       indice: {
         cobrado: p4(r.indice.hoy.actual), realista: p4(r.indice.hoy.conPendiente),
         operativo: p4(r.indice.operativo), techo: p4(techo), umbral: r.indice.umbral, minimoBono: 0.86,
+        oficial: p4(r.indice.actual), // corte BR vigente: el que define la banda de bono
       },
       bono_trimestre: r.bonos.total_trimestre,
       resumen: {

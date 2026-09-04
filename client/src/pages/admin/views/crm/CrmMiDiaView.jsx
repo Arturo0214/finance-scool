@@ -92,6 +92,8 @@ function buildPromoData(promo, overviewAgentes) {
     indice: {
       cobrado: p4(promo.indice.hoy.actual),
       realista: p4(promo.indice.hoy.conPendiente),
+      operativo: p4(promo.indice.hoy.conPendiente),
+      oficial: p4(promo.indice.actual),
       techo: p4(promo.indice.siCobraYRehabilitaTodo),
       minimoBono: promo.umbral || 0.84,
     },
@@ -322,15 +324,17 @@ export default function CrmMiDiaView({ isAgency }) {
           <div className="midia-hero" style={{ marginBottom: 20 }}>
             <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: 18, alignItems: 'flex-start' }}>
               <div style={{ flex: '1 1 300px' }}>
-                <div style={{ fontSize: 12, opacity: .75, textTransform: 'uppercase', letterSpacing: .6 }}>Índice de conservación · hoy</div>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 6 }}>
-                  <span style={{ fontSize: 40, fontWeight: 800, lineHeight: 1, color: indiceColor(data.indice.cobrado) }}>{pctTxt(data.indice.cobrado, 1)}</span>
-                  <span style={{ fontSize: 13, opacity: .8 }}>cobrado hoy</span>
+                <div style={{ fontSize: 12, opacity: .75, textTransform: 'uppercase', letterSpacing: .6 }}>Índice de conservación · operativo hoy</div>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 6 }}
+                  title="Operativo = lo cobrado + las renovaciones en periodo de gracia que aún puedes cobrar. Es tu foto real de hoy.">
+                  <span style={{ fontSize: 40, fontWeight: 800, lineHeight: 1, color: indiceColor(data.indice.operativo ?? data.indice.realista) }}>{pctTxt(data.indice.operativo ?? data.indice.realista, 1)}</span>
+                  <span style={{ fontSize: 13, opacity: .8 }}>operativo hoy</span>
                 </div>
                 <IndiceBar cobrado={data.indice.cobrado} realista={data.indice.realista} techo={data.indice.techo} />
                 <div style={{ display: 'flex', gap: 16, fontSize: 11.5, opacity: .9, flexWrap: 'wrap' }}>
-                  <span>Realista (si cobras pendientes) <b>{pctTxt(data.indice.realista, 1)}</b></span>
+                  <span title="Renovaciones ya cobradas; lo que falta está en periodo de gracia — cóbralo para asegurarlo">Ya cobrado <b>{pctTxt(data.indice.cobrado, 1)}</b></span>
                   <span>Techo (cobrando y rehabilitando todo) <b>{pctTxt(data.indice.techo, 1)}</b></span>
+                  {data.indice.oficial != null && <span title="Índice del corte oficial del Business Review: con este se define tu banda de bono">Corte oficial BR <b>{pctTxt(data.indice.oficial, 1)}</b></span>}
                   <span>Mínimo bono <b>{pctTxt(data.indice.minimoBono, 0)}</b></span>
                 </div>
               </div>

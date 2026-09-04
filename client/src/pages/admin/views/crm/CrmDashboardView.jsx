@@ -653,7 +653,9 @@ export default function CrmDashboardView({ isAgency }) {
      de pólizas diario — revividas/cobradas cuentan); el corte del Business
      Review queda como referencia. Promotoría umbral 84%, asesor 86%. */
   const idxOficial = single
-    ? (pir && pir[0] ? { hoy: pir[0].indice.hoy?.actual ?? pir[0].indice.actual, corte: pir[0].indice.actual, todo: pir[0].indice.hoy?.conPendiente ?? pir[0].indice.conPendiente, umbral: 0.86 } : null)
+    /* Asesor: el titular es su índice OPERATIVO (cobrado + gracia por cobrar) —
+       el solo-cobrado se desploma cada inicio de mes de renovaciones y asusta */
+    ? (pir && pir[0] ? { hoy: pir[0].indice.operativo ?? pir[0].indice.hoy?.actual ?? pir[0].indice.actual, corte: pir[0].indice.actual, todo: pir[0].indice.hoy?.conPendiente ?? pir[0].indice.conPendiente, umbral: 0.86 } : null)
     : (promoIdx ? { hoy: promoIdx.indice.hoy.actual, corte: promoIdx.indice.actual, todo: promoIdx.indice.siCobraTodo, umbral: 0.84 } : null);
 
   const globalChart = data.global.kpis.months.map((m, i) => ({
