@@ -185,7 +185,13 @@ export function buildSugerencias(client, policiesCliente = []) {
 }
 
 export const CUADERNOS = ['NOVEL', 'EN DESARROLLO', 'CONSOLIDADO'];
-export const PLANES = ['PPR Trasciende', 'PPR Patrimonial', 'Vida Ordinario', 'Vida Temporal', 'GMM Esencial', 'GMM Flex', 'GMM Premium', 'Otro'];
+/* Los nombres de plan REALES son los códigos Prudential del Reporte/índice
+   (WLTF65I, RINF65I, ENDF20I…): los dropdowns se arman con los planes vistos
+   en la base + el catálogo de Productos que administra la agencia. */
+export const planesReales = (policies = [], products = [], aseguradora = null) => [...new Set([
+  ...products.filter(p => p.activo !== false && (!aseguradora || p.aseguradora === aseguradora)).map(p => p.nombre),
+  ...policies.filter(p => !aseguradora || (p.aseguradora || 'PRU') === aseguradora).map(p => p.plan),
+].filter(Boolean))].sort();
 
 /* CSS específico del módulo CRM (complementa getAdminCSS) — lenguaje
    "banca privada": porcelana, hairlines, serif en cifras y acento champagne */

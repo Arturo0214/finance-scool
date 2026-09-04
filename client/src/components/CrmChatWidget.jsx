@@ -87,19 +87,14 @@ const css = `
   .ccw-typing{align-self:flex-start;font-size:11px;color:#6b7a90;padding:2px 6px}
 `;
 
-export default function CrmChatWidget({ isAgency }) {
-  const [open, setOpen] = useState(false);
-  const [msgs, setMsgs] = useState([]);   // {role:'user'|'assistant', content}
+/* Panel de chat reutilizable: lo usan el widget flotante y el Coach de ventas
+   en grande de la Incubadora (modo 'coach'). Cada instancia lleva su historial. */
+export function ChatPanel({ modo = null, sugerencias = SUGERENCIAS, intro, alto = null }) {
+  const [msgs, setMsgs] = useState([]);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
-  // Burbuja "¿Necesitas ayuda?": visible hasta que abren el chat o la cierran
-  const [hint, setHint] = useState(() => localStorage.getItem('fsc_copiloto_hint') !== 'off');
   const endRef = useRef(null);
-
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [msgs, busy, open]);
-
-  const abrir = () => { setOpen(o => !o); setHint(false); localStorage.setItem('fsc_copiloto_hint', 'off'); };
-  const cerrarHint = (e) => { e.stopPropagation(); setHint(false); localStorage.setItem('fsc_copiloto_hint', 'off'); };
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [msgs, busy]);
 
   const enviar = async (q) => {
     const pregunta = (q ?? text).trim();
@@ -107,12 +102,46 @@ export default function CrmChatWidget({ isAgency }) {
     const nuevos = [...msgs, { role: 'user', content: pregunta }];
     setMsgs(nuevos); setText(''); setBusy(true);
     try {
-      const r = await api.crmChat(nuevos.slice(-10));
+      const r = await api.crmChat(nuevos.slice(-10), modo);
       setMsgs([...nuevos, { role: 'assistant', content: r.respuesta }]);
     } catch (e) {
       setMsgs([...nuevos, { role: 'assistant', content: `⚠ ${e.message || 'No pude responder, intenta de nuevo.'}` }]);
     } finally { setBusy(false); }
   };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, ...(alto ? { height: alto } : {}) }}>
+      <div className="ccw-msgs">
+        {msgs.length === 0 && <div className="ccw-m bot">{intro}</div>}
+        {msgs.map((m, i) => m.role === 'user'
+          ? <div key={i} className="ccw-m user">{m.content}</div>
+          : <div key={i} className="ccw-m bot" dangerouslySetInnerHTML={{ __html: mdToHtml(m.content) }} />)}
+        {busy && <div className="ccw-typing">Copiloto escribiendo…</div>}
+        <div ref={endRef} />
+      </div>
+      {msgs.length === 0 && (
+        <div className="ccw-sug">
+          {sugerencias.map(s => <button key={s} onClick={() => enviar(s)}>{s}</button>)}
+        </div>
+      )}
+      <div className="ccw-input">
+        <textarea value={text} placeholder="Escribe tu pregunta…" onChange={e => setText(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviar(); } }} />
+        <button className="ccw-send" disabled={busy || !text.trim()} onClick={() => enviar()} title="Enviar"><Send size={15} /></button>
+      </div>
+    </div>
+  );
+}
+
+export const chatCSS = css;
+
+export default function CrmChatWidget({ isAgency }) {
+  const [open, setOpen] = useState(false);
+  // Burbuja "¿Necesitas ayuda?": visible hasta que abren el chat o la cierran
+  const [hint, setHint] = useState(() => localStorage.getItem('fsc_copiloto_hint') !== 'off');
+
+  const abrir = () => { setOpen(o => !o); setHint(false); localStorage.setItem('fsc_copiloto_hint', 'off'); };
+  const cerrarHint = (e) => { e.stopPropagation(); setHint(false); localStorage.setItem('fsc_copiloto_hint', 'off'); };
 
   return (
     <>
@@ -127,28 +156,7 @@ export default function CrmChatWidget({ isAgency }) {
             </div>
             <button onClick={() => setOpen(false)} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: 4 }}><X size={17} /></button>
           </div>
-          <div className="ccw-msgs">
-            {msgs.length === 0 && (
-              <div className="ccw-m bot">
-                ¡Hola! Soy tu copiloto comercial. Pregúntame cuánto te falta para tu siguiente bono, qué vender para subir tu prima, cómo va tu índice o la carrera del trimestre. 🏁
-              </div>
-            )}
-            {msgs.map((m, i) => m.role === 'user'
-              ? <div key={i} className="ccw-m user">{m.content}</div>
-              : <div key={i} className="ccw-m bot" dangerouslySetInnerHTML={{ __html: mdToHtml(m.content) }} />)}
-            {busy && <div className="ccw-typing">Copiloto escribiendo…</div>}
-            <div ref={endRef} />
-          </div>
-          {msgs.length === 0 && (
-            <div className="ccw-sug">
-              {SUGERENCIAS.map(s => <button key={s} onClick={() => enviar(s)}>{s}</button>)}
-            </div>
-          )}
-          <div className="ccw-input">
-            <textarea value={text} placeholder="Escribe tu pregunta…" onChange={e => setText(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviar(); } }} />
-            <button className="ccw-send" disabled={busy || !text.trim()} onClick={() => enviar()} title="Enviar"><Send size={15} /></button>
-          </div>
+          <ChatPanel intro="¡Hola! Soy tu copiloto comercial. Pregúntame cuánto te falta para tu siguiente bono, qué vender para subir tu prima, cómo va tu índice o la carrera del trimestre. 🏁" />
         </div>
       )}
       {hint && !open && (

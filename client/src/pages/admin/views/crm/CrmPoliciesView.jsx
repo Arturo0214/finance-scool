@@ -6,9 +6,9 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../../../../utils/api';
 import { C } from '../../constants';
 import { Plus, X, Trash2, Search, ChevronUp, ChevronDown, Upload, Download } from 'lucide-react';
-import { getCrmCSS, ESTATUS_POLIZA, estatusPoliza, PLANES, fmtMoney, fmtDate, partirAgentes } from './crmShared';
+import { getCrmCSS, ESTATUS_POLIZA, estatusPoliza, planesReales, fmtMoney, fmtDate, partirAgentes } from './crmShared';
 
-const EMPTY = { client_id: '', poliza: '', plan: PLANES[0], tipo: 'nueva', prima: '', forma_pago: 'anual', suma_asegurada: '', fecha_emision: '', fecha_pago: '', fecha_renovacion: '', estatus: 'en_tramite', notas: '', aseguradora: 'PRU' };
+const EMPTY = { client_id: '', poliza: '', plan: '', tipo: 'nueva', prima: '', forma_pago: 'anual', suma_asegurada: '', fecha_emision: '', fecha_pago: '', fecha_renovacion: '', estatus: 'en_tramite', notas: '', aseguradora: 'PRU' };
 
 const ASEGURADORAS = [
   { id: 'PRU', label: 'Prudential', color: '#003DA5', bg: 'rgba(0,61,165,.09)' },
@@ -55,6 +55,10 @@ export default function CrmPoliciesView({ isAgency }) {
     } catch (e) { alert(e.message); }
     finally { setPagando(false); }
   };
+
+  /* Insignia Life SOLO si el admin habilitó al asesor (alta_il); agencia siempre */
+  const verIL = isAgency || !!(agents[0]?.alta_il);
+  const asegVisibles = ASEGURADORAS.filter(a => verIL || a.id !== 'IL');
 
   const toggleSort = (key) => setSort(s => ({ key, dir: s.key === key && s.dir === 'desc' ? 'asc' : 'desc' }));
   const SortTh = ({ k, children }) => (
@@ -292,13 +296,13 @@ export default function CrmPoliciesView({ isAgency }) {
                   <th style={{ padding: '6px 10px' }}>
                     <select style={fs} value={fPlan} onChange={e => setFPlan(e.target.value)}>
                       <option value="">Todos los planes</option>
-                      {PLANES.map(pl => <option key={pl}>{pl}</option>)}
+                      {planesReales(policies, products).map(pl => <option key={pl}>{pl}</option>)}
                     </select>
                   </th>
                   <th style={{ padding: '6px 10px' }}>
                     <select style={fs} value={fAseg} onChange={e => setFAseg(e.target.value)}>
-                      <option value="">Ambas</option>
-                      {ASEGURADORAS.map(a => <option key={a.id} value={a.id}>{a.id}</option>)}
+                      <option value="">{verIL ? 'Ambas' : 'Todas'}</option>
+                      {asegVisibles.map(a => <option key={a.id} value={a.id}>{a.id}</option>)}
                     </select>
                   </th>
                   <th style={{ padding: '6px 10px' }}><input style={fs} placeholder="Filtrar cliente..." value={fCliente} onChange={e => setFCliente(e.target.value)} /></th>
@@ -414,13 +418,13 @@ export default function CrmPoliciesView({ isAgency }) {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(190px,1fr))', gap: '0 14px' }}>
                 <div className="field"><label>Aseguradora</label>
                   <select value={form.aseguradora ?? 'PRU'} onChange={e => setForm({ ...form, aseguradora: e.target.value })}>
-                    {ASEGURADORAS.map(a => <option key={a.id} value={a.id}>{a.label}</option>)}
+                    {asegVisibles.map(a => <option key={a.id} value={a.id}>{a.label}</option>)}
                   </select>
                 </div>
                 <div className="field"><label>No. de póliza</label><input value={form.poliza ?? ''} onChange={e => setForm({ ...form, poliza: e.target.value })} /></div>
                 <div className="field"><label>Plan</label>
                   <select value={form.plan ?? ''} onChange={e => setForm({ ...form, plan: e.target.value })}>
-                    {[...new Set([...(products.filter(p => p.aseguradora === (form.aseguradora || 'PRU')).map(p => p.nombre)), ...PLANES, ...(form.plan ? [form.plan] : [])])].map(p => <option key={p}>{p}</option>)}
+                    {[...new Set([...planesReales(policies, products, form.aseguradora || 'PRU'), ...(form.plan ? [form.plan] : [])])].map(p => <option key={p}>{p}</option>)}
                   </select>
                 </div>
                 <div className="field"><label>Tipo</label><select value={form.tipo} onChange={e => setForm({ ...form, tipo: e.target.value })}><option value="nueva">Nueva</option><option value="renovacion">Renovación</option></select></div>

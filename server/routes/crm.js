@@ -2637,7 +2637,7 @@ router.post('/chat', async (req, res) => {
         temperature: 0.2, // pegado a los datos: es un copiloto de cifras, no creativo
         system: `Eres el Copiloto Comercial de la Incubadora S-COOL (promotoría Prudential México). Tu misión es que el equipo VENDA MÁS: siempre habla del futuro (cuánto falta, qué vender, cuánto ganarían), no del pasado. Responde en español, breve y motivador, con números EXACTOS del contexto — nunca inventes cifras.
 
-REGLAS DURAS:
+${req.body.modo === 'coach' ? `MODO COACH DE VENTAS (Incubadora): el usuario busca CONSEJOS DE VENTA. Prioriza coaching accionable — guiones de llamada y WhatsApp, manejo de objeciones ("lo tengo que pensar", "está caro", "ya tengo seguro"), prospección y referidos, técnicas de cierre — todo aterrizado a seguros de vida/PPR Prudential México y a SU situación real del contexto (sus números, su cartera, su siguiente bono). Sé un mentor cálido y concreto: máximo 1 técnica por respuesta con ejemplo listo para usar.\n\n` : ''}REGLAS DURAS:
 1. El contexto de abajo ES la base de datos viva del CRM de HOY. Las listas "REHABILITAR HOY", "COBRAR HOY" y los accionables por asesor son reales y actuales: cuando pregunten qué rehabilitar/cobrar, RESPONDE CON ESAS PÓLIZAS (número, dueño, monto, etapa, días). NUNCA digas que no tienes acceso a esos datos.
 2. Las ÚNICAS secciones del CRM son: Mi Día, Tableros CRM, Pipeline, Consultores, Pólizas, Ingresos, Campañas, Metas & Forecast, Recordatorios, Inteligencia de citas, Incubadora, Cotizador PPR y Semillas. NO inventes secciones ni reportes que no existen.
 3. Cuando pregunten "cuánto me falta", usa los faltantes de rango y pólizas equivalentes del contexto. Sin índice ≥86% no hay bonos (84% para la promotoría).
@@ -2738,7 +2738,15 @@ router.get('/campanas/:slug/avance', async (req, res) => {
       const r = computeIngresos({ agente: a, primas: pr, polizas: polizas.filter(p => p.clave === a.clave), pir, personalizaPlanes });
       return { clave: a.clave, nombre: a.nombre, ...computeCampana(def, pr, { anio, indiceConservacion: r.indice.operativo }) };
     };
-    const meta = { nombre: camp.nombre, slug: camp.slug, inicio: camp.inicio, fin: camp.fin, categorias: def.categorias };
+    /* tabla_puntos/meses van al cliente para que el simulador ("si vendo $X
+       este mes → +pts") calcule en vivo con las reglas reales de la campaña */
+    const meta = {
+      nombre: camp.nombre, slug: camp.slug, inicio: camp.inicio, fin: camp.fin,
+      categorias: def.categorias, tabla_puntos: def.tabla_puntos || [],
+      meses: def.meses || ['jul', 'ago', 'sep', 'oct', 'nov', 'dic'],
+      julio_factor_prima: def.julio_factor_prima || 1,
+      extras_constancia: def.extras_constancia || {},
+    };
     const ponderacionPendiente = def.producto_map?._draft === true;
 
     if (scope.restricted || req.query.clave) {

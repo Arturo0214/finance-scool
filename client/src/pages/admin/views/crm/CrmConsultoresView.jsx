@@ -247,7 +247,7 @@ export default function CrmConsultoresView({ isAgency }) {
             </div>
           )}
           <div className="two-col" style={{ alignItems: 'start' }}>
-            {['PRU', 'IL'].map(aseg => (
+            {['PRU', 'IL'].filter(aseg => aseg !== 'IL' || isAgency || !!(data?.consultores?.[0]?.registrado_il)).map(aseg => (
               <div key={aseg} className="crm-chart-card" style={{ marginBottom: 0 }}>
                 <h3><ShieldCheck size={16} style={{ verticalAlign: -2, color: ASEG[aseg].color }} /> {ASEG[aseg].label}</h3>
                 <p className="sub">{products.filter(p => p.aseguradora === aseg).length} productos</p>

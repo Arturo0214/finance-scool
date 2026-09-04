@@ -9,12 +9,12 @@ import { C } from '../../constants';
 import { Search, Plus, X, Trash2, Upload, FileText, ExternalLink, Phone, Mail, Pencil, Link2, Sparkles, StickyNote, CheckSquare, History } from 'lucide-react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip as ReTooltip } from 'recharts';
 import {
-  getCrmCSS, ETAPAS, etapaInfo, estatusPoliza, ESTATUS_POLIZA, PLANES,
+  getCrmCSS, ETAPAS, etapaInfo, estatusPoliza, ESTATUS_POLIZA,
   TIPOS_RECORDATORIO, tipoRecordatorio, fmtMoney, fmtDate, buildSugerencias,
 } from './crmShared';
 
 const EMPTY_CLIENT = { nombre: '', email: '', telefono: '', rfc: '', fecha_nacimiento: '', fecha_nacimiento_conyuge: '', hijos: '', motivo_no_compra: '', ocupacion: '', empresa: '', direccion: '', etapa: 'prospecto', origen: 'referido', notas: '', agent_id: '', aseguradora: 'PRU' };
-const EMPTY_POLICY = { poliza: '', plan: PLANES[0], tipo: 'nueva', prima: '', forma_pago: 'anual', suma_asegurada: '', fecha_emision: '', fecha_pago: '', fecha_renovacion: '', estatus: 'en_tramite', notas: '', motivo_compra: '', aseguradora: 'PRU' };
+const EMPTY_POLICY = { poliza: '', plan: '', tipo: 'nueva', prima: '', forma_pago: 'anual', suma_asegurada: '', fecha_emision: '', fecha_pago: '', fecha_renovacion: '', estatus: 'en_tramite', notas: '', motivo_compra: '', aseguradora: 'PRU' };
 
 /* Carteras por aseguradora */
 const ASEGURADORAS = [
@@ -192,6 +192,10 @@ export default function CrmClientsView({ isAgency, embedded }) {
     finally { setUploading(false); if (fileInputRef.current) fileInputRef.current.value = ''; }
   };
 
+  /* Insignia Life SOLO si el admin habilitó al asesor (alta_il); agencia siempre */
+  const verIL = isAgency || !!(agents[0]?.alta_il);
+  const asegVisibles = ASEGURADORAS.filter(a => verIL || a.id !== 'IL');
+
   const filtered = clients.filter(c => {
     if (etapaFilter !== 'todas' && (c.etapa !== etapaFilter || esCartera(c))) return false;
     if (agentFilter && String(c.agent_id) !== agentFilter) return false;
@@ -234,7 +238,7 @@ export default function CrmClientsView({ isAgency, embedded }) {
     { key: 'direccion', label: 'Dirección' },
     { key: 'etapa', label: 'Etapa', type: 'select', options: ETAPAS.map(e => ({ value: e.id, label: e.label })) },
     { key: 'origen', label: 'Origen', type: 'select', options: ['referido', 'frio', 'campania', 'evento', 'otro'] },
-    { key: 'aseguradora', label: 'Cartera / Aseguradora', type: 'select', options: ASEGURADORAS.map(a => ({ value: a.id, label: a.label })) },
+    { key: 'aseguradora', label: 'Cartera / Aseguradora', type: 'select', options: asegVisibles.map(a => ({ value: a.id, label: a.label })) },
   ];
 
   return (
@@ -251,10 +255,12 @@ export default function CrmClientsView({ isAgency, embedded }) {
             <Search size={15} />
             <input className="crm-search" placeholder="Buscar por nombre o teléfono..." value={search} onChange={e => setSearch(e.target.value)} />
           </div>
-          <select className="crm-select" value={asegFilter} onChange={e => setAsegFilter(e.target.value)}>
-            <option value="">Ambas carteras</option>
-            {ASEGURADORAS.map(a => <option key={a.id} value={a.id}>{a.label}</option>)}
-          </select>
+          {verIL && (
+            <select className="crm-select" value={asegFilter} onChange={e => setAsegFilter(e.target.value)}>
+              <option value="">Ambas carteras</option>
+              {asegVisibles.map(a => <option key={a.id} value={a.id}>{a.label}</option>)}
+            </select>
+          )}
           {isAgency && (
             <select className="crm-select" value={agentFilter} onChange={e => setAgentFilter(e.target.value)}>
               <option value="">Todos los asesores</option>
@@ -625,9 +631,9 @@ export default function CrmClientsView({ isAgency, embedded }) {
                     <div className="config-panel" style={{ marginBottom: 16 }}>
                       <h3 style={{ margin: '0 0 12px', fontSize: 14 }}>{policyForm.id ? 'Editar póliza' : 'Nueva póliza'}</h3>
                       {inputRow(policyForm, setPolicyForm, [
-                        { key: 'aseguradora', label: 'Aseguradora', type: 'select', options: ASEGURADORAS.map(a => ({ value: a.id, label: a.label })) },
+                        { key: 'aseguradora', label: 'Aseguradora', type: 'select', options: asegVisibles.map(a => ({ value: a.id, label: a.label })) },
                         { key: 'poliza', label: 'No. de póliza' },
-                        { key: 'plan', label: 'Plan', type: 'select', options: PLANES },
+                        { key: 'plan', label: 'Plan (código Prudential, ej. WLTF65I)' },
                         { key: 'tipo', label: 'Tipo', type: 'select', options: [{ value: 'nueva', label: 'Nueva' }, { value: 'renovacion', label: 'Renovación' }] },
                         { key: 'prima', label: 'Prima anual (MXN)', type: 'number' },
                         { key: 'forma_pago', label: 'Forma de pago', type: 'select', options: ['anual', 'semestral', 'trimestral', 'mensual'] },

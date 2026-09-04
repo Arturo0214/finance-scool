@@ -14,6 +14,15 @@ import {
   BookOpen, ClipboardCheck, ArrowUpRight, AlertTriangle, Sparkles,
 } from 'lucide-react';
 import { getCrmCSS, fmtMoney } from './crmShared';
+import { ChatPanel, chatCSS } from '../../../../components/CrmChatWidget';
+
+const SUGERENCIAS_COACH = [
+  '¿Cómo respondo a "lo tengo que pensar"?',
+  'Dame un guion de WhatsApp para pedir referidos',
+  '¿Cómo le explico el PPR a un cliente de 35 años?',
+  '¿Qué digo cuando me dicen "está muy caro"?',
+  '¿Cómo cierro a un cliente que ya vio la propuesta?',
+];
 
 const pct = (n, d = 1) => `${((Number(n) || 0) * 100).toFixed(d)}%`;
 const indiceColor = (i) => (i >= 0.94 ? C.green : i >= 0.90 ? '#0891B2' : i >= 0.86 ? C.amber : C.red);
@@ -155,6 +164,27 @@ export default function CrmIncubadoraView() {
                   </div>
                 </>
               )}
+            </>
+          )}
+
+          {/* ── 🧠 Coach de ventas en grande (asesor): el Copiloto con consejos ── */}
+          {esAsesor && (
+            <>
+              <style>{chatCSS}</style>
+              <div className="crm-chart-card" style={{ marginBottom: 24, padding: 0, overflow: 'hidden', borderTop: `3px solid ${C.gold}` }}>
+                <div style={{ background: `linear-gradient(135deg,${C.navy},#0A2A66)`, color: '#fff', padding: '14px 18px' }}>
+                  <b style={{ fontSize: 15, display: 'flex', alignItems: 'center', gap: 8 }}><Sparkles size={17} color={C.gold} /> Tu coach de ventas</b>
+                  <div style={{ fontSize: 12, opacity: .8, marginTop: 2 }}>
+                    Pregúntale cómo manejar objeciones, guiones de llamada o WhatsApp, cómo pedir referidos o cerrar — con tus números reales en mente.
+                  </div>
+                </div>
+                <ChatPanel
+                  modo="coach"
+                  alto={520}
+                  sugerencias={SUGERENCIAS_COACH}
+                  intro="¡Hola, coach al habla! 🧠 Cuéntame con qué cliente u objeción estás batallando, o pídeme un guion — te doy una técnica concreta lista para usar, pensada para tu cartera y tu siguiente bono."
+                />
+              </div>
             </>
           )}
 
