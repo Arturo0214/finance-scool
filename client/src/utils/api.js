@@ -195,6 +195,19 @@ export const api = {
   crmCarteraResumen: () => request('/crm/cartera/resumen'),
   crmCobranzaMailing: (clave) => request('/crm/cobranza-mailing', { method: 'POST', body: JSON.stringify(clave ? { clave } : {}) }),
   crmLastImport: () => request('/crm/polizas/last-import'),
+  /* Marcar póliza pagada: comprobante (imagen/PDF) OBLIGATORIO */
+  crmMarcarPagada: async (policyId, file) => {
+    const fd = new FormData();
+    fd.append('comprobante', file);
+    const res = await fetch(`${API}/crm/policies/${policyId}/pagada`, {
+      method: 'POST', credentials: 'include',
+      headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {},
+      body: fd,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Error al marcar pagada');
+    return data;
+  },
   crmImportPolizas: async (file) => {
     const fd = new FormData();
     fd.append('file', file);

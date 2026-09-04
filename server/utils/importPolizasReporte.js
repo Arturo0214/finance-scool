@@ -79,7 +79,7 @@ async function importarReporte(db, { workbook, archivo, usuario, userId }) {
   }
 
   /* Pólizas existentes por número (descifrado) */
-  const polRows = await fetchAll(() => db.from('crm_policies').select('id, agent_id, client_id, poliza, estatus, fecha_renovacion').order('id'));
+  const polRows = await fetchAll(() => db.from('crm_policies').select('id, agent_id, client_id, poliza, estatus, fecha_renovacion, pago_manual_at').order('id'));
   const polPorNumero = new Map();
   for (const p of polRows) {
     const numero = String(decryptFields(p, 'crm_policies').poliza || '').replace(/\.0$/, '');
@@ -88,7 +88,11 @@ async function importarReporte(db, { workbook, archivo, usuario, userId }) {
     polPorNumero.get(numero).push(p);
   }
 
-  const resumen = { filas: rows.length, clientesNuevos: 0, actualizadas: 0, canceladas: 0, revividas: 0, insertadas: 0, saltadas: 0, placeholders };
+  const resumen = { filas: rows.length, clientesNuevos: 0, actualizadas: 0, canceladas: 0, revividas: 0, insertadas: 0, saltadas: 0, protegidasPagoManual: 0, placeholders };
+
+  /* Pago confirmado a mano con comprobante (< 60 días): el corte de Prudential
+     llega con retraso, así que el reporte NO puede re-cancelar esa póliza. */
+  const pagoManualVigente = (p) => p.pago_manual_at && (Date.now() - new Date(p.pago_manual_at).getTime()) < 60 * 86400000;
 
   for (const r of rows) {
     const numero = String(r[0]).trim();
@@ -126,7 +130,10 @@ async function importarReporte(db, { workbook, archivo, usuario, userId }) {
         const patch = { updated_at: nowIso(), estatus_reporte: estatusOrig };
         if (contenedores.has(ex.client_id)) patch.client_id = clientId;
         if (fechaRenov) patch.fecha_renovacion = fechaRenov;
-        if (CANCELA.has(estatusOrig) && ex.estatus !== 'cancelada') { patch.estatus = 'cancelada'; resumen.canceladas++; }
+        if (CANCELA.has(estatusOrig) && ex.estatus !== 'cancelada') {
+          if (pagoManualVigente(ex)) resumen.protegidasPagoManual++;
+          else { patch.estatus = 'cancelada'; resumen.canceladas++; }
+        }
         else if (estatusOrig === 'EN VIGOR' && ex.estatus === 'cancelada') { patch.estatus = 'pagada'; resumen.revividas++; }
         else if (estatusOrig === 'PENDIENTE' && ex.estatus === 'cancelada') { patch.estatus = 'pendiente_pago'; resumen.revividas++; }
         const { error } = await db.from('crm_policies').update(patch).eq('id', ex.id);

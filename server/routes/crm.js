@@ -526,6 +526,77 @@ router.delete('/policies/:id', async (req, res) => {
   res.json({ ok: true });
 });
 
+/* ── Marcar póliza como PAGADA — asesor, con comprobante OBLIGATORIO ──
+   El asesor confirma el cobro subiendo el comprobante del pago (foto/PDF,
+   p. ej. reenviado por WhatsApp). Sin comprobante NO se puede marcar. Efectos:
+   1. crm_policies: estatus=pagada + fecha_pago + pago_manual_at/por — el
+      import diario NO la re-cancela por 60 días (el corte llega con retraso).
+   2. crm_pru_polizas_indice: pagado_hasta avanza un periodo de pago → el
+      índice y la cobranza de HOY la dan por cubierta sin esperar el corte.
+   3. El comprobante queda en el expediente (crm_files · comprobante-pago). */
+router.post('/policies/:id/pagada', upload.single('comprobante'), async (req, res) => {
+  const scope = await resolveScope(req, res);
+  if (!scope) return;
+  if (!req.file) return res.status(400).json({ error: 'Sube el comprobante del pago (imagen o PDF). Sin comprobante no se puede marcar como pagada.' });
+  const esImagenOPdf = String(req.file.mimetype || '').startsWith('image/') || req.file.mimetype === 'application/pdf';
+  if (!esImagenOPdf) return res.status(400).json({ error: 'El comprobante debe ser una imagen o un PDF.' });
+  const db = getDB();
+  try {
+    const { data: polRaw } = await db.from('crm_policies').select('*').eq('id', req.params.id).maybeSingle();
+    if (!polRaw) return res.status(404).json({ error: 'Póliza no encontrada' });
+    if (scope.restricted && polRaw.agent_id !== scope.agentId) return res.status(403).json({ error: 'Solo puedes marcar como pagadas tus propias pólizas' });
+    if (polRaw.estatus === 'pagada') return res.status(400).json({ error: 'Esta póliza ya está marcada como pagada' });
+
+    /* 3. Comprobante al expediente (Cloudinary privado + crm_files) */
+    const subida = await new Promise((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        { folder: 'fsc-crm/comprobantes', resource_type: 'auto', type: 'authenticated', use_filename: true, filename_override: req.file.originalname },
+        (err, r) => (err ? reject(err) : resolve(r))
+      );
+      stream.end(req.file.buffer);
+    });
+    const { data: fileRow, error: eF } = await db.from('crm_files').insert([{
+      agent_id: polRaw.agent_id, client_id: polRaw.client_id || null, policy_id: polRaw.id,
+      nombre: req.file.originalname, url: subida.secure_url, public_id: subida.public_id,
+      formato: subida.format || req.file.mimetype, bytes: subida.bytes || req.file.size,
+      resource_type: subida.resource_type || 'raw', categoria: 'comprobante-pago', uploaded_by: req.user.id,
+    }]).select();
+    if (eF) return res.status(500).json({ error: 'No se pudo guardar el comprobante: ' + eF.message });
+
+    /* 1. La póliza queda pagada y protegida del import */
+    const hoyIso = new Date().toISOString().slice(0, 10);
+    const dec = decryptFields(polRaw, 'crm_policies');
+    const numero = String(dec.poliza || '').replace(/\.0$/, '').trim();
+    const notaPago = `Pago confirmado con comprobante por ${req.user.name} el ${hoyIso}.`;
+    const { error: eP } = await db.from('crm_policies').update({
+      estatus: 'pagada', fecha_pago: polRaw.fecha_pago || hoyIso,
+      pago_manual_at: new Date().toISOString(), pago_manual_por: req.user.name,
+      notas: encryptFields({ notas: `${dec.notas ? dec.notas + ' · ' : ''}${notaPago}` }, 'crm_policies').notas,
+      updated_at: new Date().toISOString(),
+    }).eq('id', polRaw.id);
+    if (eP) return res.status(500).json({ error: eP.message });
+
+    /* 2. Avanza pagado_hasta un periodo en el índice (si la póliza está ahí) */
+    let coberturasActualizadas = 0;
+    if (numero) {
+      const { data: agRow } = await db.from('crm_agents').select('clave').eq('id', polRaw.agent_id).maybeSingle();
+      let qIdx = db.from('crm_pru_polizas_indice').select('id, pagado_hasta, frecuencia_pago').eq('poliza', numero);
+      if (agRow?.clave) qIdx = qIdx.eq('clave', agRow.clave);
+      const { data: cober } = await qIdx;
+      for (const cb of (cober || [])) {
+        const meses = MESES_FRECUENCIA[String(cb.frecuencia_pago || '').toUpperCase()] || 12;
+        const base = cb.pagado_hasta ? new Date(`${String(cb.pagado_hasta).slice(0, 10)}T12:00:00`) : new Date();
+        base.setMonth(base.getMonth() + meses);
+        const { error: eI } = await db.from('crm_pru_polizas_indice').update({ pagado_hasta: base.toISOString().slice(0, 10) }).eq('id', cb.id);
+        if (!eI) coberturasActualizadas++;
+      }
+    }
+
+    logActivity(req, 'pago-manual', 'poliza', polRaw.id, `póliza ${numero} · comprobante ${req.file.originalname}`);
+    res.json({ ok: true, poliza: numero, comprobante: signedFileUrl(fileRow[0]), coberturas_indice_actualizadas: coberturasActualizadas });
+  } catch (e) { res.status(500).json({ error: 'Marcar pagada: ' + e.message }); }
+});
+
 /* ═══════ Carga diaria del Reporte de pólizas + export + bitácora ═══════ */
 
 const XLSX = require('xlsx');

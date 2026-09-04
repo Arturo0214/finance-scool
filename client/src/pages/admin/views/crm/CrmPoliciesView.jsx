@@ -41,6 +41,21 @@ export default function CrmPoliciesView({ isAgency }) {
   const [importando, setImportando] = useState(false);
   const importRef = useRef(null);
 
+  /* Marcar pagada: SOLO con comprobante (imagen/PDF del pago) */
+  const [pagoModal, setPagoModal] = useState(null);   // póliza seleccionada
+  const [pagoFile, setPagoFile] = useState(null);
+  const [pagando, setPagando] = useState(false);
+  const confirmarPago = async () => {
+    if (!pagoFile) return alert('El comprobante es obligatorio: sube la imagen o PDF del pago.');
+    setPagando(true);
+    try {
+      const r = await api.crmMarcarPagada(pagoModal.id, pagoFile);
+      alert(`Póliza ${r.poliza || ''} marcada como pagada ✓\nEl comprobante quedó en el expediente y el reporte diario no la va a pisar.`);
+      setPagoModal(null); setPagoFile(null); load();
+    } catch (e) { alert(e.message); }
+    finally { setPagando(false); }
+  };
+
   const toggleSort = (key) => setSort(s => ({ key, dir: s.key === key && s.dir === 'desc' ? 'asc' : 'desc' }));
   const SortTh = ({ k, children }) => (
     <th onClick={() => toggleSort(k)} style={{ cursor: 'pointer', userSelect: 'none' }} title="Ordenar">
@@ -222,6 +237,39 @@ export default function CrmPoliciesView({ isAgency }) {
         </div>
       </div>
 
+      {/* ══ Modal: marcar pagada con comprobante OBLIGATORIO ══ */}
+      {pagoModal && (
+        <div className="modal-overlay" onClick={() => { setPagoModal(null); setPagoFile(null); }}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
+            <div className="modal-head">
+              <h2 style={{ fontSize: 16.5 }}>💵 Marcar como pagada</h2>
+              <button className="close-btn" onClick={() => { setPagoModal(null); setPagoFile(null); }}><X size={20} /></button>
+            </div>
+            <div className="modal-body">
+              <p style={{ fontSize: 13, margin: '0 0 4px' }}>
+                Póliza <b>{pagoModal.poliza || pagoModal.plan || pagoModal.id}</b>
+                {pagoModal.crm_clients?.nombre ? <> · {pagoModal.crm_clients.nombre}</> : null}
+                {pagoModal.prima ? <> · {fmtMoney(pagoModal.prima)}</> : null}
+              </p>
+              <div className="info-box" style={{ background: C.amberBg, margin: '10px 0' }}>
+                <p style={{ fontSize: 12.5 }}>📎 <b>El comprobante del pago es obligatorio</b> (imagen o PDF — por ejemplo, el que te reenviaron por WhatsApp). Queda guardado en el expediente de la póliza.</p>
+              </div>
+              <input type="file" accept="image/*,application/pdf" onChange={e => setPagoFile(e.target.files[0] || null)} style={{ fontSize: 13 }} />
+              {pagoFile && <div style={{ fontSize: 11.5, color: C.green, marginTop: 6 }}>✓ {pagoFile.name}</div>}
+              <p style={{ fontSize: 11.5, color: C.textMuted, marginTop: 10 }}>
+                Al confirmar: la póliza queda <b>pagada</b> hoy, tu índice y cobranza se actualizan al momento, y la carga diaria del reporte <b>no</b> revierte este pago (60 días de protección mientras Prudential lo procesa).
+              </p>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '12px 18px', borderTop: '1px solid rgba(11,27,51,.08)' }}>
+              <button className="btn-secondary" onClick={() => { setPagoModal(null); setPagoFile(null); }}>Cancelar</button>
+              <button className="btn-primary" disabled={pagando || !pagoFile} style={{ opacity: pagoFile ? 1 : .55 }} onClick={confirmarPago}>
+                {pagando ? 'Guardando…' : 'Confirmar pago ✓'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="filter-tabs" style={{ marginBottom: 18 }}>
         <button className={`f-tab${statusFilter.length === 0 ? ' active' : ''}`} onClick={() => setStatusFilter([])}>Todas ({filteredBase.length})</button>
         {ESTATUS_POLIZA.map(s => (
@@ -301,7 +349,17 @@ export default function CrmPoliciesView({ isAgency }) {
                   <td style={{ textTransform: 'capitalize' }}>{p.tipo === 'renovacion' ? 'Renovación' : 'Nueva'}</td>
                   <td><b>{fmtMoney(p.prima)}</b><br /><span style={{ fontSize: 11, color: C.textMuted, textTransform: 'capitalize' }}>{p.forma_pago}</span></td>
                   <td style={{ fontSize: 12.5 }}>{p.fecha_pago ? `Pagada ${fmtDate(p.fecha_pago)}` : p.fecha_renovacion ? `Renueva ${fmtDate(p.fecha_renovacion)}` : fmtDate(p.fecha_emision)}</td>
-                  <td><span className="badge" style={{ background: s.bg, color: s.text }}>{s.label}</span></td>
+                  <td onClick={e => e.stopPropagation()}>
+                    <span className="badge" style={{ background: s.bg, color: s.text }}>{s.label}</span>
+                    {p.pago_manual_at && <div style={{ fontSize: 10, color: C.green, marginTop: 2 }} title={`Pago confirmado con comprobante${p.pago_manual_por ? ' por ' + p.pago_manual_por : ''}`}>✓ comprobante</div>}
+                    {p.estatus !== 'pagada' && (
+                      <button className="f-tab" style={{ display: 'block', marginTop: 4, fontSize: 10.5, padding: '2px 8px' }}
+                        title="Marca el pago subiendo el comprobante (obligatorio)"
+                        onClick={() => setPagoModal(p)}>
+                        💵 Marcar pagada
+                      </button>
+                    )}
+                  </td>
                 </tr>
               );
             })}
