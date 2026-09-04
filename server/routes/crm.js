@@ -2398,6 +2398,21 @@ function buildProyeccion({ agente, primas, polizas, pir, personalizaPlanes, goal
   return {
     clave: agente.clave, nombre: agente.nombre, cuaderno: agente.cuaderno,
     periodo: r.periodo,
+    /* Accionables resumidos: el Copiloto los usa para responder "¿qué cobro/
+       rehabilito hoy?" también en modo promotoría */
+    accionables: {
+      pendientes: r.accionables.pendientesPago.length,
+      monto_pendiente: Math.round(r.accionables.pendientesPago.reduce((s, p) => s + (p.monto || 0), 0)),
+      rehab_total: r.accionables.rehabilitables.length,
+      rehab_monto: Math.round(r.accionables.rehabResumen.monto || 0),
+      rehabilitables_top: r.accionables.rehabilitables.slice(0, 6).map(p => ({
+        poliza: p.poliza, plan: p.plan_id || null, monto: Math.round(p.monto || 0),
+        etapa: p.etapa, urgencia: p.urgencia, dias: p.dias_para_vencer_etapa,
+      })),
+      cobrar_top: r.accionables.pendientesPago.slice(0, 6).map(p => ({
+        poliza: p.poliza, plan: p.plan_id || null, monto: Math.round(p.monto || 0),
+      })),
+    },
     indice: { operativo: r.indice.operativo, umbral: r.indice.umbral, bloqueado: !r.indice.umbral, minimoBono: 0.86 },
     prima_promedio: primaPromedio,
     prima_promedio_es_promotoria: usaFallback,
@@ -2430,10 +2445,12 @@ router.get('/ingresos/proyeccion', async (req, res) => {
     if (!scope) return;
     const clave = String(req.query.clave || scope.clave || '').toUpperCase() || null;
     const db = getDB();
-    const [pir, personalizaPlanes, { agentes, primas, polizas }, goals] = await Promise.all([
+    const [pir, personalizaPlanes, { agentes, primas, polizas }, goals, clasifQ] = await Promise.all([
       getPirTablas(), getPersonalizaPlanes(), fetchIngresosData(clave),
       fetchGoalsPorClave(db),
+      db.from('crm_agents').select('clave, clasificacion'),
     ]);
+    const clasifDe = new Map((clasifQ.data || []).filter(a => a.clave).map(a => [a.clave, a.clasificacion || 'activo']));
     /* Promedio de TODA la promotoría como fallback para asesores sin cartera.
        Con clave el fetch ya viene filtrado: trae el global en una consulta extra. */
     let todasPolizas = polizas;
@@ -2455,11 +2472,13 @@ router.get('/ingresos/proyeccion', async (req, res) => {
       return k > m ? k : m;
     }, '');
     if (clave) return res.json(rows[0] ? { ...rows[0], corte_primas: cortePrimas } : null);
-    /* Promotoría: carrera de asesores del trimestre */
+    /* Carrera de la promotoría: SOLO asesores ACTIVOS — los inactivos no
+       compiten (pedido de Arturo); su cartera sigue contando en índice/bonos. */
     const carrera = rows
+      .filter(x => (clasifDe.get(x.clave) || 'activo') === 'activo')
       .map(x => ({ clave: x.clave, nombre: x.nombre, pagadaInicialQ: x.venta.pagadaInicialQ, bono: x.bonos_hoy.total_trimestre, indice: x.indice.operativo, bloqueado: x.indice.bloqueado, meta_mes: x.meta_mes }))
       .sort((a, b) => b.pagadaInicialQ - a.pagadaInicialQ);
-    res.json({ agentes: rows, carrera, corte_primas: cortePrimas });
+    res.json({ agentes: rows.map(x => ({ ...x, clasificacion: clasifDe.get(x.clave) || 'activo' })), carrera, corte_primas: cortePrimas });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -2513,11 +2532,21 @@ router.post('/chat', async (req, res) => {
       const ppGlobal = primaPromedioDe(polizas).promedio;
       const rows = agentes.map(a => buildProyeccion({ agente: a, primas: primas.filter(p => p.clave === a.clave), polizas: polizas.filter(p => p.clave === a.clave), pir, personalizaPlanes, goals, primaPromedioFallback: ppGlobal }));
       const tot = (f) => rows.reduce((s, x) => s + f(x), 0);
+      /* Accionables de TODA la promotoría: qué rehabilitar/cobrar HOY, con dueño */
+      const rehabGlobal = rows.flatMap(x => (x.accionables?.rehabilitables_top || []).map(p => ({ ...p, agente: x.nombre, clave: x.clave })))
+        .sort((a, b) => ({ EXTREMA: 0, ALTA: 1, MEDIA: 2, BAJA: 3 }[a.urgencia] ?? 9) - ({ EXTREMA: 0, ALTA: 1, MEDIA: 2, BAJA: 3 }[b.urgencia] ?? 9) || (a.dias ?? 999) - (b.dias ?? 999))
+        .slice(0, 20);
+      const cobrarGlobal = rows.flatMap(x => (x.accionables?.cobrar_top || []).map(p => ({ ...p, agente: x.nombre })))
+        .sort((a, b) => b.monto - a.monto).slice(0, 15);
       contexto = [
         `HOY: ${hoy} · PROMOTORÍA Incubadora S-COOL: ${rows.length} asesores con datos Prudential`,
         `TOTALES DEL TRIMESTRE: venta nueva ${money(tot(x => x.venta.pagadaInicialQ))} · renovación ${money(tot(x => x.venta.renovacionQ))} · bonos ${money(tot(x => x.bonos_hoy.total_trimestre))}`,
         `ÚLTIMA CARGA DEL REPORTE DE PÓLIZAS: ${li.data?.[0] ? `${li.data[0].created_at.slice(0, 10)} (${li.data[0].resumen?.filas || '?'} filas)` : 'sin registro'}`,
         `NOTA: los BONOS y primas pagadas vienen de los cortes oficiales del Business Review Prudential (último corte cargado: ${primas.reduce((m, p) => { const k = `${p.anio}-${String(p.mes).padStart(2, '0')}`; return k > m ? k : m; }, 's/d')}); el Reporte de pólizas diario actualiza estatus, índice HOY, cartera y rehabilitaciones.`,
+        `REHABILITAR HOY (top ${rehabGlobal.length} de ${rows.reduce((s, x) => s + (x.accionables?.rehab_total || 0), 0)} en toda la promotoría, ordenadas por urgencia): ` +
+          rehabGlobal.map(p => `póliza ${p.poliza}${p.plan ? ' ' + p.plan : ''} de ${p.agente} · ${money(p.monto)} · etapa ${p.etapa} · ${p.urgencia} · quedan ${p.dias}d`).join(' | '),
+        `COBRAR HOY (top ${cobrarGlobal.length} de ${rows.reduce((s, x) => s + (x.accionables?.pendientes || 0), 0)} pendientes): ` +
+          cobrarGlobal.map(p => `póliza ${p.poliza}${p.plan ? ' ' + p.plan : ''} de ${p.agente} · ${money(p.monto)}`).join(' | '),
         `ASESORES:`,
         ...rows.sort((a, b) => b.venta.pagadaInicialQ - a.venta.pagadaInicialQ).map(x => lineaAsesor(x, false)),
       ].join('\n');
@@ -2533,7 +2562,16 @@ router.post('/chat', async (req, res) => {
       body: JSON.stringify({
         model: process.env.COPILOT_MODEL || 'claude-haiku-4-5-20251001',
         max_tokens: 900,
-        system: `Eres el Copiloto Comercial de la Incubadora S-COOL (promotoría Prudential México). Tu misión es que el equipo VENDA MÁS: siempre habla del futuro (cuánto falta, qué vender, cuánto ganarían), no del pasado. Responde en español, breve y motivador, con números EXACTOS del contexto — nunca inventes cifras. Cuando pregunten "cuánto me falta", usa faltantes de rango y pólizas equivalentes. Recuerda: sin índice ≥86% no hay bonos. Si piden algo fuera del contexto (documentos, clientes específicos), dilo y sugiere dónde verlo en el CRM.\n\nCONTEXTO EN VIVO DEL CRM:\n${contexto}`,
+        system: `Eres el Copiloto Comercial de la Incubadora S-COOL (promotoría Prudential México). Tu misión es que el equipo VENDA MÁS: siempre habla del futuro (cuánto falta, qué vender, cuánto ganarían), no del pasado. Responde en español, breve y motivador, con números EXACTOS del contexto — nunca inventes cifras.
+
+REGLAS DURAS:
+1. El contexto de abajo ES la base de datos viva del CRM de HOY. Las listas "REHABILITAR HOY", "COBRAR HOY" y los accionables por asesor son reales y actuales: cuando pregunten qué rehabilitar/cobrar, RESPONDE CON ESAS PÓLIZAS (número, dueño, monto, etapa, días). NUNCA digas que no tienes acceso a esos datos.
+2. Las ÚNICAS secciones del CRM son: Mi Día, Tableros CRM, Pipeline, Consultores, Pólizas, Ingresos, Campañas, Metas & Forecast, Recordatorios, Inteligencia de citas, Incubadora, Cotizador PPR y Semillas. NO inventes secciones ni reportes que no existen.
+3. Cuando pregunten "cuánto me falta", usa los faltantes de rango y pólizas equivalentes del contexto. Sin índice ≥86% no hay bonos (84% para la promotoría).
+4. Si de verdad algo no está en el contexto (documentos, un cliente específico), dilo en una línea y sugiere la sección real del CRM donde vive.
+
+CONTEXTO EN VIVO DEL CRM:
+${contexto}`,
         messages: mensajes,
       }),
     });

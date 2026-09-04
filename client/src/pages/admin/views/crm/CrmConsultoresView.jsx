@@ -6,13 +6,14 @@
  * productos y la cartera de clientes completa como pestañas.
  */
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../../../../utils/api';
 import { C } from '../../constants';
 import {
   Search, RefreshCw, Plus, X, Trash2, Users, ShieldCheck,
   AlertTriangle, Pencil, CheckCircle2, CircleOff, BellRing,
 } from 'lucide-react';
-import { getCrmCSS, fmtMoney, fmtDate } from './crmShared';
+import { getCrmCSS, fmtMoney, fmtDate, estatusPoliza } from './crmShared';
 import CrmClientsView from './CrmClientsView';
 
 const ASEG = {
@@ -63,6 +64,19 @@ export default function CrmConsultoresView({ isAgency }) {
   /* Productos */
   const [products, setProducts] = useState([]);
   const [prodForm, setProdForm] = useState(null);
+
+  /* Modal de pólizas del consultor (clic en la celda "N vigentes de M") */
+  const [polModal, setPolModal] = useState(null);   // { consultor, aseg }
+  const [polList, setPolList] = useState(null);     // pólizas cargadas | null = cargando
+  const navigate = useNavigate();
+  const openPolizas = async (c, aseg) => {
+    setPolModal({ consultor: c, aseg });
+    setPolList(null);
+    try {
+      const d = await api.crmGetPolicies({ agent_id: c.id });
+      setPolList((d.policies || []).filter(p => (p.aseguradora || 'PRU') === aseg));
+    } catch (e) { setPolList([]); alert(e.message); }
+  };
 
   const load = useCallback(async () => {
     setLoading(true); setErr('');
@@ -313,8 +327,18 @@ export default function CrmConsultoresView({ isAgency }) {
                       <td><b>{c.nombre}</b><br /><span style={{ fontSize: 11, color: C.textMuted }}>{c.clave || 'sin clave'} {c.cuaderno ? `· ${c.cuaderno}` : ''}</span></td>
                       <td><AsegBadge aseg="PRU" activo={c.registrado_pru} fecha={c.alta_pru} /></td>
                       <td><AsegBadge aseg="IL" activo={c.registrado_il} fecha={c.alta_il} /></td>
-                      <td style={{ fontVariantNumeric: 'tabular-nums' }}><b>{c.polizas.pru.vigentes}</b> <span style={{ fontSize: 11, color: C.textMuted }}>vigentes de {c.polizas.pru.total}</span></td>
-                      <td style={{ fontVariantNumeric: 'tabular-nums' }}><b>{c.polizas.il.vigentes}</b> <span style={{ fontSize: 11, color: C.textMuted }}>vigentes de {c.polizas.il.total}</span></td>
+                      <td style={{ fontVariantNumeric: 'tabular-nums' }} onClick={e => { e.stopPropagation(); if (c.polizas.pru.total) openPolizas(c, 'PRU'); }}
+                        title={c.polizas.pru.total ? 'Ver sus pólizas Prudential' : ''}>
+                        <span style={{ cursor: c.polizas.pru.total ? 'pointer' : 'default', textDecoration: c.polizas.pru.total ? 'underline dotted rgba(11,27,51,.35)' : 'none', textUnderlineOffset: 3 }}>
+                          <b>{c.polizas.pru.vigentes}</b> <span style={{ fontSize: 11, color: C.textMuted }}>vigentes de {c.polizas.pru.total}</span>
+                        </span>
+                      </td>
+                      <td style={{ fontVariantNumeric: 'tabular-nums' }} onClick={e => { e.stopPropagation(); if (c.polizas.il.total) openPolizas(c, 'IL'); }}
+                        title={c.polizas.il.total ? 'Ver sus pólizas Insignia Life' : ''}>
+                        <span style={{ cursor: c.polizas.il.total ? 'pointer' : 'default', textDecoration: c.polizas.il.total ? 'underline dotted rgba(11,27,51,.35)' : 'none', textUnderlineOffset: 3 }}>
+                          <b>{c.polizas.il.vigentes}</b> <span style={{ fontSize: 11, color: C.textMuted }}>vigentes de {c.polizas.il.total}</span>
+                        </span>
+                      </td>
                       <td>
                         <span className="badge" style={{ background: cl.bg, color: cl.color }} title={cl.hint}>
                           <ClIcon size={10} style={{ verticalAlign: -1 }} /> {cl.label}
@@ -375,6 +399,56 @@ export default function CrmConsultoresView({ isAgency }) {
             </div>
           )}
         </>
+      )}
+
+      {/* ══ Modal: pólizas del consultor (dato vivo, no estático) ══ */}
+      {polModal && (
+        <div className="modal-overlay" onClick={() => setPolModal(null)}>
+          <div className="modal crm-modal-lg" onClick={e => e.stopPropagation()} style={{ maxHeight: '84vh', display: 'flex', flexDirection: 'column' }}>
+            <div className="modal-head">
+              <div>
+                <h2 style={{ fontSize: 17 }}>Pólizas {ASEG[polModal.aseg].label} — {polModal.consultor.nombre}</h2>
+                <div style={{ fontSize: 12, color: C.textMuted, marginTop: 3 }}>
+                  {polModal.consultor.clave || 'sin clave'} · {polModal.consultor.polizas[polModal.aseg.toLowerCase()].vigentes} vigentes de {polModal.consultor.polizas[polModal.aseg.toLowerCase()].total}
+                </div>
+              </div>
+              <button className="close-btn" onClick={() => setPolModal(null)}><X size={20} /></button>
+            </div>
+            <div className="modal-body" style={{ overflowY: 'auto' }}>
+              {polList === null && <div className="loading-wrap" style={{ padding: 30 }}><div className="spinner" /><p>Cargando pólizas…</p></div>}
+              {polList !== null && polList.length === 0 && <p style={{ color: C.textMuted }}>Sin pólizas {ASEG[polModal.aseg].label} registradas.</p>}
+              {polList !== null && polList.length > 0 && (
+                <div className="tbl-wrap">
+                  <table>
+                    <thead><tr><th>Póliza / Plan</th><th>Cliente</th><th>Tipo</th><th>Prima</th><th>Estatus</th><th>Renovación</th></tr></thead>
+                    <tbody>
+                      {[...polList].sort((a, b) => String(a.estatus).localeCompare(String(b.estatus))).map(p => {
+                        const st = estatusPoliza(p.estatus) || {};
+                        return (
+                          <tr key={p.id}>
+                            <td><b>{p.poliza || '—'}</b>{p.plan ? <span style={{ fontSize: 11, color: C.textMuted }}> · {p.plan}</span> : null}</td>
+                            <td style={{ maxWidth: 190, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.crm_clients?.nombre || '—'}</td>
+                            <td style={{ fontSize: 12 }}>{p.tipo || '—'}</td>
+                            <td style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(p.prima)}{p.moneda && p.moneda !== 'MXN' ? <span style={{ fontSize: 10.5, color: C.textMuted }}> {p.moneda}</span> : null}</td>
+                            <td>
+                              <span className="badge" style={{ background: st.bg || 'rgba(11,27,51,.07)', color: st.color || C.text }}>{st.label || p.estatus}</span>
+                              {p.estatus_reporte && <div style={{ fontSize: 10, color: C.textMuted, marginTop: 2 }}>reporte: {p.estatus_reporte}</div>}
+                            </td>
+                            <td style={{ fontSize: 12 }}>{fmtDate(p.fecha_renovacion) || '—'}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '12px 18px', borderTop: '1px solid rgba(11,27,51,.08)' }}>
+              <button className="btn-secondary" onClick={() => setPolModal(null)}>Cerrar</button>
+              <button className="btn-primary" onClick={() => { sessionStorage.setItem('crm_polizas_search', ''); setPolModal(null); navigate('/admin/crm-polizas'); }}>Abrir sección Pólizas</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ══ Modal del consultor ══ */}

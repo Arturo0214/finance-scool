@@ -11,6 +11,7 @@
  *
  * Todo el dato viene de /crm/ingresos/proyeccion (motor PIR real, corte vivo).
  */
+import { useState } from 'react';
 import { C } from '../../constants';
 import { Flag, Trophy } from 'lucide-react';
 
@@ -75,10 +76,12 @@ export function BonoRaceTrack({ titulo, emoji = '🏎️', progreso, rangos = []
   );
 }
 
-/* Carrera de la promotoría: cada asesor un carrito, posición relativa al líder. */
-export function PromotoriaRace({ carrera = [], max = 10 }) {
-  const top = carrera.slice(0, max);
-  const lider = Math.max(1, ...top.map(a => a.pagadaInicialQ));
+/* Carrera de la promotoría: cada asesor ACTIVO un carrito, posición relativa
+   al líder. "Ver la parrilla completa" expande a todos. */
+export function PromotoriaRace({ carrera = [], max = 12 }) {
+  const [verTodos, setVerTodos] = useState(false);
+  const top = verTodos ? carrera : carrera.slice(0, max);
+  const lider = Math.max(1, ...carrera.map(a => a.pagadaInicialQ));
   const EMOJIS = ['🏎️', '🚗', '🚙', '🛻', '🚕', '🚓', '🚘', '🚖', '🛺', '🚜'];
   return (
     <div>
@@ -95,7 +98,12 @@ export function PromotoriaRace({ carrera = [], max = 10 }) {
           </div>
         );
       })}
-      {carrera.length > max && <div style={{ fontSize: 11, opacity: .7, marginTop: 4 }}>…y {carrera.length - max} asesores más en la parrilla.</div>}
+      {carrera.length > max && (
+        <button onClick={() => setVerTodos(v => !v)}
+          style={{ marginTop: 8, background: 'rgba(255,255,255,.09)', border: '1px solid rgba(255,255,255,.18)', color: '#fff', borderRadius: 9, padding: '6px 14px', fontSize: 11.5, cursor: 'pointer', fontFamily: 'inherit' }}>
+          {verTodos ? '▲ Ver menos' : `▼ Ver la parrilla completa (${carrera.length} asesores activos)`}
+        </button>
+      )}
     </div>
   );
 }

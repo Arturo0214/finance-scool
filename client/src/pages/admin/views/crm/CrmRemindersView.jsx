@@ -7,7 +7,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { api } from '../../../../utils/api';
 import { C } from '../../constants';
 import { Plus, X, Trash2, Check, MessageCircle, RotateCcw, CalendarHeart, BellRing } from 'lucide-react';
-import { getCrmCSS, TIPOS_RECORDATORIO, tipoRecordatorio, fmtDate } from './crmShared';
+import { getCrmCSS, TIPOS_RECORDATORIO, tipoRecordatorio, fmtDate, partirAgentes } from './crmShared';
 
 /* Próxima ocurrencia de un aniversario (cumpleaños): este año o el siguiente */
 function proximoAniversario(fechaStr) {
@@ -183,7 +183,14 @@ export default function CrmRemindersView({ isAgency }) {
           {isAgency && (
             <select className="crm-select" value={agentFilter} onChange={e => setAgentFilter(e.target.value)}>
               <option value="">Todos los asesores</option>
-              {agents.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
+              <optgroup label="Activos">
+                {partirAgentes(agents).activos.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
+              </optgroup>
+              {partirAgentes(agents).inactivos.length > 0 && (
+                <optgroup label="Inactivos (con/sin producción)">
+                  {partirAgentes(agents).inactivos.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
+                </optgroup>
+              )}
             </select>
           )}
           <button className="btn-secondary" onClick={() => setShowDone(s => !s)}>{showDone ? 'Ocultar completados' : 'Ver completados'}</button>

@@ -55,8 +55,10 @@ export default function CrmGoalsView({ isAgency }) {
   const [promo, setPromo] = useState(null);
   const [ultimaCarga, setUltimaCarga] = useState(null);
   const [mailBusy, setMailBusy] = useState('');
-  /* Asesor: índice explicado */
+  /* Asesor: índice explicado + proyección personal (cómo y qué mejorar) */
   const [miIngreso, setMiIngreso] = useState(null);
+  const [miProye, setMiProye] = useState(null);
+  const [verInactivos, setVerInactivos] = useState(false); // metas/rendimiento: activos por default
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -72,11 +74,12 @@ export default function CrmGoalsView({ isAgency }) {
         api.crmIngresosPromotoria().then(setPromo).catch(() => {});
         api.crmLastImport().then(r => setUltimaCarga(r.ultima)).catch(() => {});
       } else {
-        // asesor: su clave Prudential → índice explicado
+        // asesor: su clave Prudential → índice explicado + proyección personal
         api.crmGetAgents().then(async (r) => {
           const clave = r.agents?.[0]?.clave;
           if (clave) api.crmIngresosAgent(clave).then(setMiIngreso).catch(() => {});
         }).catch(() => {});
+        api.crmIngresosProyeccion('').then(setMiProye).catch(() => {});
       }
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
@@ -153,10 +156,34 @@ export default function CrmGoalsView({ isAgency }) {
     if (rezagados.length) recomendaciones.push(`Asesores más lejos de su meta: ${rezagados.map(a => `${a.n} (${fmtPct(a.cumpl)})`).join(', ')} — revisar su pipeline y última venta en Rendimiento.`);
   }
 
-  /* Merge rendimiento por asesor */
+  /* ASESOR: "cómo y qué mejorar" — plan personal desde el motor predictivo */
+  const recsAsesor = [];
+  if (!isAgency && miProye) {
+    if (miProye.indice?.bloqueado) {
+      recsAsesor.push(`🚨 Tu índice (${pctTxt(miProye.indice.operativo, 1)}) está bajo el 86%: tus bonos están BLOQUEADOS aunque vendas. Prioridad #1: cobra tus pendientes y rehabilita — en Mi Día está el simulador con el impacto de cada póliza.`);
+    }
+    const t = miProye.trimestral?.siguiente;
+    if (t) recsAsesor.push(`🎯 Vende ${fmtMoney(t.faltante)} más este trimestre${t.polizas_equivalentes ? ` (≈ ${t.polizas_equivalentes} póliza${t.polizas_equivalentes === 1 ? '' : 's'} de prima promedio ${fmtMoney(miProye.prima_promedio)})` : ''} para llegar al rango R${t.rango} → bono de ${fmtMoney(t.bono_al_llegar)}.`);
+    else if (miProye.trimestral?.rango_actual) recsAsesor.push(`🏆 Ya estás en el rango máximo del bono trimestral — sostén el ritmo y blinda tu índice.`);
+    const esc = (miProye.escenarios || []).find(e => e.delta_bono > 0);
+    if (esc) recsAsesor.push(`💸 Cada venta paga: con +${fmtMoney(esc.venta_extra)} de venta nueva tu bono del trimestre sube a ${fmtMoney(esc.bono_trimestre)} (+${fmtMoney(esc.delta_bono)}).`);
+    const cns = miProye.conservacion?.siguiente;
+    if (cns) recsAsesor.push(`🔄 Renovaciones: subiendo ${fmtMoney(cns.faltante)} tu prima de ubicación, tu bono de conservación llega a ${fmtMoney(cns.bono_al_llegar)}.`);
+    const m = miProye.meta_mes;
+    if (m?.meta > 0 && m.faltante > 0) recsAsesor.push(`📅 Meta del mes: llevas ${fmtMoney(m.vendido)} de ${fmtMoney(m.meta)} (${fmtPct(m.pct)}) — te faltan ${fmtMoney(m.faltante)}.`);
+    else if (m?.meta > 0) recsAsesor.push(`✅ Meta del mes cumplida: ${fmtMoney(m.vendido)} de ${fmtMoney(m.meta)} — ve por el siguiente rango de bono.`);
+    else recsAsesor.push(`📅 No tienes meta capturada este mes — pídesela a la agencia para medir tu avance aquí.`);
+  }
+
+  /* Merge rendimiento por asesor — ACTIVOS por default (los inactivos son
+     dato de archivo; se pueden mostrar con el toggle) */
   const porClave = new Map(consultores.map(c => [c.clave, c]));
+  const esActivo = (clave) => (porClave.get(clave)?.clasificacion || 'activo') === 'activo';
+  const agentesVista = isAgency && consultores.length
+    ? dash.porAgente.filter(a => verInactivos || esActivo(a.agent.clave))
+    : dash.porAgente;
   const ingresoPorClave = new Map(ingresos.map(i => [i.clave, i]));
-  const rendimiento = dash.porAgente.map(a => {
+  const rendimiento = agentesVista.map(a => {
     const cons = porClave.get(a.agent.clave) || {};
     const ing = ingresoPorClave.get(a.agent.clave) || null;
     const meses = mesesSinVenta(cons.ultima_venta);
@@ -185,6 +212,11 @@ export default function CrmGoalsView({ isAgency }) {
           <select className="crm-select" value={anio} onChange={e => setAnio(Number(e.target.value))}>
             {ANIOS.map(a => <option key={a} value={a}>{a}</option>)}
           </select>
+          {isAgency && (
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: C.textMuted, cursor: 'pointer' }} title="Los inactivos (con/sin producción) no aparecen por default">
+              <input type="checkbox" checked={verInactivos} onChange={e => setVerInactivos(e.target.checked)} /> Incluir inactivos
+            </label>
+          )}
           <button className="btn-secondary" onClick={load}><RefreshCw size={15} /></button>
           {isAgency && tab === 'forecast' && (
             <button className="btn-primary" disabled={saving || !Object.keys(changed).length} onClick={saveGoals} style={{ opacity: Object.keys(changed).length ? 1 : 0.5 }}>
@@ -287,6 +319,19 @@ export default function CrmGoalsView({ isAgency }) {
             </div>
           )}
 
+          {/* ASESOR: cómo y qué mejorar — SIEMPRE al inicio */}
+          {!isAgency && recsAsesor.length > 0 && (
+            <div className="crm-chart-card" style={{ borderTop: `3px solid ${C.gold}` }}>
+              <h3><TrendingUp size={16} style={{ verticalAlign: -2, color: C.gold }} /> Cómo y qué mejorar — tu plan de hoy</h3>
+              <p className="sub">Calculado con tu cartera real y las tablas PIR: qué mover para ganar más bonos este trimestre.</p>
+              {recsAsesor.map((r, i) => (
+                <div key={i} className="crm-mc-row" style={{ borderBottom: '1px solid rgba(11,27,51,.06)', padding: '8px 0', display: 'block' }}>
+                  <span style={{ fontSize: 13 }}>{i + 1}. {r}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* Forecast global */}
           <div className="crm-chart-card">
             <h3>Forecast anual acumulado</h3>
@@ -376,7 +421,7 @@ export default function CrmGoalsView({ isAgency }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {dash.porAgente.map(a => {
+                  {agentesVista.map(a => {
                     const total = Array.from({ length: 12 }, (_, i) => {
                       const key = `${a.agent.id}-${i + 1}`;
                       return Number(key in changed ? changed[key] : goals[key]) || 0;
@@ -431,7 +476,7 @@ export default function CrmGoalsView({ isAgency }) {
 
           {/* Forecast por asesor */}
           <div className="two-col">
-            {dash.porAgente.map(a => {
+            {agentesVista.map(a => {
               let acc = 0, accM = 0;
               const data = a.forecast.map((f, i) => {
                 acc += f.proyeccion; accM += f.meta;

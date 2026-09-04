@@ -7,7 +7,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { api } from '../../../../utils/api';
 import { C } from '../../constants';
 import { Phone, GripVertical, RefreshCw, Search, Plus, X, CalendarCheck, Filter, Sparkles } from 'lucide-react';
-import { getCrmCSS, ETAPAS, BENCHMARK_SEMANAL, fmtMoney, buildSugerencias } from './crmShared';
+import { getCrmCSS, ETAPAS, BENCHMARK_SEMANAL, fmtMoney, buildSugerencias, partirAgentes } from './crmShared';
 
 /* ── Mis citas: conteo por periodo (semana/mes/trimestre/año) vs el periodo
    anterior, a partir de los recordatorios tipo "cita" (tienen fecha). ── */
@@ -313,7 +313,9 @@ export default function CrmPipelineView({ isAgency }) {
       ]);
       setClients(c.clients || []); setPolicies(p.policies || []); setAgents(a.agents || []);
       setReminders(r.reminders || []);
-      if (!agentFilter && (a.agents || []).length) setAgentFilter(String(a.agents[0].id));
+      // Default: el primer asesor ACTIVO (los inactivos son dato de archivo)
+      const { activos } = partirAgentes(a.agents || []);
+      if (!agentFilter && (activos.length || (a.agents || []).length)) setAgentFilter(String((activos[0] || a.agents[0]).id));
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }, [agentFilter]);
@@ -407,7 +409,14 @@ export default function CrmPipelineView({ isAgency }) {
         <div className="crm-toolbar-right">
           {isAgency && (
             <select className="crm-select" value={agentFilter} onChange={e => setAgentFilter(e.target.value)}>
-              {agents.map(a => <option key={a.id} value={a.id}>{a.nombre} ({a.clave})</option>)}
+              <optgroup label="Activos">
+                {partirAgentes(agents).activos.map(a => <option key={a.id} value={a.id}>{a.nombre} ({a.clave})</option>)}
+              </optgroup>
+              {partirAgentes(agents).inactivos.length > 0 && (
+                <optgroup label="Inactivos (con/sin producción)">
+                  {partirAgentes(agents).inactivos.map(a => <option key={a.id} value={a.id}>{a.nombre} ({a.clave})</option>)}
+                </optgroup>
+              )}
               <option value="">— Todos los asesores —</option>
             </select>
           )}

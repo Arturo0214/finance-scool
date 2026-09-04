@@ -6,7 +6,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../../../../utils/api';
 import { C } from '../../constants';
 import { Plus, X, Trash2, Search, ChevronUp, ChevronDown, Upload, Download } from 'lucide-react';
-import { getCrmCSS, ESTATUS_POLIZA, estatusPoliza, PLANES, fmtMoney, fmtDate } from './crmShared';
+import { getCrmCSS, ESTATUS_POLIZA, estatusPoliza, PLANES, fmtMoney, fmtDate, partirAgentes } from './crmShared';
 
 const EMPTY = { client_id: '', poliza: '', plan: PLANES[0], tipo: 'nueva', prima: '', forma_pago: 'anual', suma_asegurada: '', fecha_emision: '', fecha_pago: '', fecha_renovacion: '', estatus: 'en_tramite', notas: '', aseguradora: 'PRU' };
 
@@ -161,7 +161,14 @@ export default function CrmPoliciesView({ isAgency }) {
           {isAgency && (
             <select className="crm-select" value={agentFilter} onChange={e => setAgentFilter(e.target.value)}>
               <option value="">Todos los asesores</option>
-              {agents.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
+              <optgroup label="Activos">
+                {partirAgentes(agents).activos.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
+              </optgroup>
+              {partirAgentes(agents).inactivos.length > 0 && (
+                <optgroup label="Inactivos (con/sin producción)">
+                  {partirAgentes(agents).inactivos.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
+                </optgroup>
+              )}
             </select>
           )}
           {isAgency && (

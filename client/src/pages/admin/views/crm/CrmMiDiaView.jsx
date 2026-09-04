@@ -16,7 +16,7 @@ import { C } from '../../constants';
 import {
   RefreshCw, Sparkles, RotateCcw, HandCoins, ShieldCheck, TrendingUp,
   Flame, AlertTriangle, Target, ArrowRight, Trophy, GripVertical,
-  KanbanSquare, CalendarClock, MessageCircle, PhoneMissed,
+  KanbanSquare, CalendarClock, MessageCircle, PhoneMissed, X,
 } from 'lucide-react';
 import { getCrmCSS, fmtMoney, etapaInfo, fmtDate } from './crmShared';
 import { BonoRaceTrack, PromotoriaRace, raceCSS } from './CrmRaceTrack';
@@ -126,6 +126,9 @@ export default function CrmMiDiaView({ isAgency }) {
 
   // Tareas de hoy: reporte del día, recordatorios vencidos/para hoy
   const [tareas, setTareas] = useState(null);
+  // clave → clasificación (activo / inactivo c-s producción) para agrupar el selector
+  const [clasifMap, setClasifMap] = useState(null);
+  const [modalTarea, setModalTarea] = useState(null); // 'reporte'|'recordatorios'|'prospeccion'|'cobranza'
   const navigate = useNavigate();
 
   /* Agencia/admin sin clave = tablero de TODA la promotoría; con clave (o rol
@@ -153,6 +156,11 @@ export default function CrmMiDiaView({ isAgency }) {
     loadPasos('');
     // Pipeline accionable (independiente del índice; asesor=suyo, agencia=promotoría)
     api.crmPipelineAcciones().then(setPipe).catch(() => setPipe(null));
+    if (isAgency) {
+      api.crmGetAgents()
+        .then(r => setClasifMap(new Map((r.agents || []).filter(a => a.clave).map(a => [a.clave, a.clasificacion || 'activo']))))
+        .catch(() => setClasifMap(null));
+    }
     // Tareas de hoy: carga del reporte + recordatorios pendientes al día
     (async () => {
       try {
@@ -233,12 +241,24 @@ export default function CrmMiDiaView({ isAgency }) {
           </p>
         </div>
         <div className="crm-toolbar-right">
-          {isAgency && agentes.length > 0 && (
-            <select className="crm-select" value={clave} onChange={e => loadPasos(e.target.value)}>
-              <option value="">🏢 Toda la promotoría</option>
-              {agentes.map(a => <option key={a.clave} value={a.clave}>{a.nombre} · {a.clave}</option>)}
-            </select>
-          )}
+          {isAgency && agentes.length > 0 && (() => {
+            const cl = (a) => (clasifMap?.get(a.clave)) || 'activo';
+            const activos = agentes.filter(a => cl(a) === 'activo');
+            const inactivos = agentes.filter(a => cl(a) !== 'activo' && cl(a) !== 'administrativo');
+            return (
+              <select className="crm-select" value={clave} onChange={e => loadPasos(e.target.value)}>
+                <option value="">🏢 Toda la promotoría</option>
+                <optgroup label="Activos">
+                  {activos.map(a => <option key={a.clave} value={a.clave}>{a.nombre} · {a.clave}</option>)}
+                </optgroup>
+                {inactivos.length > 0 && (
+                  <optgroup label="Inactivos (con/sin producción)">
+                    {inactivos.map(a => <option key={a.clave} value={a.clave}>{a.nombre} · {a.clave}</option>)}
+                  </optgroup>
+                )}
+              </select>
+            );
+          })()}
           <button className="crm-btn ghost" onClick={() => loadPasos(clave)} title="Actualizar"><RefreshCw size={15} /> Actualizar</button>
         </div>
       </div>
@@ -256,7 +276,7 @@ export default function CrmMiDiaView({ isAgency }) {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 12 }}>
                 {isAgency && (
                   <div style={{ borderLeft: `4px solid ${tareas.cargadoHoy ? C.green : C.amber}`, background: tareas.cargadoHoy ? C.greenBg : C.amberBg, borderRadius: 10, padding: '10px 12px', cursor: 'pointer' }}
-                    onClick={() => navigate('/admin/crm')} title="Ir a Tableros CRM">
+                    onClick={() => setModalTarea('reporte')} title="Ver detalle">
                     <div style={{ fontSize: 11, color: C.textMuted }}>📄 Reporte de pólizas</div>
                     <b style={{ fontSize: 13.5, color: tareas.cargadoHoy ? C.green : '#B45309' }}>
                       {tareas.cargadoHoy
@@ -267,7 +287,7 @@ export default function CrmMiDiaView({ isAgency }) {
                   </div>
                 )}
                 <div style={{ borderLeft: `4px solid ${tareas.vencidos.length ? C.red : C.green}`, background: tareas.vencidos.length ? C.redBg : C.greenBg, borderRadius: 10, padding: '10px 12px', cursor: 'pointer' }}
-                  onClick={() => navigate('/admin/crm-recordatorios')} title="Ir a Recordatorios">
+                  onClick={() => setModalTarea('recordatorios')} title="Ver detalle">
                   <div style={{ fontSize: 11, color: C.textMuted }}>🔔 Recordatorios</div>
                   <b style={{ fontSize: 13.5, color: tareas.vencidos.length ? C.red : C.green }}>
                     {tareas.vencidos.length} vencidos · {tareas.paraHoy.length} para hoy
@@ -280,14 +300,14 @@ export default function CrmMiDiaView({ isAgency }) {
                 </div>
                 {pipe && (
                   <div style={{ borderLeft: `4px solid ${pipe.resumen.sin_accion + pipe.resumen.vencidas ? C.amber : C.green}`, background: pipe.resumen.sin_accion + pipe.resumen.vencidas ? C.amberBg : C.greenBg, borderRadius: 10, padding: '10px 12px', cursor: 'pointer' }}
-                    onClick={() => navigate('/admin/crm-pipeline')} title="Ir a Pipeline">
+                    onClick={() => setModalTarea('prospeccion')} title="Ver detalle">
                     <div style={{ fontSize: 11, color: C.textMuted }}>📞 Prospección</div>
                     <b style={{ fontSize: 13.5, color: '#B45309' }}>{pipe.resumen.sin_accion} sin próxima acción · {pipe.resumen.vencidas} vencidas</b>
                     <div style={{ fontSize: 10.5, color: C.textMuted }}>{pipe.resumen.hoy} citas/acciones para hoy</div>
                   </div>
                 )}
                 <div style={{ borderLeft: `4px solid ${data.resumen.urgentes ? C.red : '#0891B2'}`, background: data.resumen.urgentes ? C.redBg : '#E6F6F9', borderRadius: 10, padding: '10px 12px', cursor: 'pointer' }}
-                  onClick={() => navigate('/admin/crm-ingresos')} title="Ir a Ingresos">
+                  onClick={() => setModalTarea('cobranza')} title="Ver detalle">
                   <div style={{ fontSize: 11, color: C.textMuted }}>💰 Cobranza y rescates</div>
                   <b style={{ fontSize: 13.5, color: data.resumen.urgentes ? C.red : '#0891B2' }}>
                     {data.resumen.pendientes} por cobrar · {data.resumen.urgentes} rehab. urgentes
@@ -498,6 +518,80 @@ export default function CrmMiDiaView({ isAgency }) {
             </div>
             )}
           </div>
+
+          {/* ── Modal de detalle de la tarea: el dato completo SIN salir de Mi Día ── */}
+          {modalTarea && (() => {
+            const CFG = {
+              reporte: { titulo: '📄 Reporte de pólizas del día', destino: '/admin/crm', destinoLabel: 'Ir a Tableros a cargar' },
+              recordatorios: { titulo: '🔔 Recordatorios pendientes', destino: '/admin/crm-recordatorios', destinoLabel: 'Abrir Recordatorios' },
+              prospeccion: { titulo: '📞 Prospección — próxima acción obligatoria', destino: '/admin/crm-pipeline', destinoLabel: 'Abrir Pipeline' },
+              cobranza: { titulo: '💰 Cobranza y rescates', destino: '/admin/crm-ingresos', destinoLabel: 'Abrir Ingresos (simulador y detalle)' },
+            }[modalTarea];
+            const fila = (key, left, mid, right) => (
+              <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0', borderBottom: '1px solid rgba(11,27,51,.06)', fontSize: 12.5 }}>
+                <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600, color: C.ink }}>{left}</span>
+                {mid && <span style={{ fontSize: 11.5, color: C.textMuted, flexShrink: 0 }}>{mid}</span>}
+                {right}
+              </div>
+            );
+            const wa = (tel) => {
+              const t = String(tel || '').replace(/\D/g, '');
+              return t ? <a className="crm-icon-btn wa" href={`https://wa.me/${t}`} target="_blank" rel="noreferrer" title="WhatsApp"><MessageCircle size={13} /></a> : null;
+            };
+            return (
+              <div className="modal-overlay" onClick={() => setModalTarea(null)}>
+                <div className="modal crm-modal-lg" onClick={e => e.stopPropagation()} style={{ maxHeight: '82vh', display: 'flex', flexDirection: 'column' }}>
+                  <div className="modal-head">
+                    <h2 style={{ fontSize: 17 }}>{CFG.titulo}{data.promotoria ? ' — promotoría' : ''}</h2>
+                    <button className="close-btn" onClick={() => setModalTarea(null)}><X size={20} /></button>
+                  </div>
+                  <div className="modal-body" style={{ overflowY: 'auto' }}>
+                    {modalTarea === 'reporte' && tareas && (
+                      <>
+                        {tareas.cargadoHoy
+                          ? <div className="info-box" style={{ background: C.greenBg }}><p>✓ El reporte de hoy ya está cargado ({new Date(tareas.ultima.created_at).toLocaleString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}{tareas.ultima.usuario ? ` por ${tareas.ultima.usuario}` : ''}). Todas las secciones reflejan este corte.</p></div>
+                          : <div className="info-box" style={{ background: C.amberBg }}><p>⚠ Aún no se carga el Reporte de pólizas de hoy. Súbelo en Tableros para que índice, cartera y rehabilitaciones estén al día.</p></div>}
+                        {tareas.ultima?.resumen && (
+                          <p style={{ fontSize: 12.5, color: C.textMuted }}>
+                            Última carga: {tareas.ultima.archivo || 's/n'} · {tareas.ultima.resumen.filas} filas · {tareas.ultima.resumen.insertadas} nuevas · {tareas.ultima.resumen.actualizadas} actualizadas · {tareas.ultima.resumen.canceladas} canceladas · {tareas.ultima.resumen.revividas} revividas
+                          </p>
+                        )}
+                      </>
+                    )}
+                    {modalTarea === 'recordatorios' && tareas && (
+                      <>
+                        {tareas.paraHoy.length > 0 && <h3 style={{ fontSize: 13.5, margin: '0 0 6px' }}>Para hoy ({tareas.paraHoy.length})</h3>}
+                        {tareas.paraHoy.slice(0, 25).map(r => fila(`h${r.id}`, `${r.titulo}${r.crm_clients?.nombre ? ' · ' + r.crm_clients.nombre : ''}`, `${r.tipo || ''}${r.crm_agents?.nombre ? ' · ' + r.crm_agents.nombre : ''}`, wa(r.crm_clients?.telefono)))}
+                        <h3 style={{ fontSize: 13.5, margin: '14px 0 6px', color: C.red }}>Vencidos ({tareas.vencidos.length})</h3>
+                        {tareas.vencidos.slice(0, 40).map(r => fila(`v${r.id}`, `${r.titulo}${r.crm_clients?.nombre ? ' · ' + r.crm_clients.nombre : ''}`, `${fmtDate(r.fecha)}${r.crm_agents?.nombre ? ' · ' + r.crm_agents.nombre : ''}`, wa(r.crm_clients?.telefono)))}
+                        {tareas.vencidos.length > 40 && <p style={{ fontSize: 11.5, color: C.textMuted, marginTop: 8 }}>…y {tareas.vencidos.length - 40} vencidos más — ábrelos en Recordatorios para depurarlos.</p>}
+                      </>
+                    )}
+                    {modalTarea === 'prospeccion' && pipe && (
+                      <>
+                        <h3 style={{ fontSize: 13.5, margin: '0 0 6px', color: C.red }}>Sin próxima acción ({pipe.grupos.sin_accion.length}) — agéndales algo</h3>
+                        {pipe.grupos.sin_accion.slice(0, 25).map(c => fila(`s${c.id}`, c.nombre, `${etapaInfo(c.etapa).label}${c.agente ? ' · ' + c.agente : ''}`, wa(c.telefono)))}
+                        <h3 style={{ fontSize: 13.5, margin: '14px 0 6px', color: C.amber }}>Acciones vencidas ({pipe.grupos.vencidas.length}) — reprograma o ejecuta</h3>
+                        {pipe.grupos.vencidas.slice(0, 25).map(c => fila(`p${c.id}`, c.nombre, `${c.accion ? `${c.accion.titulo} · ${fmtDate(c.accion.fecha)}` : ''}${c.agente ? ' · ' + c.agente : ''}`, wa(c.telefono)))}
+                      </>
+                    )}
+                    {modalTarea === 'cobranza' && (
+                      <>
+                        <h3 style={{ fontSize: 13.5, margin: '0 0 6px', color: '#0891B2' }}>Por cobrar ({data.resumen.pendientes} · {fmtMoney(data.resumen.monto_pendiente)})</h3>
+                        {data.pasos.filter(p => p.tipo === 'cobrar').slice(0, 25).map((p, i) => fila(`c${i}`, p.titulo, `${data.promotoria && p.agente ? p.agente + ' · ' : ''}${fmtMoney(p.monto)}`, <span style={{ color: C.green, fontWeight: 700, fontSize: 11.5 }}>+{((p.impacto_indice || 0) * 100).toFixed(2)}% índice</span>))}
+                        <h3 style={{ fontSize: 13.5, margin: '14px 0 6px', color: C.amber }}>Rehabilitables ({data.resumen.rehabilitables} · {fmtMoney(data.resumen.monto_rehab)}) — {data.resumen.urgentes} urgentes</h3>
+                        {data.pasos.filter(p => p.tipo === 'rehabilitar').slice(0, 25).map((p, i) => fila(`r${i}`, p.titulo, `${data.promotoria && p.agente ? p.agente + ' · ' : ''}${p.urgencia || ''} · ${fmtMoney(p.monto)}`, <span style={{ color: C.green, fontWeight: 700, fontSize: 11.5 }}>+{((p.impacto_indice || 0) * 100).toFixed(2)}% índice</span>))}
+                      </>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '12px 18px', borderTop: '1px solid rgba(11,27,51,.08)' }}>
+                    <button className="btn-secondary" onClick={() => setModalTarea(null)}>Cerrar</button>
+                    <button className="btn-primary" onClick={() => { setModalTarea(null); navigate(CFG.destino); }}>{CFG.destinoLabel}</button>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* ── Pipeline accionable: próxima acción obligatoria ── */}
           {pipe && (

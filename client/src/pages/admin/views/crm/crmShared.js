@@ -276,3 +276,12 @@ export const getCrmCSS = () => `
     .crm-rem-actions { flex-direction:column; }
   }
 `;
+
+/* ── Clasificación comercial de asesores ──
+   Los selectores y listas muestran ACTIVOS por default; los inactivos (con/sin
+   producción) van agrupados aparte y el personal administrativo nunca aparece. */
+export const esAgenteActivo = (a) => (a?.clasificacion || 'activo') === 'activo';
+export const partirAgentes = (agents = []) => ({
+  activos: agents.filter(esAgenteActivo),
+  inactivos: agents.filter(a => !esAgenteActivo(a) && a?.clasificacion !== 'administrativo'),
+});
