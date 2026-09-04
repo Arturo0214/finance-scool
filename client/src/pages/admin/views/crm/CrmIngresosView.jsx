@@ -1751,9 +1751,10 @@ export default function CrmIngresosView({ isAgency }) {
               <p className="sub">
                 Toda la cartera ({promo.agentes} asesores) · base a conservar {fmtMoneyFull(promo.indice.baseAConservar)} · cobrada hoy {fmtMoneyFull(promo.indice.hoy.baseConservada)} · por cobrar hoy {fmtMoneyFull(promo.indice.hoy.basePendiente)} · <b>mínimo promotoría 84%</b> (agentes 86%)
               </p>
-              <IndiceBar actual={promo.indice.siCobraTodo} operativo={promo.indice.siCobraYRehabilitaTodo} marks={[0.84]} />
+              <IndiceBar actual={promo.indice.hoy.actual} operativo={promo.indice.siCobraTodo} marks={[0.84]} />
               <div className="crm-kpi-detail">
-                <BonoCard icon={ShieldCheck} label="Operativo hoy" value={<span style={{ color: promoColor(promo.indice.siCobraTodo) }}>{pct(promo.indice.siCobraTodo)}</span>} sub="cobrado + por cobrar — el titular del CRM" color={C.gold} />
+                <BonoCard icon={ShieldCheck} label="Índice actual" value={<span style={{ color: promoColor(promo.indice.hoy.actual) }}>{pct(promo.indice.hoy.actual)}</span>} sub="lo ya cobrado al día de hoy" color={C.gold} />
+                <BonoCard icon={TrendingUp} label="Si se cobran todas las pólizas pendientes" value={<span style={{ color: promoColor(promo.indice.siCobraTodo) }}>{pct(promo.indice.siCobraTodo)}</span>} sub={`se alcanza cobrando las ${promo.polizas.pendientes} por cobrar (${fmtMoney(promo.indice.hoy.basePendiente)})`} />
                 <BonoCard icon={RotateCcw} label="Techo: cobrando y rehabilitando todo" value={<span style={{ color: promoColor(promo.indice.siCobraYRehabilitaTodo) }}>{pct(promo.indice.siCobraYRehabilitaTodo)}</span>} sub="cobrar pendientes + rehabilitar canceladas" color={C.green} />
                 <BonoCard icon={Target} label="Pólizas en el índice" value={promo.polizas.total}
                   sub={`${promo.polizas.conservadas} conservadas · ${promo.polizas.pendientes} por cobrar · ${promo.polizas.noConservadas} canceladas (${promo.polizas.rehabilitables} rehabilitables)`} />
