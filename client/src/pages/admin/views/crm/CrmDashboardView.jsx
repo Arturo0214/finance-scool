@@ -497,25 +497,28 @@ function KpiModal({ id, onClose, data, anio, pir, promoIdx, single, bonoTotal, c
       },
     },
     indice: {
-      titulo: `Índice de conservación ${single ? '' : 'de la promotoría'} — hoy ${idxOficial ? fmtPct(idxOficial.hoy, 1) : '…'}`,
+      titulo: `Índice de conservación ${single ? '' : 'de la promotoría'} — operativo hoy ${promoIdx ? fmtPct(promoIdx.indice.siCobraTodo, 1) : (idxOficial ? fmtPct(idxOficial.hoy, 1) : '…')}`,
       que: single
         ? 'Mide cuánta de tu cartera en renovación sigue pagada. Sale del Business Review Prudential: base conservada ÷ base a conservar. Necesitas 86% mínimo para cobrar bonos.'
-        : 'Mide cuánta de la cartera en renovación de TODA la promotoría sigue pagada, según el Business Review Prudential. La promotoría necesita 84% mínimo (cada agente, 86%).',
+        : 'Mide cuánta de la cartera en renovación de TODA la promotoría sigue pagada, según el Business Review Prudential + el Reporte de pólizas del día. La promotoría necesita 84% mínimo (cada agente, 86%). Son los mismos 4 números de Mi Día e Ingresos.',
       formula: 'Índice = base conservada ÷ base a conservar (renovaciones dentro de la ventana de cálculo)',
       extra: promoIdx ? [
+        ['Operativo hoy (cobrado + por cobrar) — el titular del CRM', fmtPct(promoIdx.indice.siCobraTodo, 2)],
+        ['Ya cobrado hoy', fmtPct(promoIdx.indice.hoy.actual, 2)],
+        ['Techo (cobrando y rehabilitando todo)', fmtPct(promoIdx.indice.siCobraYRehabilitaTodo, 2)],
+        ['Corte oficial BR (estricto, el piso)', fmtPct(promoIdx.indice.actual, 2)],
         ['Base a conservar', fmtMoneyFull(promoIdx.indice.baseAConservar)],
-        ['Base conservada (al corte)', fmtMoneyFull(promoIdx.indice.baseConservada)],
-        ['Pendiente de pago (al corte)', fmtMoneyFull(promoIdx.indice.basePendiente)],
-        ['Índice al corte oficial', fmtPct(promoIdx.indice.actual, 2)],
-        ['Índice hoy (vencimientos posteriores al corte)', fmtPct(promoIdx.indice.hoy.actual, 2)],
-        ['Si se cobra todo lo pendiente', fmtPct(promoIdx.indice.siCobraTodo, 2)],
-        ['Si además se rehabilitan las canceladas <6 meses', fmtPct(promoIdx.indice.siCobraYRehabilitaTodo, 2)],
+        ['Base cobrada hoy', fmtMoneyFull(promoIdx.indice.hoy.baseConservada)],
+        ['Por cobrar hoy', fmtMoneyFull(promoIdx.indice.hoy.basePendiente)],
         ['Pólizas en el índice', `${promoIdx.polizas.total} (${promoIdx.polizas.conservadas} conservadas · ${promoIdx.polizas.pendientes} por cobrar · ${promoIdx.polizas.noConservadas} canceladas, ${promoIdx.polizas.rehabilitables} rehabilitables)`],
       ] : null,
-      nota: 'El índice está bajo porque hay muchas pólizas pendientes de cobro desde el corte — cada cobro lo sube. El detalle accionable (qué cobrar y qué rehabilitar, con simulador) está en la sección Ingresos.',
+      nota: 'Cada cobro sube el "ya cobrado" hacia el operativo. El detalle accionable (qué cobrar y qué rehabilitar, con simulador) está en la sección Ingresos.',
       lista: pir ? {
-        titulo: 'Índice por asesor (al corte)',
-        rows: pir.map(a => ({ n: a.nombre, v: a.indice.actual, txt: fmtPct(a.indice.actual, 1) })).sort((x, y) => y.v - x.v),
+        titulo: 'Índice operativo por asesor (hoy) — solo con cartera en la ventana',
+        rows: pir
+          .filter(a => (a.indice?.baseAConservar || 0) > 0)
+          .map(a => ({ n: a.nombre, v: a.indice.operativo, txt: fmtPct(a.indice.operativo, 1) }))
+          .sort((x, y) => y.v - x.v),
       } : null,
     },
     pipeline: {
@@ -652,14 +655,12 @@ export default function CrmDashboardView({ isAgency }) {
   const g = data.global.kpis.totales;
   const bonoTotal = pir ? pir.reduce((s, a) => s + (a.bonos?.total_trimestre || 0), 0) : null;
   const clientesTotal = data.porAgente.reduce((s, a) => s + a.clientes.total, 0);
-  /* Índice: el TITULAR es el estado de HOY (corte oficial + overlay del Reporte
-     de pólizas diario — revividas/cobradas cuentan); el corte del Business
-     Review queda como referencia. Promotoría umbral 84%, asesor 86%. */
+  /* Índice: el TITULAR es el OPERATIVO HOY (cobrado + por cobrar) — el mismo
+     número que Mi Día e Ingresos, para asesor Y promotoría. Secundarios: ya
+     cobrado y corte oficial BR. Promotoría umbral 84%, asesor 86%. */
   const idxOficial = single
-    /* Asesor: el titular es su índice OPERATIVO (cobrado + gracia por cobrar) —
-       el solo-cobrado se desploma cada inicio de mes de renovaciones y asusta */
-    ? (pir && pir[0] ? { hoy: pir[0].indice.operativo ?? pir[0].indice.hoy?.actual ?? pir[0].indice.actual, corte: pir[0].indice.actual, todo: pir[0].indice.hoy?.conPendiente ?? pir[0].indice.conPendiente, umbral: 0.86 } : null)
-    : (promoIdx ? { hoy: promoIdx.indice.hoy.actual, corte: promoIdx.indice.actual, todo: promoIdx.indice.siCobraTodo, umbral: 0.84 } : null);
+    ? (pir && pir[0] ? { hoy: pir[0].indice.operativo ?? pir[0].indice.hoy?.actual ?? pir[0].indice.actual, cobrado: pir[0].indice.hoy?.actual ?? pir[0].indice.actual, corte: pir[0].indice.actual, umbral: 0.86 } : null)
+    : (promoIdx ? { hoy: promoIdx.indice.siCobraTodo, cobrado: promoIdx.indice.hoy.actual, corte: promoIdx.indice.actual, umbral: 0.84 } : null);
 
   const globalChart = data.global.kpis.months.map((m, i) => ({
     mes: MESES[i],
@@ -723,13 +724,13 @@ export default function CrmDashboardView({ isAgency }) {
         <div className="stat-card" style={{ cursor: 'pointer' }} title="Ver desglose" onClick={() => setKpiModal('indice')}>
           <div className="stat-icon" style={{ background: C.greenBg, color: idxOficial && idxOficial.hoy >= idxOficial.umbral ? C.green : C.red }}><Shield size={20} /></div>
           <div>
-            <p className="stat-label">Índice conservación {single ? '' : '(promotoría)'} · hoy</p>
+            <p className="stat-label">Índice conservación {single ? '' : '(promotoría)'} · operativo hoy</p>
             <p className="stat-value" style={{ color: idxOficial ? (idxOficial.hoy >= idxOficial.umbral ? C.green : C.red) : undefined }}>
               {idxOficial ? fmtPct(idxOficial.hoy, 1) : '…'}
             </p>
             {idxOficial && (
               <p style={{ fontSize: 10.5, color: C.textMuted, margin: '2px 0 0' }}>
-                realista (si cobras pendientes) {fmtPct(idxOficial.todo, 1)} · corte BR {fmtPct(idxOficial.corte, 1)} · mín. {fmtPct(idxOficial.umbral, 0)}
+                ya cobrado {fmtPct(idxOficial.cobrado, 1)} · corte BR {fmtPct(idxOficial.corte, 1)} · mín. {fmtPct(idxOficial.umbral, 0)}
               </p>
             )}
           </div>

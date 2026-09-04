@@ -1749,19 +1749,19 @@ export default function CrmIngresosView({ isAgency }) {
             <div className="crm-chart-card">
               <h3><ShieldCheck size={16} style={{ verticalAlign: -2, color: C.gold }} /> Índice de conservación de la promotoría</h3>
               <p className="sub">
-                Toda la cartera ({promo.agentes} asesores) · base a conservar {fmtMoneyFull(promo.indice.baseAConservar)} · conservada {fmtMoneyFull(promo.indice.hoy.baseConservada)} · pendiente {fmtMoneyFull(promo.indice.hoy.basePendiente)} · <b>mínimo promotoría 84%</b> (agentes 86%)
+                Toda la cartera ({promo.agentes} asesores) · base a conservar {fmtMoneyFull(promo.indice.baseAConservar)} · cobrada hoy {fmtMoneyFull(promo.indice.hoy.baseConservada)} · por cobrar hoy {fmtMoneyFull(promo.indice.hoy.basePendiente)} · <b>mínimo promotoría 84%</b> (agentes 86%)
               </p>
               <div className="info-box" style={{ background: '#E7F5F3', borderColor: `${C.gold}40`, margin: '4px 0 12px' }}>
                 <p style={{ margin: 0, fontSize: 12.5 }}>
-                  <b>El índice que reporta Prudential ({pct(promo.indice.conPendiente)}) es el "con pendiente de pago"</b> — cuenta las pólizas vigentes que aún no pagan la anualidad como conservadas (se asume que pagarán). El <b>{pct(promo.indice.actual)} al corte</b> es el estricto (solo lo ya pagado). La verdad operativa está entre ambos: se vuelve realidad conforme entran los pagos pendientes.
+                  Los mismos 4 números de Mi Día: <b>Operativo hoy {pct(promo.indice.siCobraTodo)}</b> (cobrado + por cobrar — el titular en todo el CRM) · <b>Ya cobrado {pct(promo.indice.hoy.actual)}</b> · <b>Techo {pct(promo.indice.siCobraYRehabilitaTodo)}</b> (si además se rehabilita todo) · <b>Corte oficial BR {pct(promo.indice.actual)}</b> (lo estricto ya pagado al último corte — el piso).
                 </p>
               </div>
-              <IndiceBar actual={promo.indice.conPendiente} operativo={promo.indice.siCobraYRehabilitaTodo} marks={[0.84]} />
+              <IndiceBar actual={promo.indice.siCobraTodo} operativo={promo.indice.siCobraYRehabilitaTodo} marks={[0.84]} />
               <div className="crm-kpi-detail">
-                <BonoCard icon={ShieldCheck} label="Índice Prudential (con pendiente)" value={<span style={{ color: promoColor(promo.indice.conPendiente) }}>{pct(promo.indice.conPendiente)}</span>} sub="previo + pendiente de pago — así lo reporta Prudential" color={C.gold} />
-                <BonoCard icon={RefreshCw} label="Índice estricto (al corte)" value={<span style={{ color: promoColor(promo.indice.actual) }}>{pct(promo.indice.actual)}</span>} sub="solo lo ya pagado adelante (piso)" />
-                <BonoCard icon={TrendingUp} label="Índice hoy (en vivo)" value={<span style={{ color: promoColor(promo.indice.hoy.actual) }}>{pct(promo.indice.hoy.actual)}</span>} sub="estricto, con vencimientos posteriores al corte" />
+                <BonoCard icon={ShieldCheck} label="Operativo hoy" value={<span style={{ color: promoColor(promo.indice.siCobraTodo) }}>{pct(promo.indice.siCobraTodo)}</span>} sub="cobrado + por cobrar — el titular del CRM" color={C.gold} />
+                <BonoCard icon={TrendingUp} label="Ya cobrado hoy" value={<span style={{ color: promoColor(promo.indice.hoy.actual) }}>{pct(promo.indice.hoy.actual)}</span>} sub="solo pagos confirmados al día" />
                 <BonoCard icon={RotateCcw} label="Techo: cobrando y rehabilitando todo" value={<span style={{ color: promoColor(promo.indice.siCobraYRehabilitaTodo) }}>{pct(promo.indice.siCobraYRehabilitaTodo)}</span>} sub="cobrar pendientes + rehabilitar canceladas" color={C.green} />
+                <BonoCard icon={RefreshCw} label="Corte oficial BR" value={<span style={{ color: promoColor(promo.indice.actual) }}>{pct(promo.indice.actual)}</span>} sub="estricto al último Business Review (piso)" />
                 <BonoCard icon={Target} label="Pólizas en el índice" value={promo.polizas.total}
                   sub={`${promo.polizas.conservadas} conservadas · ${promo.polizas.pendientes} por cobrar · ${promo.polizas.noConservadas} canceladas (${promo.polizas.rehabilitables} rehabilitables)`} />
               </div>
@@ -1776,7 +1776,7 @@ export default function CrmIngresosView({ isAgency }) {
 
               <div className="crm-kpi-detail" style={{ marginBottom: 14 }}>
                 <BonoCard icon={Calculator} label="Índice simulado" value={<span style={{ color: promoColor(simulado) }}>{pct(simulado)}</span>}
-                  sub={seleccion.length ? `${seleccion.length} pólizas seleccionadas · ${fmtMoney(baseSel)} de base · hoy está en ${pct(promo.indice.hoy.actual)}` : 'selecciona pólizas abajo'} />
+                  sub={seleccion.length ? `${seleccion.length} pólizas seleccionadas · ${fmtMoney(baseSel)} de base · ya cobrado hoy ${pct(promo.indice.hoy.actual)}` : 'selecciona pólizas abajo'} />
                 <BonoCard icon={Target} label="Contra el mínimo 84%" value={simulado >= 0.84 ? '✓ Arriba del mínimo' : `Faltan ${pct(Math.max(0, 0.84 - simulado))}`}
                   color={simulado >= 0.84 ? C.green : C.red}
                   sub={simulado >= 0.84 ? null : `≈ ${fmtMoney(Math.max(0, 0.84 * promo.indice.baseAConservar - promo.indice.hoy.baseConservada - baseSel))} de base por conservar`} />
@@ -2071,9 +2071,9 @@ export default function CrmIngresosView({ isAgency }) {
             <div className="crm-chart-card">
               <h3><TrendingUp size={16} style={{ verticalAlign: -2, color: C.green }} /> Resultado de la simulación</h3>
               <div className="crm-kpi-detail">
-                <BonoCard icon={ShieldCheck} label="Índice"
-                  value={<span><span style={{ color: indiceColor(sim.base.indice.operativo) }}>{pct(sim.base.indice.operativo)}</span> → <span style={{ color: indiceColor(sim.simulado.indice.operativo) }}>{pct(sim.simulado.indice.operativo)}</span></span>}
-                  sub={sim.delta.indice > 0 ? `sube ${pct(sim.delta.indice)}` : 'sin cambio de índice'} />
+                <BonoCard icon={ShieldCheck} label="Índice cobrado (hoy)"
+                  value={<span><span style={{ color: indiceColor(sim.base.indice.simulado) }}>{pct(sim.base.indice.simulado)}</span> → <span style={{ color: indiceColor(sim.simulado.indice.simulado) }}>{pct(sim.simulado.indice.simulado)}</span></span>}
+                  sub={sim.delta.indice > 0 ? `sube ${pct(sim.delta.indice)} · operativo ${pct(sim.simulado.indice.operativo)}` : 'sin cambio de índice'} />
                 <BonoCard icon={Target} label="Banda de bono"
                   value={`${UMBRAL_LABEL[sim.base.indice.umbral] || 'Sin bono'} → ${UMBRAL_LABEL[sim.simulado.indice.umbral] || 'Sin bono'}`}
                   color={sim.simulado.indice.umbral ? C.green : C.red} />

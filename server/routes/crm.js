@@ -2268,7 +2268,10 @@ router.post('/ingresos/simulate', async (req, res) => {
       cobrarPolizas: req.body.cobrarPolizas || [],
       rehabilitarPolizas: req.body.rehabilitarPolizas || [],
     });
-    res.json({ base, simulado: sim, delta: { bonos: round2sim(sim.bonos.total_trimestre - base.bonos.total_trimestre), indice: sim.indice.operativo - base.indice.operativo } });
+    /* delta.indice sobre el COBRADO HOY (indice.simulado): es el número que se
+       mueve al cobrar/rehabilitar — el operativo ya da por cobradas las
+       pendientes y salía +0.00% (bug C17270). */
+    res.json({ base, simulado: sim, delta: { bonos: round2sim(sim.bonos.total_trimestre - base.bonos.total_trimestre), indice: sim.indice.simulado - base.indice.simulado, operativo: sim.indice.operativo - base.indice.operativo } });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 const round2sim = (n) => Math.round(n * 100) / 100;
@@ -2359,8 +2362,10 @@ router.get('/ingresos/proximos-pasos', async (req, res) => {
         cta: { accion: 'cobrar', poliza_id: p.id },
       });
     }
-    /* C. Brecha al siguiente umbral de bono */
-    if (r.indice.umbral !== '0.94') {
+    /* C. Brecha al siguiente umbral de bono. Un agente NUEVO (<15 meses)
+       bonifica como 0.90 sin índice propio: decirle "sube a 86% para
+       desbloquear" es falso — se omite el paso. */
+    if (r.indice.umbral !== '0.94' && !r.indice.esNuevo) {
       const meta = r.indice.operativo < 0.86 ? 0.86 : r.indice.operativo < 0.90 ? 0.90 : 0.94;
       pasos.push({
         tipo: 'indice', prioridad: r.indice.operativo < 0.86 ? 900 : 300, urgencia: r.indice.operativo < 0.86 ? 'ALTA' : 'BAJA',
@@ -2632,7 +2637,7 @@ router.post('/chat', async (req, res) => {
       method: 'POST',
       headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
       body: JSON.stringify({
-        model: process.env.COPILOT_MODEL || 'claude-haiku-4-5-20251001',
+        model: 'claude-haiku-4-5-20251001', // SIEMPRE Haiku (Copiloto/Coach): costo controlado, sin override de env
         max_tokens: 900,
         temperature: 0.2, // pegado a los datos: es un copiloto de cifras, no creativo
         system: `Eres el Copiloto Comercial de la Incubadora S-COOL (promotoría Prudential México). Tu misión es que el equipo VENDA MÁS: siempre habla del futuro (cuánto falta, qué vender, cuánto ganarían), no del pasado. Responde en español, breve y motivador, con números EXACTOS del contexto — nunca inventes cifras.

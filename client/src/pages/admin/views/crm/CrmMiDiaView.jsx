@@ -471,11 +471,12 @@ export default function CrmMiDiaView({ isAgency }) {
               {simResult && (
                 <div style={{ display: 'flex', gap: 12, marginBottom: 14 }}>
                   <div style={{ flex: 1, background: C.greenBg, borderRadius: 11, padding: '10px 12px' }}>
-                    <div style={{ fontSize: 11, color: C.textMuted }}>Índice operativo</div>
+                    <div style={{ fontSize: 11, color: C.textMuted }}>Índice cobrado (hoy)</div>
                     <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-                      <b style={{ fontSize: 20, color: indiceColor(simResult.simulado.indice.operativo) }}>{pctTxt(simResult.simulado.indice.operativo, 1)}</b>
+                      <b style={{ fontSize: 20, color: indiceColor(simResult.simulado.indice.simulado) }}>{pctTxt(simResult.simulado.indice.simulado, 1)}</b>
                       <span style={{ fontSize: 12, color: C.green, fontWeight: 700 }}>{deltaPct(simResult.delta.indice, 2)}</span>
                     </div>
+                    <div style={{ fontSize: 10.5, color: C.textMuted, marginTop: 2 }}>operativo {pctTxt(simResult.simulado.indice.operativo, 1)}{simResult.delta.operativo > 0.0001 ? ` (${deltaPct(simResult.delta.operativo, 2)})` : ''}</div>
                   </div>
                   <div style={{ flex: 1, background: C.goldBg, borderRadius: 11, padding: '10px 12px' }}>
                     <div style={{ fontSize: 11, color: C.textMuted }}>Bono del trimestre</div>

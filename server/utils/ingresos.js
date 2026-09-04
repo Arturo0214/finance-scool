@@ -335,29 +335,34 @@ function computeIngresos({ agente, primas, polizas, pir, personalizaPlanes }, ov
     polizasHoy.filter(p => p.estatus_conservacion === 'CONSERVADA' && estatusHoy(p, cierreQ) !== 'CONSERVADA'))
     .map(({ principal: p, coberturas, monto }) => ({ id: p.id, poliza: numPolizaId(p.poliza), plan_id: p.plan_id, coberturas: coberturas.length, frecuencia_pago: p.frecuencia_pago, pagado_hasta: p.pagado_hasta, monto, impacto_indice: indiceInfo.baseAConservar > 0 ? monto / indiceInfo.baseAConservar : 0 }))
     .sort((a, b) => b.monto - a.monto);
-  /* extraConservada sube el índice simulado (que parte de la base conservada
-     del corte). Para el operativo lo PENDIENTE DE PAGO ya está contado dentro
-     de basePendiente: volver a sumar los pendientes seleccionados duplicaba la
-     base y el simulador podía pasar de 100% — solo las rehabilitaciones (no
-     conservadas) agregan base nueva al operativo. */
-  let extraConservada = 0, extraOperativo = 0;
-  for (const p of polizas) {
+  /* El simulador mueve el índice COBRADO HOY (indiceHoyInfo): cobrar una
+     pendiente o rehabilitar una cancelada suma su base a lo cobrado. El
+     OPERATIVO (preliminar del BR) ya da por cobradas las pendientes — cobrarlas
+     no lo mueve; solo las rehabilitaciones agregan base nueva al operativo.
+     Los estatus salen de estatusHoy (corte oficial + estado vivo), nunca del
+     campo crudo del corte — si no, una póliza pendiente en el CRM pero
+     CONSERVADA en el corte sumaba +0 al simular su cobro (bug C17270). */
+  let extraCobrado = 0, extraOperativo = 0;
+  polizas.forEach((p, i) => {
     const sel = cobrar.has(p.id) || rehabilitar.has(p.id);
-    if (!sel || p.estatus_conservacion === 'CONSERVADA') continue;
+    if (!sel) return;
+    const st = polizasHoy[i].estatus_conservacion;
+    if (st === 'CONSERVADA') return;
     const monto = Number(p.base_a_conservar_mxn) || 0;
-    extraConservada += monto;
-    if (p.estatus_conservacion !== 'PENDIENTE DE PAGO') extraOperativo += monto;
-  }
-  const conservadaSim = indiceInfo.baseConservada + extraConservada;
+    extraCobrado += monto;
+    if (st !== 'PENDIENTE DE PAGO') extraOperativo += monto;
+  });
   const indiceSim = indiceInfo.baseAConservar > 0
-    ? Math.min(1, conservadaSim / indiceInfo.baseAConservar) : 1;
+    ? Math.min(1, (indiceHoyInfo.baseConservada + extraCobrado) / indiceInfo.baseAConservar) : 1;
 
   const meses = mesesDesde(agente.fecha_inicio_calculos);
   const esNuevo = meses !== null && meses < 15;
-  /* Índice operativo para bandas: el preliminar del trimestre considera lo
-     pendiente de pago (así lo maneja el Business Review) + lo simulado */
+  /* Índice OPERATIVO para bandas: cobrado HOY + por cobrar HOY (+ lo simulado).
+     Es el mismo número en todo el CRM (= indice.hoy.conPendiente): antes se
+     calculaba con las bases del corte y salía un tercer número (78.32 corte vs
+     77.35 hoy en la promotoría) — cada sección decía algo distinto. */
   const indiceOperativo = indiceInfo.baseAConservar > 0
-    ? Math.min(1, (indiceInfo.baseConservada + indiceInfo.basePendiente + extraOperativo) / indiceInfo.baseAConservar)
+    ? Math.min(1, (indiceHoyInfo.baseConservada + indiceHoyInfo.basePendiente + extraOperativo) / indiceInfo.baseAConservar)
     : 1;
   const umbral = umbralDe(indiceOperativo, esNuevo);
 
