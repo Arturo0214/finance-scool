@@ -363,6 +363,9 @@ export default function CrmMiDiaView({ isAgency }) {
                 progreso={proye.venta.ubicacionQ}
                 rangos={proye.trimestral.rangos}
                 bloqueado={proye.indice.bloqueado}
+                llevasTxt={<span title="El rango del bono se define por la prima de UBICACIÓN (anualizada); el bono se paga sobre la prima PAGADA del trimestre.">
+                  Ubicación <b>{fmtMoney(proye.venta.ubicacionQ)}</b> (define tu rango) · pagada del Q <b>{fmtMoney(proye.venta.pagadaInicialQ)}</b>
+                </span>}
                 faltanteTxt={proye.trimestral.siguiente
                   ? <>Te faltan <b>{fmtMoney(proye.trimestral.siguiente.faltante)}</b>{proye.trimestral.siguiente.polizas_equivalentes ? <> ≈ <b>{proye.trimestral.siguiente.polizas_equivalentes} pólizas</b></> : null} para R{proye.trimestral.siguiente.rango} → bono {fmtMoney(proye.trimestral.siguiente.bono_al_llegar)}</>
                   : <>🏆 Rango máximo alcanzado</>}
@@ -373,6 +376,9 @@ export default function CrmMiDiaView({ isAgency }) {
                 progreso={proye.venta.ubicacionQ}
                 rangos={proye.conservacion.rangos}
                 bloqueado={proye.indice.bloqueado}
+                llevasTxt={<span title="El rango se define por la prima de UBICACIÓN; este bono se paga sobre la prima de RENOVACIÓN pagada del trimestre.">
+                  Ubicación <b>{fmtMoney(proye.venta.ubicacionQ)}</b> · renovación pagada del Q <b>{fmtMoney(proye.venta.renovacionQ)}</b>
+                </span>}
                 faltanteTxt={proye.conservacion.siguiente
                   ? <>Te faltan <b>{fmtMoney(proye.conservacion.siguiente.faltante)}</b> de ubicación → bono renovación {fmtMoney(proye.conservacion.siguiente.bono_al_llegar)}</>
                   : <>🏆 Rango máximo alcanzado</>}

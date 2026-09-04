@@ -42,7 +42,7 @@ export const raceCSS = `
 `;
 
 /* Pista de UN objetivo con banderas por rango. maxRef = último rango (meta de la pista). */
-export function BonoRaceTrack({ titulo, emoji = '🏎️', progreso, rangos = [], faltanteTxt, bloqueado }) {
+export function BonoRaceTrack({ titulo, emoji = '🏎️', progreso, rangos = [], faltanteTxt, bloqueado, llevasTxt }) {
   const maxRef = rangos.length ? Math.max(...rangos.map(r => r.prima_min)) * 1.08 : Math.max(progreso, 1);
   const pos = Math.min(0.99, (Number(progreso) || 0) / maxRef);
   return (
@@ -69,7 +69,7 @@ export function BonoRaceTrack({ titulo, emoji = '🏎️', progreso, rangos = []
         <span className="race-finish">🏁</span>
       </div>
       <div className="race-mini">
-        <span>Llevas <b>{money(progreso)}</b></span>
+        <span>{llevasTxt || <>Llevas <b>{money(progreso)}</b></>}</span>
         {rangos.filter(r => !r.alcanzado)[0] && <span>Bono al llegar a R{rangos.filter(r => !r.alcanzado)[0].rango}: <b>{money(rangos.filter(r => !r.alcanzado)[0].bono)}</b></span>}
       </div>
     </div>
