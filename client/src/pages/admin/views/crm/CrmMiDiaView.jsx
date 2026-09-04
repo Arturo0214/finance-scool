@@ -10,6 +10,7 @@
  * Reusa el motor PIR ya existente (computeIngresos); es capa de presentación.
  */
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../../../../utils/api';
 import { C } from '../../constants';
 import {
@@ -123,6 +124,10 @@ export default function CrmMiDiaView({ isAgency }) {
   // Proyección comercial: carrera a bonos, escenarios y faltantes (motor PIR)
   const [proye, setProye] = useState(null);
 
+  // Tareas de hoy: reporte del día, recordatorios vencidos/para hoy
+  const [tareas, setTareas] = useState(null);
+  const navigate = useNavigate();
+
   /* Agencia/admin sin clave = tablero de TODA la promotoría; con clave (o rol
      asesor) = el día de ese asesor. El asesor nunca ve a los demás. */
   const loadPasos = useCallback(async (cv) => {
@@ -148,6 +153,26 @@ export default function CrmMiDiaView({ isAgency }) {
     loadPasos('');
     // Pipeline accionable (independiente del índice; asesor=suyo, agencia=promotoría)
     api.crmPipelineAcciones().then(setPipe).catch(() => setPipe(null));
+    // Tareas de hoy: carga del reporte + recordatorios pendientes al día
+    (async () => {
+      try {
+        /* fechas en horario LOCAL (en-CA = YYYY-MM-DD): comparar en UTC marcaba
+           "pendiente" por las noches aunque el reporte ya estuviera cargado */
+        const dLocal = (x) => new Date(x).toLocaleDateString('en-CA');
+        const hoyIso = dLocal(new Date());
+        const [li, rem] = await Promise.all([
+          api.crmLastImport().catch(() => null),
+          api.crmGetReminders({ to: hoyIso }).catch(() => ({ reminders: [] })),
+        ]);
+        const pend = (rem.reminders || []).filter(r => !['completado', 'cancelado', 'hecho'].includes(String(r.estatus || r.estado || '').toLowerCase()));
+        setTareas({
+          ultima: li?.ultima || null,
+          cargadoHoy: !!(li?.ultima && dLocal(li.ultima.created_at) === hoyIso),
+          vencidos: pend.filter(r => String(r.fecha).slice(0, 10) < hoyIso),
+          paraHoy: pend.filter(r => String(r.fecha).slice(0, 10) === hoyIso),
+        });
+      } catch { setTareas(null); }
+    })();
   }, [isAgency, loadPasos]);
 
   // Recalcular simulación cuando cambia la selección
@@ -222,19 +247,70 @@ export default function CrmMiDiaView({ isAgency }) {
 
       {data && (
         <>
-          {/* ── Hero: índice + bono ── */}
+          {/* ── ✅ Tareas de hoy: lo que hay que HACER antes de ver números ── */}
+          {tareas && (
+            <div className="crm-chart-card" style={{ marginBottom: 20 }}>
+              <h3 style={{ margin: '0 0 10px', display: 'flex', alignItems: 'center', gap: 7 }}>
+                <CalendarClock size={17} color={C.accent} /> Tareas de hoy{data.promotoria ? ' — promotoría' : ''}
+              </h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 12 }}>
+                {isAgency && (
+                  <div style={{ borderLeft: `4px solid ${tareas.cargadoHoy ? C.green : C.amber}`, background: tareas.cargadoHoy ? C.greenBg : C.amberBg, borderRadius: 10, padding: '10px 12px', cursor: 'pointer' }}
+                    onClick={() => navigate('/admin/crm')} title="Ir a Tableros CRM">
+                    <div style={{ fontSize: 11, color: C.textMuted }}>📄 Reporte de pólizas</div>
+                    <b style={{ fontSize: 13.5, color: tareas.cargadoHoy ? C.green : '#B45309' }}>
+                      {tareas.cargadoHoy
+                        ? `Cargado hoy ${new Date(tareas.ultima.created_at).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })} ✓`
+                        : 'Pendiente: sube el reporte del día'}
+                    </b>
+                    {!tareas.cargadoHoy && tareas.ultima && <div style={{ fontSize: 10.5, color: C.textMuted }}>último: {fmtDate(tareas.ultima.created_at)}</div>}
+                  </div>
+                )}
+                <div style={{ borderLeft: `4px solid ${tareas.vencidos.length ? C.red : C.green}`, background: tareas.vencidos.length ? C.redBg : C.greenBg, borderRadius: 10, padding: '10px 12px', cursor: 'pointer' }}
+                  onClick={() => navigate('/admin/crm-recordatorios')} title="Ir a Recordatorios">
+                  <div style={{ fontSize: 11, color: C.textMuted }}>🔔 Recordatorios</div>
+                  <b style={{ fontSize: 13.5, color: tareas.vencidos.length ? C.red : C.green }}>
+                    {tareas.vencidos.length} vencidos · {tareas.paraHoy.length} para hoy
+                  </b>
+                  {(tareas.vencidos[0] || tareas.paraHoy[0]) && (
+                    <div style={{ fontSize: 10.5, color: C.textMuted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {(tareas.vencidos[0] || tareas.paraHoy[0]).titulo}{(tareas.vencidos[0] || tareas.paraHoy[0]).crm_clients?.nombre ? ` · ${(tareas.vencidos[0] || tareas.paraHoy[0]).crm_clients.nombre}` : ''}
+                    </div>
+                  )}
+                </div>
+                {pipe && (
+                  <div style={{ borderLeft: `4px solid ${pipe.resumen.sin_accion + pipe.resumen.vencidas ? C.amber : C.green}`, background: pipe.resumen.sin_accion + pipe.resumen.vencidas ? C.amberBg : C.greenBg, borderRadius: 10, padding: '10px 12px', cursor: 'pointer' }}
+                    onClick={() => navigate('/admin/crm-pipeline')} title="Ir a Pipeline">
+                    <div style={{ fontSize: 11, color: C.textMuted }}>📞 Prospección</div>
+                    <b style={{ fontSize: 13.5, color: '#B45309' }}>{pipe.resumen.sin_accion} sin próxima acción · {pipe.resumen.vencidas} vencidas</b>
+                    <div style={{ fontSize: 10.5, color: C.textMuted }}>{pipe.resumen.hoy} citas/acciones para hoy</div>
+                  </div>
+                )}
+                <div style={{ borderLeft: `4px solid ${data.resumen.urgentes ? C.red : '#0891B2'}`, background: data.resumen.urgentes ? C.redBg : '#E6F6F9', borderRadius: 10, padding: '10px 12px', cursor: 'pointer' }}
+                  onClick={() => navigate('/admin/crm-ingresos')} title="Ir a Ingresos">
+                  <div style={{ fontSize: 11, color: C.textMuted }}>💰 Cobranza y rescates</div>
+                  <b style={{ fontSize: 13.5, color: data.resumen.urgentes ? C.red : '#0891B2' }}>
+                    {data.resumen.pendientes} por cobrar · {data.resumen.urgentes} rehab. urgentes
+                  </b>
+                  <div style={{ fontSize: 10.5, color: C.textMuted }}>{fmtMoney(data.resumen.monto_pendiente)} por cobrar · {fmtMoney(data.resumen.monto_rehab)} rescatable</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Hero: índice + bono (misma construcción que Tableros: HOY manda) ── */}
           <div className="midia-hero" style={{ marginBottom: 20 }}>
             <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: 18, alignItems: 'flex-start' }}>
               <div style={{ flex: '1 1 300px' }}>
-                <div style={{ fontSize: 12, opacity: .75, textTransform: 'uppercase', letterSpacing: .6 }}>Índice de conservación</div>
+                <div style={{ fontSize: 12, opacity: .75, textTransform: 'uppercase', letterSpacing: .6 }}>Índice de conservación · hoy</div>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 6 }}>
-                  <span style={{ fontSize: 40, fontWeight: 800, lineHeight: 1, color: indiceColor(data.indice.realista) }}>{pctTxt(data.indice.realista, 1)}</span>
-                  <span style={{ fontSize: 13, opacity: .8 }}>realista</span>
+                  <span style={{ fontSize: 40, fontWeight: 800, lineHeight: 1, color: indiceColor(data.indice.cobrado) }}>{pctTxt(data.indice.cobrado, 1)}</span>
+                  <span style={{ fontSize: 13, opacity: .8 }}>cobrado hoy</span>
                 </div>
                 <IndiceBar cobrado={data.indice.cobrado} realista={data.indice.realista} techo={data.indice.techo} />
-                <div style={{ display: 'flex', gap: 16, fontSize: 11.5, opacity: .9 }}>
-                  <span>Cobrado <b>{pctTxt(data.indice.cobrado, 1)}</b></span>
-                  <span>Techo <b>{pctTxt(data.indice.techo, 1)}</b></span>
+                <div style={{ display: 'flex', gap: 16, fontSize: 11.5, opacity: .9, flexWrap: 'wrap' }}>
+                  <span>Realista (si cobras pendientes) <b>{pctTxt(data.indice.realista, 1)}</b></span>
+                  <span>Techo (cobrando y rehabilitando todo) <b>{pctTxt(data.indice.techo, 1)}</b></span>
                   <span>Mínimo bono <b>{pctTxt(data.indice.minimoBono, 0)}</b></span>
                 </div>
               </div>
@@ -254,6 +330,7 @@ export default function CrmMiDiaView({ isAgency }) {
                 <b style={{ fontSize: 14.5 }}>🏁 Carrera a tus bonos — {proye.periodo?.trimestre}Q{proye.periodo?.anio}</b>
                 <span style={{ fontSize: 11.5, opacity: .85 }}>
                   Prima promedio {proye.prima_promedio_es_promotoria ? 'de la promotoría (aún sin cartera propia)' : 'de tu cartera'}: <b>{fmtMoney(proye.prima_promedio)}</b>{proye.polizas_en_cartera > 0 ? <> · {proye.polizas_en_cartera} pólizas</> : null}
+                  {proye.corte_primas && <> · bonos con corte oficial BR a <b>{proye.corte_primas}</b></>}
                 </span>
               </div>
               {proye.indice.bloqueado && (
@@ -303,7 +380,10 @@ export default function CrmMiDiaView({ isAgency }) {
             <div className="race-wrap">
               <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
                 <b style={{ fontSize: 14.5 }}>🏁 Carrera de la promotoría — venta nueva del trimestre</b>
-                <span style={{ fontSize: 11.5, opacity: .85 }}>Posición vs. el líder · el 🚧 indica índice bajo 86% (bonos bloqueados)</span>
+                <span style={{ fontSize: 11.5, opacity: .85 }}>
+                  Posición vs. el líder · 🚧 = índice bajo 86% (bonos bloqueados)
+                  {proye.corte_primas && <> · venta y bonos con corte oficial BR a <b>{proye.corte_primas}</b></>}
+                </span>
               </div>
               <PromotoriaRace carrera={proye.carrera} max={12} />
             </div>

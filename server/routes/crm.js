@@ -2447,12 +2447,19 @@ router.get('/ingresos/proyeccion', async (req, res) => {
       polizas: polizas.filter(p => p.clave === a.clave),
       pir, personalizaPlanes, goals, primaPromedioFallback: ppGlobal,
     }));
-    if (clave) return res.json(rows[0] || null);
+    /* Hasta qué mes llegan los cortes oficiales (fuente de los BONOS): el
+       Reporte de pólizas diario actualiza estatus/índice, pero la prima pagada
+       viene del Business Review — que se sepa qué corte están viendo. */
+    const cortePrimas = primas.reduce((m, p) => {
+      const k = `${p.anio}-${String(p.mes).padStart(2, '0')}`;
+      return k > m ? k : m;
+    }, '');
+    if (clave) return res.json(rows[0] ? { ...rows[0], corte_primas: cortePrimas } : null);
     /* Promotoría: carrera de asesores del trimestre */
     const carrera = rows
       .map(x => ({ clave: x.clave, nombre: x.nombre, pagadaInicialQ: x.venta.pagadaInicialQ, bono: x.bonos_hoy.total_trimestre, indice: x.indice.operativo, bloqueado: x.indice.bloqueado, meta_mes: x.meta_mes }))
       .sort((a, b) => b.pagadaInicialQ - a.pagadaInicialQ);
-    res.json({ agentes: rows, carrera });
+    res.json({ agentes: rows, carrera, corte_primas: cortePrimas });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -2510,6 +2517,7 @@ router.post('/chat', async (req, res) => {
         `HOY: ${hoy} · PROMOTORÍA Incubadora S-COOL: ${rows.length} asesores con datos Prudential`,
         `TOTALES DEL TRIMESTRE: venta nueva ${money(tot(x => x.venta.pagadaInicialQ))} · renovación ${money(tot(x => x.venta.renovacionQ))} · bonos ${money(tot(x => x.bonos_hoy.total_trimestre))}`,
         `ÚLTIMA CARGA DEL REPORTE DE PÓLIZAS: ${li.data?.[0] ? `${li.data[0].created_at.slice(0, 10)} (${li.data[0].resumen?.filas || '?'} filas)` : 'sin registro'}`,
+        `NOTA: los BONOS y primas pagadas vienen de los cortes oficiales del Business Review Prudential (último corte cargado: ${primas.reduce((m, p) => { const k = `${p.anio}-${String(p.mes).padStart(2, '0')}`; return k > m ? k : m; }, 's/d')}); el Reporte de pólizas diario actualiza estatus, índice HOY, cartera y rehabilitaciones.`,
         `ASESORES:`,
         ...rows.sort((a, b) => b.venta.pagadaInicialQ - a.venta.pagadaInicialQ).map(x => lineaAsesor(x, false)),
       ].join('\n');
