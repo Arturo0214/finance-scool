@@ -14,12 +14,11 @@ import { C } from '../../constants';
 import { Search, MessageCircle, ChevronDown, RefreshCw, Stethoscope, HeartPulse, Gem } from 'lucide-react';
 
 const BUCKETS = [
-  { id: 'compradores',     label: 'Compradores VIP', roman: 'I',   sub: 'Ya pagaron — upsell, referidos y testimonio',            money: 'pagado' },
-  { id: 'compradores_web', label: 'Compradores web', roman: 'II',  sub: 'Pagaron por la web, sin lead de WhatsApp',               money: 'pagado' },
-  { id: 'prioritarios',    label: 'Prioritarios',    roman: 'III', sub: 'Cotización ≥$15k o médico+posgrado — reactivar primero', money: 'juego' },
-  { id: 'resto',           label: 'Potenciales',     roman: 'IV',  sub: 'Alto valor en segunda prioridad',                        money: 'juego' },
+  { id: 'compradores',  label: 'Compradores VIP', roman: 'I',   sub: 'Ya pagaron — upsell, referidos y testimonio',            money: 'pagado' },
+  { id: 'prioritarios', label: 'Prioritarios',    roman: 'II',  sub: 'Cotización ≥$15k o médico+posgrado — reactivar primero', money: 'juego' },
+  { id: 'resto',        label: 'Potenciales',     roman: 'III', sub: 'Alto valor en segunda prioridad',                        money: 'juego' },
 ];
-const esComprador = (b) => b === 'compradores' || b === 'compradores_web';
+const esComprador = (b) => b === 'compradores';
 
 const SEG_STATUSES = [
   { id: 'pendiente',  label: 'Pendiente',  color: '#B97F1E' },
