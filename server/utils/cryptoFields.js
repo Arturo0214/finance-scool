@@ -52,6 +52,7 @@ const ENCRYPTED_FIELDS = {
     'fecha_nacimiento_conyuge', 'hijos', 'motivo_no_compra'],
   crm_policies: ['poliza', 'notas', 'motivo_compra', 'motivo_cancelacion', 'beneficiarios'],
   crm_reminders: ['descripcion'],
+  crm_mejores_leads: ['whatsapp', 'telefono'],
 };
 
 function encryptFields(obj, table) {

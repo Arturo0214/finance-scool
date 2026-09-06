@@ -3241,4 +3241,59 @@ router.post('/semillas/leads/:id/seguimientos', async (req, res) => {
   res.status(201).json({ seguimiento: data[0] });
 });
 
+/* ═══════════════ MEJORES LEADS (base Tesipedia) — solo administración ═══════════════
+   CRM de seguimiento de la base importada de Tesipedia_Mejores_Leads
+   (compradores VIP / potenciales prioritarios / resto). Sin cotizaciones:
+   solo estado de seguimiento, asignación y bitácora de notas. Los asesores
+   NO ven esta sección. */
+const soloAdmins = (req, res) => {
+  if (!isAgency(req.user.role)) { res.status(403).json({ error: 'Sección exclusiva de administración' }); return false; }
+  return true;
+};
+
+router.get('/mejores-leads', async (req, res) => {
+  if (!soloAdmins(req, res)) return;
+  try {
+    const db = getDB();
+    const rows = await fetchAllRows(() =>
+      db.from('crm_mejores_leads').select('*').order('score', { ascending: false, nullsFirst: false }).order('id')
+    );
+    const leads = decryptRows(rows, 'crm_mejores_leads');
+    // Admins asignables para el dropdown de "Asignado a"
+    const { data: users } = await db.from('users').select('id, name, role').in('role', ['superadmin', 'agencia', 'admin']);
+    res.json({ leads, admins: (users || []).map(u => ({ id: u.id, name: u.name })) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.patch('/mejores-leads/:id', async (req, res) => {
+  if (!soloAdmins(req, res)) return;
+  try {
+    const db = getDB();
+    const { data: row, error: eGet } = await db.from('crm_mejores_leads')
+      .select('id, seg_status, seg_notes_log').eq('id', req.params.id).maybeSingle();
+    if (eGet) return res.status(500).json({ error: eGet.message });
+    if (!row) return res.status(404).json({ error: 'Lead no encontrado' });
+
+    const patch = { updated_at: new Date().toISOString() };
+    const { seg_status, seg_assigned_to, nota } = req.body;
+    if (seg_status !== undefined) {
+      const validos = ['pendiente', 'contactado', 'interesado', 'negociando', 'convertido', 'descartado'];
+      if (!validos.includes(seg_status)) return res.status(400).json({ error: 'Estado inválido' });
+      patch.seg_status = seg_status;
+    }
+    if (seg_assigned_to !== undefined) patch.seg_assigned_to = String(seg_assigned_to || '');
+    if (nota && String(nota).trim()) {
+      const log = Array.isArray(row.seg_notes_log) ? row.seg_notes_log : [];
+      patch.seg_notes_log = [...log, { text: String(nota).trim(), by: req.user.name || req.user.email, at: new Date().toISOString() }];
+    }
+    patch.seg_last_contact = new Date().toISOString();
+
+    const { data, error } = await db.from('crm_mejores_leads').update(patch).eq('id', req.params.id).select();
+    if (error) return res.status(500).json({ error: error.message });
+    logActivity(req, 'actualizar', 'mejores-leads', req.params.id,
+      seg_status !== undefined ? `estado → ${seg_status}` : nota ? 'nota' : 'asignación');
+    res.json({ lead: decryptFields(data[0], 'crm_mejores_leads') });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 module.exports = router;

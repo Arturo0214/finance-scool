@@ -141,6 +141,8 @@ export const api = {
   crmUpdateReminder: (id, data) => request(`/crm/reminders/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   crmDeleteReminder: (id) => request(`/crm/reminders/${id}`, { method: 'DELETE' }),
   crmGetFiles: (params = {}) => request(`/crm/files?${new URLSearchParams(params)}`),
+  crmGetMejoresLeads: () => request('/crm/mejores-leads'),
+  crmUpdateMejorLead: (id, data) => request(`/crm/mejores-leads/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   crmRunAutoReminders: () => request('/crm/auto-reminders', { method: 'POST', body: JSON.stringify({}) }),
   crmDownloadReport: async (agentId, anio) => {
     const token = getToken();
