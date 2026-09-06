@@ -1,22 +1,25 @@
 /**
  * CrmMejoresLeadsView — CRM de seguimiento de la base "Mejores Leads"
- * (importada de Tesipedia_Mejores_Leads: compradores VIP, potenciales
- * prioritarios y resto). Solo administración: reactivación por WhatsApp,
- * estado de seguimiento, asignación y bitácora de notas. Sin cotizaciones.
+ * (Tesipedia, corte limpio 2026-09-06 con precios reales de cotización).
+ * Solo administración: reactivación por WhatsApp, estado de seguimiento,
+ * asignación y bitácora de notas. Sin cotizador.
  *
- * Diseño: "bóveda de banca privada" — porcelana, hairlines, numerales
- * Fraunces, sellos champagne y bitácora tipo libro mayor.
+ * Diseño: "salón de la bóveda" — placa de tesorería en marino grabado
+ * champagne sobre porcelana, lomos de libro mayor como pestañas, sellos
+ * de lacre para el estado de cotización y bitácora tipo timeline.
  */
 import { useState, useEffect, useMemo } from 'react';
 import { api } from '../../../../utils/api';
 import { C } from '../../constants';
-import { Search, MessageCircle, ChevronDown, RefreshCw, Stethoscope, Gem } from 'lucide-react';
+import { Search, MessageCircle, ChevronDown, RefreshCw, Stethoscope, HeartPulse, Gem } from 'lucide-react';
 
 const BUCKETS = [
-  { id: 'compradores',  label: 'Compradores VIP', roman: 'I',   sub: 'Ya pagaron — upsell, referidos y testimonio' },
-  { id: 'prioritarios', label: 'Prioritarios',    roman: 'II',  sub: 'Cotización ≥$15k o médico+posgrado — reactivar primero' },
-  { id: 'resto',        label: 'Potenciales',     roman: 'III', sub: 'Alto valor en segunda prioridad' },
+  { id: 'compradores',     label: 'Compradores VIP', roman: 'I',   sub: 'Ya pagaron — upsell, referidos y testimonio',            money: 'pagado' },
+  { id: 'compradores_web', label: 'Compradores web', roman: 'II',  sub: 'Pagaron por la web, sin lead de WhatsApp',               money: 'pagado' },
+  { id: 'prioritarios',    label: 'Prioritarios',    roman: 'III', sub: 'Cotización ≥$15k o médico+posgrado — reactivar primero', money: 'juego' },
+  { id: 'resto',           label: 'Potenciales',     roman: 'IV',  sub: 'Alto valor en segunda prioridad',                        money: 'juego' },
 ];
+const esComprador = (b) => b === 'compradores' || b === 'compradores_web';
 
 const SEG_STATUSES = [
   { id: 'pendiente',  label: 'Pendiente',  color: '#B97F1E' },
@@ -28,14 +31,26 @@ const SEG_STATUSES = [
 ];
 const segInfo = (id) => SEG_STATUSES.find(s => s.id === id) || SEG_STATUSES[0];
 
+const COTIZ = {
+  PAGADA:   { label: 'Pagada',   cls: 'pagada' },
+  approved: { label: 'Aceptada', cls: 'aceptada' },
+  pending:  { label: 'Abierta',  cls: 'abierta' },
+};
+
 const PAGE = 50;
 
-const fmtMoney = (n) => `$${(Number(n) || 0).toLocaleString('es-MX', { maximumFractionDigits: 0 })}`;
+const fmtMoney = (n) => {
+  const v = Number(n) || 0;
+  if (v >= 1000000) return `$${(v / 1000000).toFixed(2)}M`;
+  return `$${v.toLocaleString('es-MX', { maximumFractionDigits: 0 })}`;
+};
+const fmtMoneyFull = (n) => `$${(Number(n) || 0).toLocaleString('es-MX', { maximumFractionDigits: 0 })}`;
 const fmtFecha = (d) => {
   if (!d) return '—';
   const dt = new Date(`${String(d).slice(0, 10)}T12:00:00`);
   return dt.toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: '2-digit' });
 };
+const montoDe = (l) => esComprador(l.bucket) ? (Number(l.pago) || Number(l.precio_real) || 0) : (Number(l.precio_real) || 0);
 
 /* ─────────────────────────────────────────────────────────────── */
 
@@ -48,6 +63,7 @@ export default function CrmMejoresLeadsView() {
   const [nivelFilter, setNivelFilter] = useState('');
   const [medicoFilter, setMedicoFilter] = useState(false);
   const [asignadoFilter, setAsignadoFilter] = useState('');
+  const [orden, setOrden] = useState('score');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
   const [expanded, setExpanded] = useState(null);
@@ -65,26 +81,30 @@ export default function CrmMejoresLeadsView() {
   };
   useEffect(() => { load(); }, []);
 
-  useEffect(() => { setPage(0); setExpanded(null); }, [bucket, statusFilter, nivelFilter, medicoFilter, asignadoFilter, search]);
+  useEffect(() => { setPage(0); setExpanded(null); }, [bucket, statusFilter, nivelFilter, medicoFilter, asignadoFilter, search, orden]);
 
   const enBucket = useMemo(() => leads.filter(l => l.bucket === bucket), [leads, bucket]);
   const niveles = useMemo(() => [...new Set(enBucket.map(l => l.nivel).filter(Boolean))].sort(), [enBucket]);
 
   const filtrados = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return enBucket.filter(l => {
+    const out = enBucket.filter(l => {
       if (statusFilter !== 'todos' && (l.seg_status || 'pendiente') !== statusFilter) return false;
       if (nivelFilter && l.nivel !== nivelFilter) return false;
       if (medicoFilter && !l.medico) return false;
       if (asignadoFilter === 'sin' && l.seg_assigned_to) return false;
       if (asignadoFilter && asignadoFilter !== 'sin' && l.seg_assigned_to !== asignadoFilter) return false;
       if (q) {
-        const blob = `${l.nombre || ''} ${l.whatsapp || ''} ${l.telefono || ''} ${l.carrera || ''} ${l.tema || ''} ${l.atendido_por || ''}`.toLowerCase();
+        const blob = `${l.nombre || ''} ${l.whatsapp || ''} ${l.telefono || ''} ${l.carrera || ''} ${l.tema || ''} ${l.vendedor || ''} ${l.atendido_por || ''}`.toLowerCase();
         if (!blob.includes(q)) return false;
       }
       return true;
     });
-  }, [enBucket, statusFilter, nivelFilter, medicoFilter, asignadoFilter, search]);
+    if (orden === 'precio') out.sort((a, b) => montoDe(b) - montoDe(a));
+    else if (orden === 'fecha') out.sort((a, b) => String(b.fecha_lead || '').localeCompare(String(a.fecha_lead || '')));
+    else out.sort((a, b) => (Number(b.score) || 0) - (Number(a.score) || 0));
+    return out;
+  }, [enBucket, statusFilter, nivelFilter, medicoFilter, asignadoFilter, search, orden]);
 
   const statusCounts = useMemo(() => {
     const c = Object.fromEntries(SEG_STATUSES.map(s => [s.id, 0]));
@@ -92,7 +112,15 @@ export default function CrmMejoresLeadsView() {
     return c;
   }, [enBucket]);
 
-  const valorBucket = useMemo(() => enBucket.reduce((s, l) => s + (Number(l.precio_cotizado) || 0), 0), [enBucket]);
+  const tesoro = useMemo(() => {
+    let pagado = 0, pipeline = 0;
+    const porBucket = Object.fromEntries(BUCKETS.map(b => [b.id, 0]));
+    for (const l of leads) {
+      if (esComprador(l.bucket)) { pagado += Number(l.pago) || 0; porBucket[l.bucket] += Number(l.pago) || 0; }
+      else { pipeline += Number(l.precio_real) || 0; porBucket[l.bucket] += Number(l.precio_real) || 0; }
+    }
+    return { pagado, pipeline, porBucket };
+  }, [leads]);
 
   const totalPages = Math.max(1, Math.ceil(filtrados.length / PAGE));
   const visibles = filtrados.slice(page * PAGE, (page + 1) * PAGE);
@@ -127,9 +155,9 @@ export default function CrmMejoresLeadsView() {
   }
 
   const bucketInfo = BUCKETS.find(b => b.id === bucket);
-  const animKey = `${bucket}|${statusFilter}|${nivelFilter}|${medicoFilter}|${asignadoFilter}|${search}|${page}`;
+  const animKey = `${bucket}|${statusFilter}|${nivelFilter}|${medicoFilter}|${asignadoFilter}|${search}|${orden}|${page}`;
 
-  /* ── Sub-renderers compartidos entre tabla y cards ── */
+  /* ── Sub-renderers compartidos entre libro mayor y fichas ── */
 
   const renderSeguimiento = (l) => (
     <span className="mlv-seg">
@@ -172,6 +200,20 @@ export default function CrmMejoresLeadsView() {
     </span>
   );
 
+  const renderBadges = (l) => (
+    <>
+      {l.medico === 'SI' && <i className="mlv-medic" title="Médico"><Stethoscope size={11} /></i>}
+      {l.medico === 'salud' && <i className="mlv-medic salud" title="Área de la salud"><HeartPulse size={11} /></i>}
+      {l.perfil === 'ALTO' && <i className="mlv-alto" title="Perfil alto">ALTO</i>}
+    </>
+  );
+
+  const renderCotizChip = (l) => {
+    const c = COTIZ[l.estado_cotiz];
+    if (!c) return <i className="mlv-cotiz sin">sin cotiz.</i>;
+    return <i className={`mlv-cotiz ${c.cls}`}>{c.label}{l.num_cotiz > 1 ? ` ×${l.num_cotiz}` : ''}</i>;
+  };
+
   const renderDetalle = (l) => (
     <div className="mlv-dossier">
       <div className="mlv-dossier-head">
@@ -183,8 +225,10 @@ export default function CrmMejoresLeadsView() {
         <span><i>WhatsApp</i><b>{l.whatsapp || '—'}</b></span>
         <span><i>Teléfono</i><b>{l.telefono || '—'}</b></span>
         <span><i>Servicio</i><b>{l.servicio || '—'}{l.paginas ? ` · ${l.paginas} págs` : ''}</b></span>
-        <span><i>Campaña</i><b>{l.campana || '—'}</b></span>
-        <span><i>Atendió</i><b>{l.atendido_por || '—'} · {fmtFecha(l.fecha_origen)}</b></span>
+        <span><i>Cotización</i><b>{l.fuente_precio === 'cotización' ? `${l.num_cotiz || 1} emitida${(l.num_cotiz || 1) > 1 ? 's' : ''} · últ. ${fmtFecha(l.ult_cotiz)}` : 'sin cotización'}</b></span>
+        {esComprador(l.bucket) && <span><i>Pagó</i><b>{l.pago ? fmtMoneyFull(l.pago) : '—'}</b></span>}
+        <span><i>Vendedor</i><b>{l.vendedor || l.atendido_por || '—'}</b></span>
+        <span><i>Lead desde</i><b>{fmtFecha(l.fecha_lead)}{l.campana ? ` · ${l.campana}` : ''}</b></span>
         {l.razon_descarte && <span><i>Razón descarte</i><b>{l.razon_descarte}</b></span>}
         {l.seg_last_contact && <span><i>Último movimiento</i><b>{fmtFecha(String(l.seg_last_contact).slice(0, 10))}</b></span>}
       </div>
@@ -225,27 +269,32 @@ export default function CrmMejoresLeadsView() {
     <div className="view mlv">
       <style>{MLV_CSS}</style>
 
-      {/* ══ Encabezado ══ */}
-      <header className="mlv-head">
-        <div className="mlv-head-left">
-          <p className="mlv-overline"><span /><em>Bóveda Tesipedia · corte 5 sep 2026</em><span /></p>
-          <h1 className="mlv-title"><Gem size={22} strokeWidth={1.4} /> Mejores Leads</h1>
+      {/* ══ Placa de tesorería ══ */}
+      <header className="mlv-plaque">
+        <div className="mlv-plaque-frame" aria-hidden="true" />
+        <Gem className="mlv-plaque-gem" size={130} strokeWidth={0.55} aria-hidden="true" />
+        <div className="mlv-plaque-left">
+          <p className="mlv-overline"><span /><em>Bóveda Tesipedia · corte 6 sep 2026 · precios reales</em><span /></p>
+          <h1 className="mlv-title">Mejores Leads</h1>
           <p className="mlv-sub">{bucketInfo.sub}</p>
         </div>
-        <div className="mlv-head-right">
-          <div className="mlv-head-stat">
-            <i>Leads en bóveda</i>
-            <b>{leads.length.toLocaleString('es-MX')}</b>
+        <div className="mlv-plaque-stats">
+          <div className="mlv-pstat">
+            <i>Cobrado real</i>
+            <b>{fmtMoney(tesoro.pagado)}</b>
+            <u>{leads.filter(l => esComprador(l.bucket)).length} compradores</u>
           </div>
-          <div className="mlv-head-stat">
-            <i>Valor {bucketInfo.label.toLowerCase()}</i>
-            <b>{fmtMoney(valorBucket)}</b>
+          <div className="mlv-pstat-divider" />
+          <div className="mlv-pstat">
+            <i>Pipeline abierto</i>
+            <b>{fmtMoney(tesoro.pipeline)}</b>
+            <u>{leads.filter(l => !esComprador(l.bucket)).length.toLocaleString('es-MX')} potenciales</u>
           </div>
           <button className="mlv-refresh" onClick={load} title="Actualizar"><RefreshCw size={14} /></button>
         </div>
       </header>
 
-      {/* ══ Pestañas de bucket, estilo separadores de archivo ══ */}
+      {/* ══ Lomos del libro mayor (buckets) ══ */}
       <nav className="mlv-tabs" role="tablist">
         {BUCKETS.map(b => {
           const n = leads.filter(l => l.bucket === b.id).length;
@@ -255,14 +304,14 @@ export default function CrmMejoresLeadsView() {
               <span className="mlv-tab-roman">{b.roman}</span>
               <span className="mlv-tab-body">
                 <span className="mlv-tab-label">{b.label}</span>
-                <span className="mlv-tab-count">{n.toLocaleString('es-MX')} leads</span>
+                <span className="mlv-tab-count">{n.toLocaleString('es-MX')} leads · {fmtMoney(tesoro.porBucket[b.id])} {b.money === 'pagado' ? 'pagado' : 'en juego'}</span>
               </span>
             </button>
           );
         })}
       </nav>
 
-      {/* ══ Placas KPI por estado (clic = filtrar) ══ */}
+      {/* ══ Placas KPI por estado de seguimiento (clic = filtrar) ══ */}
       <div className="mlv-kpis">
         {SEG_STATUSES.map((s, i) => {
           const share = enBucket.length ? statusCounts[s.id] / enBucket.length : 0;
@@ -278,13 +327,18 @@ export default function CrmMejoresLeadsView() {
         })}
       </div>
 
-      {/* ══ Búsqueda y filtros ══ */}
+      {/* ══ Búsqueda, filtros y orden ══ */}
       <div className="mlv-toolbar">
         <div className="mlv-search">
           <Search size={14} />
-          <input placeholder="Buscar nombre, teléfono, carrera, tema..." value={search} onChange={e => setSearch(e.target.value)} />
+          <input placeholder="Buscar nombre, teléfono, carrera, tema, vendedor..." value={search} onChange={e => setSearch(e.target.value)} />
         </div>
         <div className="mlv-filters">
+          <span className="mlv-sorter" role="group" aria-label="Ordenar por">
+            {[['score', 'Score'], ['precio', 'Precio'], ['fecha', 'Fecha']].map(([id, lab]) => (
+              <button key={id} className={orden === id ? 'on' : ''} onClick={() => setOrden(id)}>{lab}</button>
+            ))}
+          </span>
           <select className="mlv-select" value={nivelFilter} onChange={e => setNivelFilter(e.target.value)}>
             <option value="">Todos los niveles</option>
             {niveles.map(n => <option key={n} value={n}>{n}</option>)}
@@ -295,7 +349,7 @@ export default function CrmMejoresLeadsView() {
             {admins.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
           </select>
           <button className={`mlv-toggle${medicoFilter ? ' on' : ''}`} onClick={() => setMedicoFilter(m => !m)}>
-            <Stethoscope size={13} /> Solo médicos
+            <Stethoscope size={13} /> Salud
           </button>
           {(statusFilter !== 'todos' || nivelFilter || medicoFilter || asignadoFilter || search) && (
             <button className="mlv-clear" onClick={() => { setStatusFilter('todos'); setNivelFilter(''); setMedicoFilter(false); setAsignadoFilter(''); setSearch(''); }}>
@@ -308,7 +362,7 @@ export default function CrmMejoresLeadsView() {
       <p className="mlv-count-line">
         <span>{filtrados.length.toLocaleString('es-MX')} de {enBucket.length.toLocaleString('es-MX')} en este libro</span>
         <span className="mlv-count-rule" />
-        <span>ordenados por score</span>
+        <span>orden: {orden === 'score' ? 'score' : orden === 'precio' ? 'precio' : 'lead más reciente'}</span>
       </p>
 
       {filtrados.length === 0 && (
@@ -324,71 +378,57 @@ export default function CrmMejoresLeadsView() {
           <div className="mlv-ledger-head">
             <span>Lead</span>
             <span>Carrera / Tema</span>
-            <span className="r">{bucket === 'compradores' ? 'Pagó' : 'Cotizado'}</span>
+            <span className="r">{esComprador(bucket) ? 'Pagó' : 'En juego'}</span>
             <span>Seguimiento</span>
             <span className="r">Acciones</span>
           </div>
-          {visibles.map((l, i) => {
-            const st = segInfo(l.seg_status);
-            return (
-              <div key={l.id} className={`mlv-row-wrap${expanded === l.id ? ' open' : ''}`} style={{ '--d': `${Math.min(i, 14) * 30}ms` }}>
-                <div className="mlv-row">
-                  <span className="mlv-cell-lead">
-                    <span className="mlv-seal" title={`Score ${l.score ?? '—'}`}>{l.score ?? '—'}</span>
-                    <span>
-                      <span className="mlv-name">
-                        {l.nombre || 'Sin nombre'}
-                        {l.medico && <i className="mlv-medic" title="Médico"><Stethoscope size={11} /></i>}
-                        {l.perfil === 'ALTO' && <i className="mlv-alto" title="Perfil alto">ALTO</i>}
-                      </span>
-                      <span className="mlv-name-sub">{l.nivel || '—'}</span>
-                    </span>
+          {visibles.map((l, i) => (
+            <div key={l.id} className={`mlv-row-wrap${expanded === l.id ? ' open' : ''}`} style={{ '--d': `${Math.min(i, 14) * 30}ms` }}>
+              <div className="mlv-row">
+                <span className="mlv-cell-lead">
+                  <span className="mlv-seal" title={`Score ${l.score ?? '—'}`}>{l.score ?? '—'}</span>
+                  <span>
+                    <span className="mlv-name">{l.nombre || 'Sin nombre'}{renderBadges(l)}</span>
+                    <span className="mlv-name-sub">{l.nivel || '—'}{l.vendedor ? ` · ${l.vendedor}` : ''}</span>
                   </span>
-                  <span className="mlv-cell-tema">
-                    <b>{l.carrera || '—'}</b>
-                    <i title={l.tema || ''}>{l.tema || ''}</i>
-                  </span>
-                  <span className="mlv-cell-precio r">
-                    <b>{l.precio_cotizado ? fmtMoney(l.precio_cotizado) : '—'}</b>
-                    <i style={{ color: st.color }}>{(l.estado_origen || '—').replace(/_/g, ' ')}</i>
-                  </span>
-                  <span>{renderSeguimiento(l)}</span>
-                  <span className="r">{renderAcciones(l)}</span>
-                </div>
-                {expanded === l.id && renderDetalle(l)}
+                </span>
+                <span className="mlv-cell-tema">
+                  <b>{l.carrera || '—'}</b>
+                  <i title={l.tema || ''}>{l.tema || ''}</i>
+                </span>
+                <span className="mlv-cell-precio r">
+                  <b>{montoDe(l) ? fmtMoneyFull(montoDe(l)) : '—'}</b>
+                  {renderCotizChip(l)}
+                </span>
+                <span>{renderSeguimiento(l)}</span>
+                <span className="r">{renderAcciones(l)}</span>
               </div>
-            );
-          })}
+              {expanded === l.id && renderDetalle(l)}
+            </div>
+          ))}
         </div>
       )}
 
       {/* ══ Fichas (móvil) ══ */}
       <div className="mobile-only-cards mlv-cards" key={`c-${animKey}`}>
-        {visibles.map((l, i) => {
-          const st = segInfo(l.seg_status);
-          return (
-            <div key={l.id} className="mlv-card" style={{ '--d': `${Math.min(i, 10) * 35}ms` }}>
-              <div className="mlv-card-top">
-                <span className="mlv-seal">{l.score ?? '—'}</span>
-                <span className="mlv-card-id">
-                  <span className="mlv-name">
-                    {l.nombre || 'Sin nombre'}
-                    {l.medico && <i className="mlv-medic"><Stethoscope size={11} /></i>}
-                    {l.perfil === 'ALTO' && <i className="mlv-alto">ALTO</i>}
-                  </span>
-                  <span className="mlv-name-sub">{l.nivel || '—'} · {l.carrera || '—'}</span>
-                </span>
-                {renderAcciones(l)}
-              </div>
-              <div className="mlv-card-mid">
-                <span><i>{bucket === 'compradores' ? 'Pagó' : 'Cotizado'}</i><b>{l.precio_cotizado ? fmtMoney(l.precio_cotizado) : '—'}</b></span>
-                <span><i>Estado origen</i><b style={{ color: st.color }}>{(l.estado_origen || '—').replace(/_/g, ' ')}</b></span>
-              </div>
-              {renderSeguimiento(l)}
-              {expanded === l.id && renderDetalle(l)}
+        {visibles.map((l, i) => (
+          <div key={l.id} className="mlv-card" style={{ '--d': `${Math.min(i, 10) * 35}ms` }}>
+            <div className="mlv-card-top">
+              <span className="mlv-seal">{l.score ?? '—'}</span>
+              <span className="mlv-card-id">
+                <span className="mlv-name">{l.nombre || 'Sin nombre'}{renderBadges(l)}</span>
+                <span className="mlv-name-sub">{l.nivel || '—'} · {l.carrera || '—'}</span>
+              </span>
+              {renderAcciones(l)}
             </div>
-          );
-        })}
+            <div className="mlv-card-mid">
+              <span><i>{esComprador(l.bucket) ? 'Pagó' : 'En juego'}</i><b>{montoDe(l) ? fmtMoneyFull(montoDe(l)) : '—'}</b></span>
+              <span><i>Cotización</i>{renderCotizChip(l)}</span>
+            </div>
+            {renderSeguimiento(l)}
+            {expanded === l.id && renderDetalle(l)}
+          </div>
+        ))}
       </div>
 
       {/* ══ Paginación ══ */}
@@ -404,8 +444,8 @@ export default function CrmMejoresLeadsView() {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   CSS — lenguaje "bóveda de banca privada": porcelana, hairlines,
-   Fraunces en cifras, champagne #C1975B, azul Prudential #003DA5.
+   CSS — "salón de la bóveda": placa de tesorería marino grabada en
+   champagne sobre porcelana; hairlines, Fraunces, sellos de lacre.
    ═══════════════════════════════════════════════════════════════ */
 const GOLD = '#C1975B';
 const INK = '#0B1B33';
@@ -415,40 +455,47 @@ const MLV_CSS = `
 
   @keyframes mlvRise { from { opacity:0; transform:translateY(9px); } to { opacity:1; transform:none; } }
   @keyframes mlvUnfold { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:none; } }
+  @keyframes mlvGlow { from { opacity:.16; } to { opacity:.3; } }
 
-  /* ── Encabezado ── */
-  .mlv-head { display:flex; justify-content:space-between; align-items:flex-end; gap:18px; flex-wrap:wrap; margin-bottom:26px; animation:mlvRise .5s ease backwards; }
-  .mlv-overline { display:flex; align-items:center; gap:10px; margin:0 0 6px; }
-  .mlv-overline span { height:1px; width:26px; background:linear-gradient(90deg,transparent,var(--gold)); }
-  .mlv-overline span:last-child { background:linear-gradient(90deg,var(--gold),transparent); }
-  .mlv-overline em { font-style:normal; font-size:10px; letter-spacing:2.6px; text-transform:uppercase; color:#8A6A34; font-weight:700; white-space:nowrap; }
-  .mlv-title { font-family:'Fraunces',Georgia,serif; font-size:30px; font-weight:600; letter-spacing:-.5px; color:var(--ink); margin:0; display:flex; align-items:center; gap:10px; }
-  .mlv-title svg { color:var(--gold); }
-  .mlv-sub { font-size:12.5px; color:${C.textMuted}; margin:5px 0 0; }
-  .mlv-head-right { display:flex; align-items:stretch; gap:0; }
-  .mlv-head-stat { padding:4px 20px; border-left:1px solid var(--hair); display:flex; flex-direction:column; justify-content:center; }
-  .mlv-head-stat i { font-style:normal; font-size:9.5px; letter-spacing:1.8px; text-transform:uppercase; color:${C.textMuted}; font-weight:700; }
-  .mlv-head-stat b { font-family:'Fraunces',Georgia,serif; font-size:21px; font-weight:600; color:var(--ink); font-variant-numeric:tabular-nums; letter-spacing:-.3px; }
-  .mlv-refresh { margin-left:16px; align-self:center; width:34px; height:34px; border-radius:50%; border:1px solid var(--hair); background:#fff; color:${C.textMuted}; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all .25s; }
-  .mlv-refresh:hover { border-color:var(--gold); color:#8A6A34; transform:rotate(90deg); }
+  /* ── Placa de tesorería ── */
+  .mlv-plaque { position:relative; overflow:hidden; display:flex; justify-content:space-between; align-items:center; gap:22px; flex-wrap:wrap; margin-bottom:22px; padding:26px 30px 24px; border-radius:18px; background:radial-gradient(120% 160% at 8% 0%, #14315E 0%, ${INK} 52%, #081324 100%); box-shadow:0 18px 44px -22px rgba(4,12,26,.65), inset 0 1px 0 rgba(255,255,255,.07); animation:mlvRise .5s ease backwards; }
+  .mlv-plaque-frame { position:absolute; inset:9px; border:1px solid rgba(193,151,91,.32); border-radius:12px; pointer-events:none; }
+  .mlv-plaque-frame::before { content:'◆'; position:absolute; top:-8px; left:50%; transform:translateX(-50%); font-size:9px; color:rgba(193,151,91,.75); background:transparent; padding:0 8px; }
+  .mlv-plaque-gem { position:absolute; right:-14px; bottom:-32px; color:rgba(193,151,91,.5); opacity:.2; pointer-events:none; animation:mlvGlow 4s ease-in-out infinite alternate; }
+  .mlv-plaque-left { position:relative; min-width:0; }
+  .mlv-overline { display:flex; align-items:center; gap:10px; margin:0 0 7px; }
+  .mlv-overline span { height:1px; width:26px; background:linear-gradient(90deg,transparent,rgba(193,151,91,.85)); }
+  .mlv-overline span:last-child { background:linear-gradient(90deg,rgba(193,151,91,.85),transparent); }
+  .mlv-overline em { font-style:normal; font-size:9.5px; letter-spacing:2.6px; text-transform:uppercase; color:#D6B37E; font-weight:700; white-space:nowrap; }
+  /* .admin-wrap h1 pisa el color con inherit — se necesita mayor especificidad */
+  .admin-wrap .mlv h1.mlv-title { font-family:'Fraunces',Georgia,serif; font-size:31px; font-weight:600; letter-spacing:-.4px; margin:0; color:#F2E4C8; text-shadow:0 1px 0 rgba(0,0,0,.35), 0 0 22px rgba(193,151,91,.35); }
+  .mlv-sub { font-size:12.5px; color:rgba(233,240,250,.6); margin:5px 0 0; }
+  .mlv-plaque-stats { position:relative; display:flex; align-items:center; gap:22px; }
+  .mlv-pstat { display:flex; flex-direction:column; }
+  .mlv-pstat i { font-style:normal; font-size:9px; letter-spacing:2px; text-transform:uppercase; color:rgba(214,179,126,.85); font-weight:700; }
+  .mlv-pstat b { font-family:'Fraunces',Georgia,serif; font-size:26px; font-weight:600; color:#F6F1E6; font-variant-numeric:tabular-nums; letter-spacing:-.4px; line-height:1.15; }
+  .mlv-pstat u { text-decoration:none; font-size:10.5px; color:rgba(233,240,250,.5); }
+  .mlv-pstat-divider { width:1px; align-self:stretch; background:linear-gradient(180deg,transparent,rgba(193,151,91,.4),transparent); }
+  .mlv-refresh { width:36px; height:36px; border-radius:50%; border:1px solid rgba(193,151,91,.4); background:rgba(255,255,255,.04); color:#D6B37E; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all .25s; }
+  .mlv-refresh:hover { border-color:var(--gold); background:rgba(193,151,91,.14); transform:rotate(90deg); }
 
-  /* ── Pestañas tipo separador de archivo ── */
+  /* ── Lomos del libro mayor ── */
   .mlv-tabs { display:flex; gap:10px; margin-bottom:20px; animation:mlvRise .5s .06s ease backwards; }
   .mlv-tab { flex:1; display:flex; align-items:center; gap:12px; text-align:left; padding:13px 16px; cursor:pointer; font-family:inherit; background:linear-gradient(180deg,#fff,#FCFCFA); border:1px solid var(--hair); border-radius:14px 14px 4px 4px; position:relative; overflow:hidden; transition:all .25s ease; }
   .mlv-tab::after { content:''; position:absolute; left:0; right:0; bottom:0; height:2px; background:linear-gradient(90deg,transparent 4%, var(--gold), transparent 96%); opacity:0; transition:opacity .25s; }
   .mlv-tab:hover { border-color:rgba(11,27,51,.2); transform:translateY(-1px); }
   .mlv-tab.active { border-color:rgba(193,151,91,.55); box-shadow:0 12px 26px -18px rgba(0,43,117,.45); }
   .mlv-tab.active::after { opacity:1; }
-  .mlv-tab-roman { font-family:'Fraunces',Georgia,serif; font-size:19px; font-weight:600; color:rgba(11,27,51,.24); width:26px; text-align:center; flex-shrink:0; transition:color .25s; }
+  .mlv-tab-roman { font-family:'Fraunces',Georgia,serif; font-size:19px; font-weight:600; color:rgba(11,27,51,.24); width:28px; text-align:center; flex-shrink:0; transition:color .25s; }
   .mlv-tab.active .mlv-tab-roman { color:var(--gold); }
   .mlv-tab-body { display:flex; flex-direction:column; min-width:0; }
-  .mlv-tab-label { font-size:13.5px; font-weight:700; color:var(--ink); letter-spacing:.1px; }
-  .mlv-tab-count { font-size:11px; color:${C.textMuted}; font-variant-numeric:tabular-nums; }
+  .mlv-tab-label { font-size:13.5px; font-weight:700; color:var(--ink); letter-spacing:.1px; white-space:nowrap; }
+  .mlv-tab-count { font-size:10.5px; color:${C.textMuted}; font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
   /* ── Placas KPI ── */
   .mlv-kpis { display:grid; grid-template-columns:repeat(6,1fr); gap:10px; margin-bottom:20px; }
   .mlv-kpi { font-family:inherit; text-align:left; background:linear-gradient(180deg,#fff,#FDFDFB); border:1px solid var(--hair); border-radius:12px; padding:11px 13px 10px; cursor:pointer; position:relative; transition:all .22s ease; animation:mlvRise .45s var(--d) ease backwards; }
-  .mlv-kpi::before { content:''; position:absolute; top:0; left:12px; right:12px; height:2px; border-radius:0 0 2px 2px; background:linear-gradient(90deg,transparent,var(--st),transparent); opacity:.0; transition:opacity .25s; }
+  .mlv-kpi::before { content:''; position:absolute; top:0; left:12px; right:12px; height:2px; border-radius:0 0 2px 2px; background:linear-gradient(90deg,transparent,var(--st),transparent); opacity:0; transition:opacity .25s; }
   .mlv-kpi:hover { transform:translateY(-2px); box-shadow:0 12px 24px -18px rgba(0,43,117,.4); }
   .mlv-kpi:hover::before, .mlv-kpi.active::before { opacity:.8; }
   .mlv-kpi.active { border-color:color-mix(in srgb, var(--st) 55%, transparent); box-shadow:0 10px 22px -16px color-mix(in srgb, var(--st) 60%, transparent); }
@@ -465,6 +512,10 @@ const MLV_CSS = `
   .mlv-search input { width:100%; padding:9px 14px 9px 36px; border:1px solid var(--hair); border-radius:22px; font-size:13px; font-family:inherit; background:#fff; color:${C.text}; outline:none; box-shadow:0 1px 2px rgba(11,27,51,.04); transition:border-color .2s, box-shadow .2s; }
   .mlv-search input:focus { border-color:var(--gold); box-shadow:0 0 0 3.5px rgba(193,151,91,.16); }
   .mlv-filters { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .mlv-sorter { display:inline-flex; border:1px solid var(--hair); border-radius:20px; overflow:hidden; background:#fff; }
+  .mlv-sorter button { font-family:inherit; font-size:11.5px; font-weight:700; letter-spacing:.3px; padding:7.5px 13px; border:none; background:none; color:${C.textMuted}; cursor:pointer; transition:all .2s; }
+  .mlv-sorter button + button { border-left:1px solid var(--hair); }
+  .mlv-sorter button.on { background:linear-gradient(180deg,#FBF4E6,#F5EBD6); color:#8A6A34; }
   .mlv-select { padding:8px 12px; border:1px solid var(--hair); border-radius:10px; font-size:12.5px; font-family:inherit; background:#fff; color:${C.text}; outline:none; cursor:pointer; transition:border-color .2s; }
   .mlv-select:focus { border-color:var(--gold); }
   .mlv-toggle { display:inline-flex; align-items:center; gap:6px; padding:8px 14px; border-radius:20px; border:1px solid var(--hair); background:#fff; font-size:12.5px; font-weight:600; font-family:inherit; color:${C.textMuted}; cursor:pointer; transition:all .2s; }
@@ -478,7 +529,7 @@ const MLV_CSS = `
 
   /* ── Libro mayor (desktop) ── */
   .mlv-ledger { background:linear-gradient(180deg,#fff,#FDFDFC); border:1px solid var(--hair); border-radius:16px; box-shadow:0 1px 2px rgba(11,27,51,.03), 0 14px 34px -28px rgba(11,27,51,.35); overflow:hidden; }
-  .mlv-ledger-head, .mlv-row { display:grid; grid-template-columns:minmax(190px,1.15fr) minmax(180px,1.35fr) 120px 320px 92px; gap:14px; align-items:center; padding:0 20px; }
+  .mlv-ledger-head, .mlv-row { display:grid; grid-template-columns:minmax(190px,1.15fr) minmax(180px,1.3fr) 128px 320px 92px; gap:14px; align-items:center; padding:0 20px; }
   .mlv-ledger-head { padding-top:13px; padding-bottom:11px; border-bottom:1px solid var(--hair); font-size:9.5px; letter-spacing:1.8px; text-transform:uppercase; font-weight:700; color:${C.textMuted}; background:linear-gradient(180deg,#FBFBF9,#F7F8F6); }
   .mlv-ledger-head .r, .mlv-row .r { text-align:right; justify-self:end; }
   .mlv-row-wrap { border-bottom:1px solid rgba(11,27,51,.055); animation:mlvRise .4s var(--d) ease backwards; transition:background .2s; }
@@ -492,12 +543,19 @@ const MLV_CSS = `
   .mlv-name { display:flex; align-items:center; gap:6px; font-size:13.5px; font-weight:700; color:var(--ink); min-width:0; }
   .mlv-name-sub { display:block; font-size:11px; color:${C.textMuted}; margin-top:1px; }
   .mlv-medic { display:inline-flex; color:${C.green}; }
+  .mlv-medic.salud { color:#0891B2; }
   .mlv-alto { font-style:normal; font-size:8.5px; font-weight:800; letter-spacing:1.2px; color:#8A6A34; background:linear-gradient(180deg,#FBF4E6,#F3E7CE); border:1px solid rgba(193,151,91,.5); border-radius:4px; padding:1.5px 5px; }
   .mlv-cell-tema { min-width:0; }
   .mlv-cell-tema b { display:block; font-size:12.5px; font-weight:600; color:${C.text}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .mlv-cell-tema i { display:block; font-style:normal; font-size:11.5px; color:${C.textMuted}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .mlv-cell-precio b { display:block; font-family:'Fraunces',Georgia,serif; font-size:15px; font-weight:600; color:var(--ink); font-variant-numeric:tabular-nums; letter-spacing:-.2px; }
-  .mlv-cell-precio i { display:block; font-style:normal; font-size:10px; font-weight:700; letter-spacing:.6px; text-transform:uppercase; margin-top:1px; }
+
+  /* Sello de estado de cotización */
+  .mlv-cotiz { display:inline-block; font-style:normal; font-size:9px; font-weight:800; letter-spacing:1px; text-transform:uppercase; border-radius:4px; padding:2px 6px; margin-top:2px; }
+  .mlv-cotiz.pagada { color:${C.green}; background:${C.greenBg}; box-shadow:inset 0 0 0 1px rgba(14,138,99,.28); }
+  .mlv-cotiz.aceptada { color:#2563EB; background:#EFF4FE; box-shadow:inset 0 0 0 1px rgba(37,99,235,.25); }
+  .mlv-cotiz.abierta { color:${C.amber}; background:${C.amberBg}; box-shadow:inset 0 0 0 1px rgba(185,127,30,.28); }
+  .mlv-cotiz.sin { color:${C.textLight}; background:rgba(11,27,51,.045); }
 
   /* ── Seguimiento: pill-selects ── */
   .mlv-seg { display:flex; gap:7px; align-items:center; flex-wrap:wrap; }
@@ -553,8 +611,8 @@ const MLV_CSS = `
   .mlv-card { background:linear-gradient(180deg,#fff,#FDFDFB); border:1px solid var(--hair); border-top:2px solid rgba(193,151,91,.55); border-radius:6px 6px 14px 14px; padding:13px 14px; box-shadow:0 2px 10px rgba(11,27,51,.05); animation:mlvRise .4s var(--d) ease backwards; }
   .mlv-card-top { display:flex; align-items:flex-start; gap:10px; margin-bottom:10px; }
   .mlv-card-id { flex:1; min-width:0; }
-  .mlv-card-mid { display:flex; justify-content:space-between; gap:10px; border-top:1px solid rgba(11,27,51,.055); border-bottom:1px solid rgba(11,27,51,.055); padding:8px 0; margin-bottom:10px; }
-  .mlv-card-mid span i { display:block; font-style:normal; font-size:9px; letter-spacing:1.3px; text-transform:uppercase; font-weight:700; color:${C.textLight}; }
+  .mlv-card-mid { display:flex; justify-content:space-between; align-items:center; gap:10px; border-top:1px solid rgba(11,27,51,.055); border-bottom:1px solid rgba(11,27,51,.055); padding:8px 0; margin-bottom:10px; }
+  .mlv-card-mid span i:first-child { display:block; font-style:normal; font-size:9px; letter-spacing:1.3px; text-transform:uppercase; font-weight:700; color:${C.textLight}; }
   .mlv-card-mid span b { font-family:'Fraunces',Georgia,serif; font-size:14px; font-weight:600; color:var(--ink); font-variant-numeric:tabular-nums; }
   .mlv-card-mid span:last-child { text-align:right; }
   .mlv-card .mlv-dossier { margin:12px 0 0; }
@@ -570,23 +628,30 @@ const MLV_CSS = `
   .mlv-pager span { font-size:10.5px; letter-spacing:1.6px; text-transform:uppercase; font-weight:700; color:${C.textMuted}; font-variant-numeric:tabular-nums; }
 
   /* ── Responsive ── */
+  @media(max-width:1280px){
+    .mlv-tabs { flex-wrap:wrap; }
+    .mlv-tab { min-width:200px; }
+  }
   @media(max-width:1180px){
-    .mlv-ledger-head, .mlv-row { grid-template-columns:minmax(170px,1.1fr) minmax(150px,1fr) 105px 300px 88px; gap:10px; padding:0 14px; }
+    .mlv-ledger-head, .mlv-row { grid-template-columns:minmax(170px,1.1fr) minmax(150px,1fr) 112px 300px 88px; gap:10px; padding:0 14px; }
   }
   @media(max-width:768px){
-    .mlv-head { align-items:flex-start; flex-direction:column; }
-    .mlv-head-right { width:100%; justify-content:space-between; }
-    .mlv-head-stat { border-left:none; padding:4px 0; }
-    .mlv-head-stat + .mlv-head-stat { border-left:1px solid var(--hair); padding-left:18px; }
-    .mlv-title { font-size:25px; }
+    .mlv-plaque { padding:20px 18px; }
+    .mlv-plaque-frame { inset:6px; }
+    .mlv-overline em { white-space:normal; letter-spacing:1.6px; font-size:8.5px; line-height:1.5; }
+    .admin-wrap .mlv h1.mlv-title { font-size:25px; }
+    .mlv-plaque-stats { width:100%; justify-content:space-between; gap:14px; }
+    .mlv-pstat b { font-size:21px; }
     .mlv-tabs { flex-direction:column; gap:7px; }
-    .mlv-tab { border-radius:10px; padding:11px 14px; }
+    .mlv-tab { border-radius:10px; padding:11px 14px; min-width:0; }
     .mlv-kpis { grid-template-columns:repeat(3,1fr); gap:7px; }
     .mlv-kpi { padding:9px 10px 8px; }
     .mlv-kpi-value { font-size:20px; }
     .mlv-search { max-width:none; }
     .mlv-filters { width:100%; }
     .mlv-filters .mlv-select { flex:1; }
+    .mlv-sorter { width:100%; }
+    .mlv-sorter button { flex:1; }
     .mlv-dossier { margin:12px 0 0; padding:13px 14px 15px; }
     .mlv-cards { display:flex !important; }
   }
