@@ -14,9 +14,9 @@ import { C } from '../../constants';
 import { Search, MessageCircle, ChevronDown, RefreshCw, Stethoscope, HeartPulse, Gem } from 'lucide-react';
 
 const BUCKETS = [
-  { id: 'compradores',  label: 'Compradores VIP', roman: 'I',   sub: 'Ya pagaron — upsell, referidos y testimonio',            money: 'pagado' },
-  { id: 'prioritarios', label: 'Prioritarios',    roman: 'II',  sub: 'Cotización ≥$15k o médico+posgrado — reactivar primero', money: 'juego' },
-  { id: 'resto',        label: 'Potenciales',     roman: 'III', sub: 'Alto valor en segunda prioridad',                        money: 'juego' },
+  { id: 'compradores',  label: 'Compradores VIP', roman: 'I',   sub: 'Ya pagaron — upsell, referidos y testimonio' },
+  { id: 'prioritarios', label: 'Prioritarios',    roman: 'II',  sub: 'Cotización ≥$15k o médico+posgrado — reactivar primero' },
+  { id: 'resto',        label: 'Potenciales',     roman: 'III', sub: 'Alto valor en segunda prioridad' },
 ];
 const esComprador = (b) => b === 'compradores';
 
@@ -114,13 +114,14 @@ export default function CrmMejoresLeadsView() {
   }, [enBucket]);
 
   const tesoro = useMemo(() => {
-    let pagado = 0, pipeline = 0;
+    let pipeline = 0;
     const porBucket = Object.fromEntries(BUCKETS.map(b => [b.id, 0]));
     for (const l of leads) {
-      if (esComprador(l.bucket)) { pagado += Number(l.pago) || 0; porBucket[l.bucket] += Number(l.pago) || 0; }
-      else { pipeline += Number(l.precio_real) || 0; porBucket[l.bucket] += Number(l.precio_real) || 0; }
+      const cot = Number(l.precio_real) || 0;
+      if (porBucket[l.bucket] !== undefined) porBucket[l.bucket] += cot;
+      if (!esComprador(l.bucket)) pipeline += cot;
     }
-    return { pagado, pipeline, porBucket };
+    return { pipeline, porBucket };
   }, [leads]);
 
   const totalPages = Math.max(1, Math.ceil(filtrados.length / PAGE));
@@ -280,12 +281,6 @@ export default function CrmMejoresLeadsView() {
         </div>
         <div className="mlv-plaque-stats">
           <div className="mlv-pstat">
-            <i>Cobrado real</i>
-            <b>{fmtMoney(tesoro.pagado)}</b>
-            <u>{leads.filter(l => esComprador(l.bucket)).length} compradores</u>
-          </div>
-          <div className="mlv-pstat-divider" />
-          <div className="mlv-pstat">
             <i>Pipeline abierto</i>
             <b>{fmtMoney(tesoro.pipeline)}</b>
             <u>{leads.filter(l => !esComprador(l.bucket)).length.toLocaleString('es-MX')} potenciales</u>
@@ -304,7 +299,7 @@ export default function CrmMejoresLeadsView() {
               <span className="mlv-tab-roman">{b.roman}</span>
               <span className="mlv-tab-body">
                 <span className="mlv-tab-label">{b.label}</span>
-                <span className="mlv-tab-count">{n.toLocaleString('es-MX')} leads · {fmtMoney(tesoro.porBucket[b.id])} {b.money === 'pagado' ? 'pagado' : 'cotizado'}</span>
+                <span className="mlv-tab-count">{n.toLocaleString('es-MX')} leads · {fmtMoney(tesoro.porBucket[b.id])} cotizado</span>
               </span>
             </button>
           );
