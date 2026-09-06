@@ -3270,12 +3270,12 @@ router.patch('/mejores-leads/:id', async (req, res) => {
   try {
     const db = getDB();
     const { data: row, error: eGet } = await db.from('crm_mejores_leads')
-      .select('id, seg_status, seg_notes_log').eq('id', req.params.id).maybeSingle();
+      .select('id, seg_status, seg_notes_log, referidos').eq('id', req.params.id).maybeSingle();
     if (eGet) return res.status(500).json({ error: eGet.message });
     if (!row) return res.status(404).json({ error: 'Lead no encontrado' });
 
     const patch = { updated_at: new Date().toISOString() };
-    const { seg_status, seg_assigned_to, nota } = req.body;
+    const { seg_status, seg_assigned_to, nota, referido, quitar_referido } = req.body;
     if (seg_status !== undefined) {
       const validos = ['pendiente', 'contactado', 'interesado', 'negociando', 'convertido', 'descartado'];
       if (!validos.includes(seg_status)) return res.status(400).json({ error: 'Estado inválido' });
@@ -3286,12 +3286,34 @@ router.patch('/mejores-leads/:id', async (req, res) => {
       const log = Array.isArray(row.seg_notes_log) ? row.seg_notes_log : [];
       patch.seg_notes_log = [...log, { text: String(nota).trim(), by: req.user.name || req.user.email, at: new Date().toISOString() }];
     }
+    /* Rama de referidos: agregar {nombre, telefono, monto} o quitar por índice */
+    const refsActuales = Array.isArray(row.referidos) ? row.referidos : [];
+    if (referido && typeof referido === 'object') {
+      const nombreRef = String(referido.nombre || '').trim();
+      if (!nombreRef) return res.status(400).json({ error: 'El referido necesita nombre' });
+      const monto = Number(referido.monto) || 0;
+      if (monto < 0) return res.status(400).json({ error: 'Monto inválido' });
+      patch.referidos = [...refsActuales, {
+        nombre: nombreRef,
+        telefono: String(referido.telefono || '').trim(),
+        monto,
+        by: req.user.name || req.user.email,
+        at: new Date().toISOString(),
+      }];
+    } else if (quitar_referido !== undefined) {
+      const idx = Number(quitar_referido);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= refsActuales.length) return res.status(400).json({ error: 'Referido inexistente' });
+      patch.referidos = refsActuales.filter((_, i) => i !== idx);
+    }
     patch.seg_last_contact = new Date().toISOString();
 
     const { data, error } = await db.from('crm_mejores_leads').update(patch).eq('id', req.params.id).select();
     if (error) return res.status(500).json({ error: error.message });
     logActivity(req, 'actualizar', 'mejores-leads', req.params.id,
-      seg_status !== undefined ? `estado → ${seg_status}` : nota ? 'nota' : 'asignación');
+      seg_status !== undefined ? `estado → ${seg_status}`
+        : referido ? `referido + ${String(referido.nombre || '').trim()}`
+        : quitar_referido !== undefined ? 'referido eliminado'
+        : nota ? 'nota' : 'asignación');
     res.json({ lead: decryptFields(data[0], 'crm_mejores_leads') });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

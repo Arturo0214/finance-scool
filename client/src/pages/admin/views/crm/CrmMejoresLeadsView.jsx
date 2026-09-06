@@ -11,7 +11,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { api } from '../../../../utils/api';
 import { C } from '../../constants';
-import { Search, MessageCircle, ChevronDown, RefreshCw, Stethoscope, HeartPulse, Gem } from 'lucide-react';
+import { Search, MessageCircle, ChevronDown, RefreshCw, Stethoscope, HeartPulse, Gem, GitBranch, X } from 'lucide-react';
 
 const BUCKETS = [
   { id: 'compradores',  label: 'Compradores VIP', roman: 'I',   sub: 'Ya pagaron — upsell, referidos y testimonio' },
@@ -49,9 +49,10 @@ const fmtFecha = (d) => {
   const dt = new Date(`${String(d).slice(0, 10)}T12:00:00`);
   return dt.toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: '2-digit' });
 };
-/* En todos los libros la cifra visible es la cotización real del lead;
-   el monto pagado solo alimenta el agregado "Cobrado real" de la placa. */
+/* En todos los libros la cifra visible es la cotización real del lead. */
 const montoDe = (l) => Number(l.precio_real) || 0;
+/* Lo que generó el lead vía recomendados (suma de su rama de referidos) */
+const generadoDe = (l) => (Array.isArray(l.referidos) ? l.referidos : []).reduce((s, r) => s + (Number(r.monto) || 0), 0);
 
 /* ─────────────────────────────────────────────────────────────── */
 
@@ -69,6 +70,7 @@ export default function CrmMejoresLeadsView() {
   const [page, setPage] = useState(0);
   const [expanded, setExpanded] = useState(null);
   const [notaDraft, setNotaDraft] = useState('');
+  const [refDraft, setRefDraft] = useState({ nombre: '', telefono: '', monto: '' });
   const [saving, setSaving] = useState(null);
 
   const load = async () => {
@@ -114,14 +116,16 @@ export default function CrmMejoresLeadsView() {
   }, [enBucket]);
 
   const tesoro = useMemo(() => {
-    let pipeline = 0;
+    let pipeline = 0, referidosMonto = 0, referidosN = 0;
     const porBucket = Object.fromEntries(BUCKETS.map(b => [b.id, 0]));
     for (const l of leads) {
       const cot = Number(l.precio_real) || 0;
       if (porBucket[l.bucket] !== undefined) porBucket[l.bucket] += cot;
       if (!esComprador(l.bucket)) pipeline += cot;
+      referidosMonto += generadoDe(l);
+      referidosN += (l.referidos || []).length;
     }
-    return { pipeline, porBucket };
+    return { pipeline, porBucket, referidosMonto, referidosN };
   }, [leads]);
 
   const totalPages = Math.max(1, Math.ceil(filtrados.length / PAGE));
@@ -140,6 +144,18 @@ export default function CrmMejoresLeadsView() {
     if (!notaDraft.trim()) return;
     await update(lead, { nota: notaDraft });
     setNotaDraft('');
+  };
+
+  const agregarReferido = async (lead) => {
+    if (!refDraft.nombre.trim()) return;
+    await update(lead, { referido: { nombre: refDraft.nombre, telefono: refDraft.telefono, monto: Number(refDraft.monto) || 0 } });
+    setRefDraft({ nombre: '', telefono: '', monto: '' });
+  };
+
+  const quitarReferido = async (lead, idx) => {
+    const r = (lead.referidos || [])[idx];
+    if (!r || !confirm(`¿Quitar al referido "${r.nombre}"${r.monto ? ` (${fmtMoneyFull(r.monto)})` : ''}?`)) return;
+    await update(lead, { quitar_referido: idx });
   };
 
   const waLink = (l) => {
@@ -236,6 +252,43 @@ export default function CrmMejoresLeadsView() {
       {l.tema && <p className="mlv-tema">“{l.tema}”</p>}
       {l.notas_origen && <p className="mlv-notas-origen"><i>Notas de origen:</i> {l.notas_origen}</p>}
 
+      {/* ── Rama de referidos: cuánto generó este lead vía recomendados ── */}
+      <div className="mlv-dossier-head" style={{ marginTop: 18 }}>
+        <span className="mlv-dossier-title"><GitBranch size={12} style={{ verticalAlign: -1, marginRight: 5 }} />Referidos</span>
+        <span className="mlv-dossier-rule" />
+        <span className="mlv-dossier-folio">
+          {(l.referidos || []).length
+            ? `generó ${fmtMoneyFull(generadoDe(l))} · ${(l.referidos || []).length} recomendado${(l.referidos || []).length === 1 ? '' : 's'}`
+            : 'sin recomendados aún'}
+        </span>
+      </div>
+      <div className="mlv-refs">
+        {(l.referidos || []).map((r, i) => {
+          const tel = String(r.telefono || '').replace(/\D/g, '');
+          return (
+            <div key={i} className="mlv-ref-row">
+              <span className="mlv-ref-branch" aria-hidden="true" />
+              <span className="mlv-ref-nombre">{r.nombre}</span>
+              {tel && <a className="mlv-ref-tel" href={`https://wa.me/${tel}`} target="_blank" rel="noreferrer"><MessageCircle size={11} /> {r.telefono}</a>}
+              <span className="mlv-ref-monto">{r.monto ? fmtMoneyFull(r.monto) : '—'}</span>
+              <button className="mlv-ref-del" title="Quitar referido" disabled={saving === l.id} onClick={() => quitarReferido(l, i)}><X size={12} /></button>
+            </div>
+          );
+        })}
+      </div>
+      <div className="mlv-ref-form">
+        <input placeholder="Nombre del referido" value={refDraft.nombre}
+          onChange={e => setRefDraft(d => ({ ...d, nombre: e.target.value }))} />
+        <input placeholder="WhatsApp (opcional)" value={refDraft.telefono} inputMode="tel"
+          onChange={e => setRefDraft(d => ({ ...d, telefono: e.target.value }))} />
+        <input placeholder="$ generado" value={refDraft.monto} inputMode="numeric"
+          onChange={e => setRefDraft(d => ({ ...d, monto: e.target.value.replace(/[^0-9.]/g, '') }))}
+          onKeyDown={e => { if (e.key === 'Enter') agregarReferido(l); }} />
+        <button disabled={saving === l.id || !refDraft.nombre.trim()} onClick={() => agregarReferido(l)}>
+          {saving === l.id ? '…' : 'Añadir'}
+        </button>
+      </div>
+
       <div className="mlv-dossier-head" style={{ marginTop: 18 }}>
         <span className="mlv-dossier-title">Bitácora</span>
         <span className="mlv-dossier-rule" />
@@ -284,6 +337,12 @@ export default function CrmMejoresLeadsView() {
             <i>Pipeline abierto</i>
             <b>{fmtMoney(tesoro.pipeline)}</b>
             <u>{leads.filter(l => !esComprador(l.bucket)).length.toLocaleString('es-MX')} potenciales</u>
+          </div>
+          <div className="mlv-pstat-divider" />
+          <div className="mlv-pstat">
+            <i>Generado por referidos</i>
+            <b>{fmtMoney(tesoro.referidosMonto)}</b>
+            <u>{tesoro.referidosN} recomendado{tesoro.referidosN === 1 ? '' : 's'}</u>
           </div>
           <button className="mlv-refresh" onClick={load} title="Actualizar"><RefreshCw size={14} /></button>
         </div>
@@ -384,7 +443,10 @@ export default function CrmMejoresLeadsView() {
                   <span className="mlv-seal" title={`Score ${l.score ?? '—'}`}>{l.score ?? '—'}</span>
                   <span>
                     <span className="mlv-name">{l.nombre || 'Sin nombre'}{renderBadges(l)}</span>
-                    <span className="mlv-name-sub">{l.nivel || '—'}{l.vendedor ? ` · ${l.vendedor}` : ''}</span>
+                    <span className="mlv-name-sub">
+                      {l.nivel || '—'}{l.vendedor ? ` · ${l.vendedor}` : ''}
+                      {(l.referidos || []).length > 0 && <i className="mlv-ref-chip"><GitBranch size={9} /> {(l.referidos || []).length} ref · {fmtMoney(generadoDe(l))}</i>}
+                    </span>
                   </span>
                 </span>
                 <span className="mlv-cell-tema">
@@ -412,7 +474,10 @@ export default function CrmMejoresLeadsView() {
               <span className="mlv-seal">{l.score ?? '—'}</span>
               <span className="mlv-card-id">
                 <span className="mlv-name">{l.nombre || 'Sin nombre'}{renderBadges(l)}</span>
-                <span className="mlv-name-sub">{l.nivel || '—'} · {l.carrera || '—'}</span>
+                <span className="mlv-name-sub">
+                  {l.nivel || '—'} · {l.carrera || '—'}
+                  {(l.referidos || []).length > 0 && <i className="mlv-ref-chip"><GitBranch size={9} /> {(l.referidos || []).length} ref · {fmtMoney(generadoDe(l))}</i>}
+                </span>
               </span>
               {renderAcciones(l)}
             </div>
@@ -586,6 +651,24 @@ const MLV_CSS = `
   .mlv-notas-origen { font-size:12px; color:${C.textMuted}; margin:9px 0 0; }
   .mlv-notas-origen i { font-style:normal; font-weight:700; }
 
+  /* ── Rama de referidos ── */
+  .mlv-ref-chip { display:inline-flex; align-items:center; gap:3px; font-style:normal; font-size:9.5px; font-weight:800; letter-spacing:.4px; color:#8A6A34; background:linear-gradient(180deg,#FBF4E6,#F3E7CE); border:1px solid rgba(193,151,91,.45); border-radius:10px; padding:1.5px 7px; margin-left:7px; vertical-align:1px; font-variant-numeric:tabular-nums; }
+  .mlv-refs { margin-bottom:2px; }
+  .mlv-ref-row { display:flex; align-items:center; gap:9px; padding:5px 0 5px 4px; }
+  .mlv-ref-branch { width:14px; height:14px; border-left:1px solid rgba(193,151,91,.55); border-bottom:1px solid rgba(193,151,91,.55); border-bottom-left-radius:7px; margin-top:-8px; flex-shrink:0; }
+  .mlv-ref-nombre { font-size:12.5px; font-weight:700; color:var(--ink); }
+  .mlv-ref-tel { display:inline-flex; align-items:center; gap:4px; font-size:11px; color:#128C7E; text-decoration:none; font-variant-numeric:tabular-nums; }
+  .mlv-ref-tel:hover { text-decoration:underline; }
+  .mlv-ref-monto { margin-left:auto; font-family:'Fraunces',Georgia,serif; font-size:13.5px; font-weight:600; color:#8A6A34; font-variant-numeric:tabular-nums; }
+  .mlv-ref-del { width:22px; height:22px; border-radius:50%; border:1px solid transparent; background:none; color:${C.textLight}; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; transition:all .2s; flex-shrink:0; }
+  .mlv-ref-del:hover { border-color:${C.red}; color:${C.red}; background:${C.redBg}; }
+  .mlv-ref-form { display:grid; grid-template-columns:1.3fr 1fr 92px auto; gap:7px; margin-top:6px; }
+  .mlv-ref-form input { min-width:0; padding:7.5px 12px; border:1px solid rgba(193,151,91,.35); border-radius:16px; font-size:12px; font-family:inherit; background:#fff; outline:none; color:${C.text}; transition:border-color .2s, box-shadow .2s; }
+  .mlv-ref-form input:focus { border-color:var(--gold); box-shadow:0 0 0 3px rgba(193,151,91,.15); }
+  .mlv-ref-form button { font-family:inherit; font-size:11.5px; font-weight:700; letter-spacing:.3px; padding:7.5px 15px; border-radius:16px; border:1px solid rgba(193,151,91,.55); cursor:pointer; color:#8A6A34; background:linear-gradient(180deg,#FBF4E6,#F5EBD6); transition:all .2s; }
+  .mlv-ref-form button:hover:not(:disabled) { transform:translateY(-1px); box-shadow:0 4px 10px -5px rgba(138,106,52,.5); }
+  .mlv-ref-form button:disabled { opacity:.45; cursor:not-allowed; }
+
   .mlv-bitacora-empty { font-size:12px; color:${C.textLight}; font-style:italic; margin:0 0 8px; }
   .mlv-timeline { position:relative; padding-left:2px; }
   .mlv-tl-entry { position:relative; display:flex; gap:11px; padding:0 0 11px 2px; }
@@ -648,6 +731,7 @@ const MLV_CSS = `
     .mlv-sorter { width:100%; }
     .mlv-sorter button { flex:1; }
     .mlv-dossier { margin:12px 0 0; padding:13px 14px 15px; }
+    .mlv-ref-form { grid-template-columns:1fr 1fr; }
     .mlv-cards { display:flex !important; }
   }
 `;
