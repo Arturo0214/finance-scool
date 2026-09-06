@@ -49,7 +49,9 @@ const fmtFecha = (d) => {
   const dt = new Date(`${String(d).slice(0, 10)}T12:00:00`);
   return dt.toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: '2-digit' });
 };
-const montoDe = (l) => esComprador(l.bucket) ? (Number(l.pago) || Number(l.precio_real) || 0) : (Number(l.precio_real) || 0);
+/* En todos los libros la cifra visible es la cotización real del lead;
+   el monto pagado solo alimenta el agregado "Cobrado real" de la placa. */
+const montoDe = (l) => Number(l.precio_real) || 0;
 
 /* ─────────────────────────────────────────────────────────────── */
 
@@ -225,7 +227,6 @@ export default function CrmMejoresLeadsView() {
         <span><i>Teléfono</i><b>{l.telefono || '—'}</b></span>
         <span><i>Servicio</i><b>{l.servicio || '—'}{l.paginas ? ` · ${l.paginas} págs` : ''}</b></span>
         <span><i>Cotización</i><b>{l.fuente_precio === 'cotización' ? `${l.num_cotiz || 1} emitida${(l.num_cotiz || 1) > 1 ? 's' : ''} · últ. ${fmtFecha(l.ult_cotiz)}` : 'sin cotización'}</b></span>
-        {esComprador(l.bucket) && <span><i>Pagó</i><b>{l.pago ? fmtMoneyFull(l.pago) : '—'}</b></span>}
         <span><i>Vendedor</i><b>{l.vendedor || l.atendido_por || '—'}</b></span>
         <span><i>Lead desde</i><b>{fmtFecha(l.fecha_lead)}{l.campana ? ` · ${l.campana}` : ''}</b></span>
         {l.razon_descarte && <span><i>Razón descarte</i><b>{l.razon_descarte}</b></span>}
@@ -303,7 +304,7 @@ export default function CrmMejoresLeadsView() {
               <span className="mlv-tab-roman">{b.roman}</span>
               <span className="mlv-tab-body">
                 <span className="mlv-tab-label">{b.label}</span>
-                <span className="mlv-tab-count">{n.toLocaleString('es-MX')} leads · {fmtMoney(tesoro.porBucket[b.id])} {b.money === 'pagado' ? 'pagado' : 'en juego'}</span>
+                <span className="mlv-tab-count">{n.toLocaleString('es-MX')} leads · {fmtMoney(tesoro.porBucket[b.id])} {b.money === 'pagado' ? 'pagado' : 'cotizado'}</span>
               </span>
             </button>
           );
@@ -377,7 +378,7 @@ export default function CrmMejoresLeadsView() {
           <div className="mlv-ledger-head">
             <span>Lead</span>
             <span>Carrera / Tema</span>
-            <span className="r">{esComprador(bucket) ? 'Pagó' : 'En juego'}</span>
+            <span className="r">Cotización</span>
             <span>Seguimiento</span>
             <span className="r">Acciones</span>
           </div>
@@ -397,7 +398,7 @@ export default function CrmMejoresLeadsView() {
                 </span>
                 <span className="mlv-cell-precio r">
                   <b>{montoDe(l) ? fmtMoneyFull(montoDe(l)) : '—'}</b>
-                  {renderCotizChip(l)}
+                  {!esComprador(l.bucket) && renderCotizChip(l)}
                 </span>
                 <span>{renderSeguimiento(l)}</span>
                 <span className="r">{renderAcciones(l)}</span>
@@ -421,8 +422,8 @@ export default function CrmMejoresLeadsView() {
               {renderAcciones(l)}
             </div>
             <div className="mlv-card-mid">
-              <span><i>{esComprador(l.bucket) ? 'Pagó' : 'En juego'}</i><b>{montoDe(l) ? fmtMoneyFull(montoDe(l)) : '—'}</b></span>
-              <span><i>Cotización</i>{renderCotizChip(l)}</span>
+              <span><i>Cotización</i><b>{montoDe(l) ? fmtMoneyFull(montoDe(l)) : '—'}</b></span>
+              {!esComprador(l.bucket) && <span><i>Estado</i>{renderCotizChip(l)}</span>}
             </div>
             {renderSeguimiento(l)}
             {expanded === l.id && renderDetalle(l)}
