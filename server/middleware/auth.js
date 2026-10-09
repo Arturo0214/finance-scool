@@ -4,6 +4,9 @@ const JWT_SECRET = process.env.JWT_SECRET || 'financescool_secret';
 
 function generateToken(user) {
   const payload = { id: user.id, name: user.name, email: user.email, role: user.role };
+  // Usuarios de prueba: el vencimiento viaja en el token para que verifyToken
+  // corte el acceso sin consultar la BD en cada request.
+  if (user.trial_expires_at) payload.trial = user.trial_expires_at;
   /* Administración (superadmin/agencia/admin): sesión SIN expiración — pedían
      re-login cada 24h y a Flavio le aparecía "Token inválido" a diario.
      Asesores: 30 días. Un token solo muere si cambia JWT_SECRET o se cierra sesión. */
@@ -23,6 +26,10 @@ function verifyToken(req, res, next) {
   }
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
+    // Acceso de prueba vencido: el claim `trial` viene de generateToken
+    if (decoded.trial && new Date(decoded.trial) < new Date()) {
+      return res.status(401).json({ error: 'Tu acceso de prueba expiró' });
+    }
     // Store decoded user info directly from JWT token
     // This avoids database call on every request
     req.user = { id: decoded.id, name: decoded.name, email: decoded.email, role: decoded.role };

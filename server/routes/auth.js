@@ -14,6 +14,10 @@ router.post('/login', async (req, res) => {
         .then(({ error: e }) => { if (e) console.error('activity log:', e.message); });
       return res.status(401).json({ error: 'Credenciales incorrectas' });
     }
+    // Acceso de prueba vencido (users.trial_expires_at): NULL = usuario normal
+    if (user.trial_expires_at && new Date(user.trial_expires_at) < new Date()) {
+      return res.status(401).json({ error: 'Tu acceso de prueba expiró. Escríbenos para activar tu cuenta completa.' });
+    }
     const token = generateToken(user);
     // sameSite lax: requests go through Netlify proxy (same domain), no need for 'none'
     // 'none' causes Safari ITP to restrict/delete the cookie on mobile
