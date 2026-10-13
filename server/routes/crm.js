@@ -3331,6 +3331,7 @@ const PROSPECTOS_EMAILS = [
   'ingrid.escobar@grupointegraccion.com',                       // Ingrid
   'flavio.r@grupointegraccion.com',                             // Flavio
 ];
+const SOCIOS_PROSPECTOS = ['Arturo', 'Ingrid', 'Flavio'];
 const soloProspectos = (req, res) => {
   if (!PROSPECTOS_EMAILS.includes(String(req.user.email || '').toLowerCase())) {
     res.status(403).json({ error: 'Sección exclusiva de los socios' });
@@ -3351,6 +3352,44 @@ router.get('/prospectos', async (req, res) => {
       leads: decryptRows(rows, 'crm_mejores_leads'),
       socios: ['Arturo', 'Ingrid', 'Flavio'],
     });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* Alta MANUAL de un prospecto raíz (botón "Nuevo prospecto" de la sección). */
+router.post('/prospectos', async (req, res) => {
+  if (!soloProspectos(req, res)) return;
+  try {
+    const db = getDB();
+    const nombre = String(req.body.nombre || '').trim();
+    if (!nombre) return res.status(400).json({ error: 'El prospecto necesita nombre' });
+    const bucket = ['linkedin-medicos', 'linkedin-pyme', 'linkedin-patrimonio'].includes(req.body.bucket)
+      ? req.body.bucket : 'linkedin-patrimonio';
+    const campanaDe = {
+      'linkedin-medicos': 'Médicos PPR (bancarización)',
+      'linkedin-pyme': 'PyME Fiscal',
+      'linkedin-patrimonio': 'Patrimonio · PPR · Contigo 50+ (Arturo)',
+    };
+    const crypto = require('crypto');
+    const wa = String(req.body.whatsapp || '').replace(/\D/g, '');
+    const waHash = crypto.createHash('sha256')
+      .update(wa || String(req.body.linkedin_url || '').trim().toLowerCase() || `manual|${nombre}|${Date.now()}`).digest('hex');
+    const asignado = SOCIOS_PROSPECTOS.includes(req.body.seg_assigned_to) ? req.body.seg_assigned_to : null;
+    const fila = encryptFields({
+      wa_hash: waHash, bucket, campana: campanaDe[bucket],
+      nombre, whatsapp: wa || null,
+      perfil: String(req.body.perfil || '').trim() || null,
+      linkedin_url: String(req.body.linkedin_url || '').trim() || null,
+      notas_origen: `Alta manual por ${req.user.name || req.user.email} (${new Date().toISOString().slice(0, 10)})`,
+      seg_status: 'pendiente', seg_assigned_to: asignado,
+      fecha_lead: new Date().toISOString().slice(0, 10),
+    }, 'crm_mejores_leads');
+    const { data, error } = await db.from('crm_mejores_leads').insert([fila]).select();
+    if (error) {
+      if (/duplicate|unique/i.test(error.message)) return res.status(400).json({ error: 'Ya existe un prospecto con ese WhatsApp o LinkedIn' });
+      return res.status(500).json({ error: error.message });
+    }
+    logActivity(req, 'crear', 'prospecto-manual', data[0].id, nombre);
+    res.json({ lead: decryptFields(data[0], 'crm_mejores_leads') });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

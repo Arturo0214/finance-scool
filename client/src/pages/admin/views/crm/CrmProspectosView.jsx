@@ -195,6 +195,16 @@ const PLV_CSS = `
   .plv-cal-ev .dot { width:9px; height:9px; border-radius:50%; flex-shrink:0; box-shadow:inset 0 -1px 2px rgba(0,0,0,.25); }
   .plv-cal-ev .hora { color:${C.textMuted}; width:86px; flex-shrink:0; font-variant-numeric:tabular-nums; font-weight:600; }
   .plv-cal-ev .who { font-size:10.5px; color:${C.textLight}; }
+  /* ── Modal nuevo prospecto ── */
+  .plv-modal { position:fixed; inset:0; z-index:62; display:flex; align-items:center; justify-content:center; padding:20px; }
+  .plv-modal-card { position:relative; width:min(430px, 94vw); background:var(--porcelain); border-radius:16px; border:1px solid rgba(193,151,91,.4); box-shadow:0 30px 70px -30px rgba(4,12,26,.6); overflow:hidden; animation:plvRise .3s ease; }
+  .plv-modal-head { padding:16px 20px 13px; background:radial-gradient(140% 180% at 10% 0%, #14315E 0%, ${INK} 60%); color:#F2E4C8; display:flex; align-items:center; justify-content:space-between; }
+  .plv-modal-head h3 { margin:0; font-family:'Fraunces',Georgia,serif; font-size:17px; font-weight:600; }
+  .plv-modal-body { padding:16px 20px 20px; display:flex; flex-direction:column; gap:9px; }
+  .plv-modal-body input { padding:9px 12px; border:1px solid var(--hair); border-radius:9px; font-size:12.5px; font-family:inherit; outline:none; background:#fff; color:${C.text}; }
+  .plv-modal-body input:focus { border-color:var(--gold); box-shadow:0 0 0 3px rgba(193,151,91,.14); }
+  .plv-modal-lab { font-size:9.5px; letter-spacing:1.8px; text-transform:uppercase; color:#8A6A34; font-weight:800; margin-top:4px; }
+
   .plv-empty { color:${C.textMuted}; font-size:13px; padding:16px 4px; }
 
   @media (max-width: 1100px) { .plv-board { grid-template-columns:repeat(6, 230px); } }
@@ -448,6 +458,46 @@ function Drawer({ l, porId, hijosDe, savingId, autoRef, onPatch, onCreateRef, on
   );
 }
 
+function NuevoProspecto({ saving, onCreate, onClose }) {
+  const [f, setF] = useState({ nombre: '', bucket: 'linkedin-patrimonio', perfil: '', whatsapp: '', linkedin_url: '', seg_assigned_to: '' });
+  const set = (k) => (e) => setF(prev => ({ ...prev, [k]: e.target.value }));
+  return (
+    <div className="plv-modal">
+      <div className="plv-scrim" style={{ position: 'absolute' }} onClick={onClose} />
+      <div className="plv-modal-card">
+        <div className="plv-modal-head">
+          <h3>Nuevo prospecto</h3>
+          <button className="plv-dw-close" style={{ position: 'static' }} onClick={onClose}><X size={15} /></button>
+        </div>
+        <div className="plv-modal-body">
+          <input autoFocus placeholder="Nombre completo *" value={f.nombre} onChange={set('nombre')} />
+          <div className="plv-modal-lab">Campaña</div>
+          <div className="plv-chips">
+            {CAMPANAS.map(c => (
+              <button key={c.id} className={`plv-chip-btn${f.bucket === c.id ? ' on' : ''}`}
+                style={f.bucket === c.id ? { background: c.color, '--sc': c.color } : undefined}
+                onClick={() => setF(prev => ({ ...prev, bucket: c.id }))}>{c.label}</button>
+            ))}
+          </div>
+          <input placeholder="Perfil / puesto (opcional)" value={f.perfil} onChange={set('perfil')} />
+          <input placeholder="WhatsApp (opcional)" value={f.whatsapp} onChange={set('whatsapp')} />
+          <input placeholder="LinkedIn (opcional)" value={f.linkedin_url} onChange={set('linkedin_url')} />
+          <div className="plv-modal-lab">Asignar a (opcional)</div>
+          <div className="plv-chips">
+            {SOCIOS.map(sc => (
+              <button key={sc} className={`plv-chip-btn${f.seg_assigned_to === sc ? ' on' : ''}`}
+                style={f.seg_assigned_to === sc ? { background: SOCIO_COLOR[sc], '--sc': SOCIO_COLOR[sc] } : undefined}
+                onClick={() => setF(prev => ({ ...prev, seg_assigned_to: prev.seg_assigned_to === sc ? '' : sc }))}>{sc}</button>
+            ))}
+          </div>
+          <button className="plv-btn gold" style={{ marginTop: 6 }} disabled={!f.nombre.trim() || saving}
+            onClick={() => onCreate(f)}>Guardar prospecto</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ═══════════════════════════ Componente ═══════════════════════════ */
 export default function CrmProspectosView() {
   const [leads, setLeads] = useState([]);
@@ -460,6 +510,7 @@ export default function CrmProspectosView() {
   const [sel, setSel] = useState(null);
   const [savingId, setSavingId] = useState(null);
   const [autoRef, setAutoRef] = useState(false);
+  const [showNew, setShowNew] = useState(false);
   const [dragId, setDragId] = useState(null);
   const [overCol, setOverCol] = useState(null);
   const [connections, setConnections] = useState([]);
@@ -507,6 +558,17 @@ export default function CrmProspectosView() {
       setAutoRef(false);
       setSel(lead.id); // abre el expediente del referido recién creado
     } catch (e) { alert(e.message || 'No se pudo crear el referido'); }
+    finally { setSavingId(null); }
+  }
+
+  async function crearProspecto(form) {
+    setSavingId('nuevo');
+    try {
+      const { lead } = await api.crmAddProspecto(form);
+      setLeads(prev => [lead, ...prev]);
+      setShowNew(false);
+      setSel(lead.id); // abre su expediente recién creado
+    } catch (e) { alert(e.message || 'No se pudo crear el prospecto'); }
     finally { setSavingId(null); }
   }
 
@@ -582,6 +644,7 @@ export default function CrmProspectosView() {
         </div>
         {vista !== 'calendarios' && (
           <>
+            <button className="plv-btn gold" onClick={() => setShowNew(true)}><Plus size={13} /> Nuevo prospecto</button>
             {CAMPANAS.map(c => (
               <button key={c.id} className={`plv-camp${fCamp === c.id ? ' on' : ''}`} style={{ '--cc': c.color }}
                 onClick={() => setFCamp(fCamp === c.id ? '' : c.id)}>
@@ -656,6 +719,8 @@ export default function CrmProspectosView() {
       {vista === 'calendarios' && (
         <Calendarios connections={connections} calendars={calendars} calLoading={calLoading} onReload={loadCalendars} />
       )}
+
+      {showNew && <NuevoProspecto saving={savingId === 'nuevo'} onCreate={crearProspecto} onClose={() => setShowNew(false)} />}
 
       {selLead && (
         <Drawer key={`${selLead.id}|${autoRef ? 'r' : ''}`} l={selLead} porId={porId} hijosDe={hijosDe}
