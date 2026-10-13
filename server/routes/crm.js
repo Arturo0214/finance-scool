@@ -3256,7 +3256,9 @@ router.get('/mejores-leads', async (req, res) => {
   try {
     const db = getDB();
     const rows = await fetchAllRows(() =>
-      db.from('crm_mejores_leads').select('*').order('score', { ascending: false, nullsFirst: false }).order('id')
+      // Los buckets linkedin-* viven en la sección Prospectos (solo 3 socios)
+      db.from('crm_mejores_leads').select('*').not('bucket', 'like', 'linkedin-%')
+        .order('score', { ascending: false, nullsFirst: false }).order('id')
     );
     const leads = decryptRows(rows, 'crm_mejores_leads');
     // Admins asignables para el dropdown de "Asignado a"
@@ -3282,6 +3284,7 @@ router.patch('/mejores-leads/:id', async (req, res) => {
       patch.seg_status = seg_status;
     }
     if (seg_assigned_to !== undefined) patch.seg_assigned_to = String(seg_assigned_to || '');
+    if (req.body.representante !== undefined) patch.representante = !!req.body.representante; // Rap: prospecto que funge como representante/referidor
     if (nota && String(nota).trim()) {
       const log = Array.isArray(row.seg_notes_log) ? row.seg_notes_log : [];
       patch.seg_notes_log = [...log, { text: String(nota).trim(), by: req.user.name || req.user.email, at: new Date().toISOString() }];
@@ -3314,6 +3317,70 @@ router.patch('/mejores-leads/:id', async (req, res) => {
         : referido ? `referido + ${String(referido.nombre || '').trim()}`
         : quitar_referido !== undefined ? 'referido eliminado'
         : nota ? 'nota' : 'asignación');
+    res.json({ lead: decryptFields(data[0], 'crm_mejores_leads') });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* ═══════ Prospectos LinkedIn (PPR/fiscal/patrimonio) — SOLO los 3 socios ═══════
+   Sección exclusiva de Arturo, Ingrid y Flavio (whitelist por correo, ni los
+   demás admins la ven). Prospectos migrados de enlace468 (buckets linkedin-*)
+   con asignación directa, árbol de referidos (referido_de) y flag de
+   representante (Rap). El seguimiento reusa PATCH /mejores-leads/:id. */
+const PROSPECTOS_EMAILS = [
+  'admin@financescool.com', 'osvaldosuarezcruz@gmail.com',      // Arturo
+  'ingrid.escobar@grupointegraccion.com',                       // Ingrid
+  'flavio.r@grupointegraccion.com',                             // Flavio
+];
+const soloProspectos = (req, res) => {
+  if (!PROSPECTOS_EMAILS.includes(String(req.user.email || '').toLowerCase())) {
+    res.status(403).json({ error: 'Sección exclusiva de los socios' });
+    return false;
+  }
+  return true;
+};
+
+router.get('/prospectos', async (req, res) => {
+  if (!soloProspectos(req, res)) return;
+  try {
+    const db = getDB();
+    const rows = await fetchAllRows(() =>
+      db.from('crm_mejores_leads').select('*').like('bucket', 'linkedin-%')
+        .order('score', { ascending: false, nullsFirst: false }).order('id')
+    );
+    res.json({
+      leads: decryptRows(rows, 'crm_mejores_leads'),
+      socios: ['Arturo', 'Ingrid', 'Flavio'],
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* Alta de un referido como lead COMPLETO colgado del padre (referido_de) —
+   permite mapear referido del referido y saber de quién viene cada lead. */
+router.post('/prospectos/:id/referido', async (req, res) => {
+  if (!soloProspectos(req, res)) return;
+  try {
+    const db = getDB();
+    const { data: padre } = await db.from('crm_mejores_leads')
+      .select('id, bucket, campana, nombre').eq('id', req.params.id).maybeSingle();
+    if (!padre) return res.status(404).json({ error: 'Prospecto padre no encontrado' });
+    const nombre = String(req.body.nombre || '').trim();
+    if (!nombre) return res.status(400).json({ error: 'El referido necesita nombre' });
+    const crypto = require('crypto');
+    const wa = String(req.body.whatsapp || '').replace(/\D/g, '');
+    const waHash = crypto.createHash('sha256')
+      .update(wa || `ref|${padre.id}|${nombre}|${Date.now()}`).digest('hex');
+    const fila = encryptFields({
+      wa_hash: waHash, bucket: padre.bucket, campana: padre.campana,
+      nombre, whatsapp: wa || null,
+      perfil: String(req.body.perfil || '').trim() || null,
+      linkedin_url: String(req.body.linkedin_url || '').trim() || null,
+      notas_origen: `Referido de ${padre.nombre} (lead #${padre.id}) por ${req.user.name || req.user.email}`,
+      referido_de: padre.id, seg_status: 'pendiente',
+      fecha_lead: new Date().toISOString().slice(0, 10),
+    }, 'crm_mejores_leads');
+    const { data, error } = await db.from('crm_mejores_leads').insert([fila]).select();
+    if (error) return res.status(500).json({ error: error.message });
+    logActivity(req, 'crear', 'prospecto-referido', data[0].id, `referido de #${padre.id} (${padre.nombre})`);
     res.json({ lead: decryptFields(data[0], 'crm_mejores_leads') });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

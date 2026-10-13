@@ -143,6 +143,11 @@ export const api = {
   crmGetFiles: (params = {}) => request(`/crm/files?${new URLSearchParams(params)}`),
   crmGetMejoresLeads: () => request('/crm/mejores-leads'),
   crmUpdateMejorLead: (id, data) => request(`/crm/mejores-leads/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  // Prospectos LinkedIn (sección exclusiva de los 3 socios)
+  crmGetProspectos: () => request('/crm/prospectos'),
+  crmAddReferidoProspecto: (id, data) => request(`/crm/prospectos/${id}/referido`, { method: 'POST', body: JSON.stringify(data) }),
+  getCalendarConnections: () => request('/google/connections'),
+  getCalendarEventsAll: (timeMin, timeMax) => request(`/google/events-all?timeMin=${encodeURIComponent(timeMin || '')}&timeMax=${encodeURIComponent(timeMax || '')}`),
   crmRunAutoReminders: () => request('/crm/auto-reminders', { method: 'POST', body: JSON.stringify({}) }),
   crmDownloadReport: async (agentId, anio) => {
     const token = getToken();

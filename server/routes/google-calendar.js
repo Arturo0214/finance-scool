@@ -131,6 +131,60 @@ async function getStoredTokens() {
   return global._googleCalTokens || null;
 }
 
+// ─── Multi-cuenta (sección Prospectos: agendas de Arturo, Ingrid y Flavio) ───
+// Cada socio conecta su Google una vez (mismo flujo /auth-url); los tokens
+// viven por correo en google_calendar_tokens. Aquí se listan las conexiones
+// y se combinan los eventos de TODAS las cuentas conectadas.
+router.get('/connections', verifyToken, async (req, res) => {
+  try {
+    const { data, error } = await getDB().from('google_calendar_tokens')
+      .select('google_email, updated_at').order('updated_at', { ascending: false });
+    if (error) return res.json({ connections: [] });
+    res.json({ connections: data || [] });
+  } catch { res.json({ connections: [] }); }
+});
+
+router.get('/events-all', verifyToken, async (req, res) => {
+  try {
+    const { data: rows, error } = await getDB().from('google_calendar_tokens').select('*');
+    if (error || !rows?.length) return res.json({ calendars: [] });
+    const now = new Date();
+    const tMin = req.query.timeMin || now.toISOString();
+    const tMax = req.query.timeMax || new Date(now.getTime() + 14 * 86400000).toISOString();
+    const calendars = [];
+    for (const row of rows) {
+      const persist = async (nt) => {
+        const upd = { updated_at: new Date().toISOString() };
+        if (nt.access_token) upd.access_token = nt.access_token;
+        if (nt.expiry_date) upd.expiry_date = new Date(nt.expiry_date).toISOString();
+        await getDB().from('google_calendar_tokens').update(upd).eq('google_email', row.google_email);
+      };
+      try {
+        const cal = getCalendarClient({
+          access_token: row.access_token, refresh_token: row.refresh_token,
+          expiry_date: row.expiry_date ? new Date(row.expiry_date).getTime() : null,
+        }, persist);
+        const r = await cal.events.list({
+          calendarId: 'primary', timeMin: tMin, timeMax: tMax,
+          singleEvents: true, orderBy: 'startTime', maxResults: 100,
+        });
+        calendars.push({
+          owner: row.google_email, ok: true,
+          events: (r.data.items || []).map(e => ({
+            id: e.id, title: e.summary || '(Sin título)',
+            start: e.start?.dateTime || e.start?.date, end: e.end?.dateTime || e.end?.date,
+            all_day: !!e.start?.date,
+            meet: e.conferenceData?.entryPoints?.find(ep => ep.entryPointType === 'video')?.uri || '',
+          })),
+        });
+      } catch (e) {
+        calendars.push({ owner: row.google_email, ok: false, error: 'No se pudo leer (reconectar)', events: [] });
+      }
+    }
+    res.json({ calendars });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ─── GET /api/google/events ───
 // Fetch events from Google Calendar
 router.get('/events', verifyToken, async (req, res) => {

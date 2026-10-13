@@ -16,7 +16,7 @@ import {
   MessageCircle, Link as LinkIcon, Zap, Eye, Settings,
   Activity, Filter, PieChart, Megaphone, Briefcase,
   UserCheck, Bot, LayoutDashboard, Contact, FileText, Target, Bell,
-  KanbanSquare, HandCoins, ChevronsLeft, ChevronsRight, Sparkles, Mic, GraduationCap, Plane, Sprout, Gem,
+  KanbanSquare, HandCoins, ChevronsLeft, ChevronsRight, Sparkles, Mic, GraduationCap, Plane, Sprout, Gem, Handshake,
 } from 'lucide-react';
 
 import { C, SPANISH_LABELS, isAgencyRole } from './admin/constants';
@@ -44,6 +44,7 @@ const CrmCitasView        = lazy(() => import('./admin/views/crm/CrmCitasView'))
 const CrmIncubadoraView   = lazy(() => import('./admin/views/crm/CrmIncubadoraView'));
 const CrmCampanasView     = lazy(() => import('./admin/views/crm/CrmCampanasView'));
 const CrmSemillasView     = lazy(() => import('./admin/views/crm/CrmSemillasView'));
+const CrmProspectosView   = lazy(() => import('./admin/views/crm/CrmProspectosView'));
 const CrmDashboardView    = lazy(() => import('./admin/views/crm/CrmDashboardView'));
 const CrmPipelineView     = lazy(() => import('./admin/views/crm/CrmPipelineView'));
 const CrmClientsView      = lazy(() => import('./admin/views/crm/CrmClientsView'));
@@ -114,6 +115,10 @@ export default function AdminPanel() {
      Solo el CRM Incubadora S-COOL + gestión de usuarios. Las vistas
      antiguas (leads, calendario, WhatsApp, Sofía Bot, etc.) siguen
      accesibles por URL directa pero ya no aparecen en el menú. */
+  // Sección Prospectos: SOLO los 3 socios (ni los demás admins la ven)
+  const PROSPECTOS_EMAILS = ['admin@financescool.com', 'osvaldosuarezcruz@gmail.com', 'ingrid.escobar@grupointegraccion.com', 'flavio.r@grupointegraccion.com'];
+  const esSocioProspectos = PROSPECTOS_EMAILS.includes(String(user?.email || '').toLowerCase());
+
   const navItems = [
     { id: 'divider-crm',      label: '── Productividad Comercial ──',  icon: null       },
     { id: 'crm-mi-dia',       label: 'Mi Día',                        icon: Sparkles   },
@@ -131,6 +136,7 @@ export default function AdminPanel() {
     { id: 'crm-cotizador',    label: 'Cotizador PPR',                 icon: BarChart3  },
     { id: 'crm-semillas',     label: 'Semillas',                      icon: Sprout     },
     { id: 'crm-mejores-leads', label: 'Mejores Leads',                icon: Gem        },
+    { id: 'crm-prospectos',   label: 'Prospectos',                    icon: Handshake  },
     { id: 'divider-2',        label: '── Administración ──',          icon: null       },
     { id: 'team',             label: SPANISH_LABELS.team,             icon: Settings   },
     { id: 'health',           label: 'Salud del sistema',             icon: Activity   },
@@ -138,6 +144,7 @@ export default function AdminPanel() {
     if (item.id === 'health') return userIsAgency;
     if (item.id === 'crm-semillas') return ['superadmin', 'agencia'].includes(user?.role);
     if (item.id === 'crm-mejores-leads') return canManageTeam; // base Tesipedia: solo administración
+    if (item.id === 'crm-prospectos') return esSocioProspectos;
     return (item.id !== 'team' && item.id !== 'divider-2') || canManageTeam;
   });
 
@@ -366,6 +373,7 @@ export default function AdminPanel() {
               {!loading && activeView === 'crm-semillas' && ['superadmin', 'agencia'].includes(user?.role) && <CrmSemillasView />}
               {!loading && activeView === 'crm-cotizador' && <CrmQuoteView />}
               {!loading && activeView === 'crm-mejores-leads' && canManageTeam && <CrmMejoresLeadsView />}
+              {!loading && activeView === 'crm-prospectos' && esSocioProspectos && <CrmProspectosView />}
               {!loading && activeView === 'health' && userIsAgency && <HealthView />}
             </Suspense>
           </main>
