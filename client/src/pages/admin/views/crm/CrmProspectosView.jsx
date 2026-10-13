@@ -43,6 +43,10 @@ const ETAPAS = [
 const etapaInfo = (id) => ETAPAS.find(s => s.id === id) || ETAPAS[0];
 
 const iniciales = (nombre = '') => nombre.trim().split(/\s+/).slice(0, 2).map(w => w[0] || '').join('').toUpperCase();
+/* Calificación del prospecto (score local 0-100 calculado en el backend) */
+const GRADOS = { A: { label: 'A', color: '#8A6A34', bg: '#F5EBD6', desc: 'prioritario' }, B: { label: 'B', color: '#2563EB', bg: '#E8EFFC', desc: 'trabajable' }, C: { label: 'C', color: '#7A8698', bg: '#EDF0F4', desc: 'tibio' } };
+const gradoDe = (s) => (typeof s === 'number' ? (s >= 75 ? 'A' : s >= 55 ? 'B' : 'C') : 'C');
+const waValido = (w) => String(w || '').replace(/\D/g, '').length >= 10;
 const fmtFechaHora = (d) => d ? new Date(d).toLocaleString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
 
 /* ═══════ Mensajes personalizados — 100% locales, sin IA ni tokens ═══════
@@ -188,6 +192,7 @@ const PLV_CSS = `
   .plv-crown { color:#B9872C; filter:drop-shadow(0 1px 1px rgba(185,135,44,.4)); }
   .plv-refcount { display:inline-flex; align-items:center; gap:3px; font-size:9.5px; font-weight:700; color:#7C3AED; }
   .plv-socio-tag { font-size:9px; font-weight:800; letter-spacing:.5px; padding:2px 7px; border-radius:10px; color:#fff; }
+  .plv-grado { display:inline-flex; align-items:center; justify-content:center; width:17px; height:17px; border-radius:6px; font-family:'Fraunces',Georgia,serif; font-size:10.5px; font-weight:700; flex-shrink:0; border:1px solid currentColor; }
 
   /* ── Red genealógica ── */
   .plv-net { animation:plvRise .5s .1s ease backwards; }
@@ -338,6 +343,7 @@ function Card({ l, idx, porId, hijosDe, dragId, onDragStart, onDragEnd, onOpen }
         <span className="plv-dot-camp" style={{ background: camp.color }} />
         <span className="plv-card-camp">{camp.label}</span>
         <span className="plv-card-badges">
+          {(() => { const g = GRADOS[gradoDe(l.score)]; return <span className="plv-grado" style={{ color: g.color, background: g.bg }}>{g.label}</span>; })()}
           {nRefs > 0 && <span className="plv-refcount"><GitBranch size={10} />{nRefs}</span>}
           {l.representante && <Crown className="plv-crown" size={12} />}
           {l.seg_assigned_to && <span className="plv-socio-tag" style={{ background: SOCIO_COLOR[l.seg_assigned_to] || C.textMuted }}>{l.seg_assigned_to[0]}</span>}
@@ -391,6 +397,7 @@ function Leaf({ l, idx, color, onOpen, onAddRef }) {
           {l.perfil || et.label}{l.seg_assigned_to ? ` · ${l.seg_assigned_to}` : ''}
         </div>
       </div>
+      {(() => { const g = GRADOS[gradoDe(l.score)]; return <span className="plv-grado" title={`Calificación ${g.label} — ${g.desc}`} style={{ color: g.color, background: g.bg }}>{g.label}</span>; })()}
       {l.representante && <Crown className="plv-crown" size={11} />}
       <button className="plv-leaf-plus" title={`Agregar referido de ${l.nombre}`}
         onClick={(e) => { e.stopPropagation(); onAddRef(l.id); }}>
@@ -498,7 +505,7 @@ function Drawer({ l, porId, hijosDe, savingId, autoRef, onPatch, onCreateRef, on
               <div className="plv-dw-name">{l.nombre} {l.representante && <Crown size={14} style={{ color: '#E3B458', verticalAlign: '-2px' }} />}</div>
               <div className="plv-dw-meta">
                 <span style={{ color: '#D6B37E' }}>{camp.label}</span>
-                {typeof l.score === 'number' && <span>score {Math.round(l.score)}</span>}
+                {(() => { const g = GRADOS[gradoDe(l.score)]; return <span style={{ color: '#F2E4C8', fontWeight: 800 }}>Calificación {g.label} · {g.desc}</span>; })()}
                 <span style={{ color: '#B9C5D4' }}>● {et.label}</span>
                 {padre && (
                   <span style={{ cursor: 'pointer', textDecoration: 'underline dotted' }} onClick={() => onOpen(padre.id)}>
@@ -557,11 +564,13 @@ function Drawer({ l, porId, hijosDe, savingId, autoRef, onPatch, onCreateRef, on
             {refForm ? (
               <div className="plv-addref">
                 <input autoFocus placeholder="Nombre del referido *" value={refForm.nombre} onChange={e => setRefForm(f => ({ ...f, nombre: e.target.value }))} />
-                <input placeholder="WhatsApp (opcional)" value={refForm.whatsapp} onChange={e => setRefForm(f => ({ ...f, whatsapp: e.target.value }))} />
+                <input placeholder="WhatsApp * (10 dígitos — sin teléfono no hay contacto)" value={refForm.whatsapp}
+                  style={refForm.whatsapp && !waValido(refForm.whatsapp) ? { borderColor: '#C0392B' } : undefined}
+                  onChange={e => setRefForm(f => ({ ...f, whatsapp: e.target.value }))} />
                 <input placeholder="Perfil / puesto (opcional)" value={refForm.perfil} onChange={e => setRefForm(f => ({ ...f, perfil: e.target.value }))} />
                 <input placeholder="LinkedIn (opcional)" value={refForm.linkedin_url} onChange={e => setRefForm(f => ({ ...f, linkedin_url: e.target.value }))} />
                 <div style={{ display: 'flex', gap: 6 }}>
-                  <button className="plv-btn gold" style={{ flex: 1 }} disabled={!refForm.nombre.trim() || savingId === l.id}
+                  <button className="plv-btn gold" style={{ flex: 1 }} disabled={!refForm.nombre.trim() || !waValido(refForm.whatsapp) || savingId === l.id}
                     onClick={() => onCreateRef(l.id, refForm)}>Guardar referido</button>
                   <button className="plv-btn ghost" onClick={() => setRefForm(null)}><X size={13} /></button>
                 </div>
@@ -655,7 +664,8 @@ function NuevoProspecto({ saving, onCreate, onClose }) {
             ))}
           </div>
           <input placeholder="Perfil / puesto (opcional)" value={f.perfil} onChange={set('perfil')} />
-          <input placeholder="WhatsApp (opcional)" value={f.whatsapp} onChange={set('whatsapp')} />
+          <input placeholder="WhatsApp * (10 dígitos — sin teléfono no hay contacto)" value={f.whatsapp}
+            style={f.whatsapp && !waValido(f.whatsapp) ? { borderColor: '#C0392B' } : undefined} onChange={set('whatsapp')} />
           <input placeholder="LinkedIn (opcional)" value={f.linkedin_url} onChange={set('linkedin_url')} />
           <div className="plv-modal-lab">Asignar a (opcional)</div>
           <div className="plv-chips">
@@ -665,7 +675,7 @@ function NuevoProspecto({ saving, onCreate, onClose }) {
                 onClick={() => setF(prev => ({ ...prev, seg_assigned_to: prev.seg_assigned_to === sc ? '' : sc }))}>{sc}</button>
             ))}
           </div>
-          <button className="plv-btn gold" style={{ marginTop: 6 }} disabled={!f.nombre.trim() || saving}
+          <button className="plv-btn gold" style={{ marginTop: 6 }} disabled={!f.nombre.trim() || !waValido(f.whatsapp) || saving}
             onClick={() => onCreate(f)}>Guardar prospecto</button>
         </div>
       </div>
@@ -681,6 +691,7 @@ export default function CrmProspectosView() {
   const [vista, setVista] = useState('red'); // red | pipeline | calendarios
   const [campAbierta, setCampAbierta] = useState({});
   const [fCamp, setFCamp] = useState('');
+  const [fGrado, setFGrado] = useState('');
   const [fSocio, setFSocio] = useState('');
   const [q, setQ] = useState('');
   const [sel, setSel] = useState(null);
@@ -765,6 +776,7 @@ export default function CrmProspectosView() {
 
   const pasaFiltros = (l) => {
     if (fCamp && l.bucket !== fCamp) return false;
+    if (fGrado && gradoDe(l.score) !== fGrado) return false;
     if (fSocio === 'sin' ? (l.seg_assigned_to || '') !== '' : (fSocio && l.seg_assigned_to !== fSocio)) return false;
     if (q) {
       const t = `${l.nombre} ${l.perfil || ''} ${l.notas_origen || ''}`.toLowerCase();
@@ -823,6 +835,12 @@ export default function CrmProspectosView() {
               <button key={c.id} className={`plv-camp${fCamp === c.id ? ' on' : ''}`} style={{ '--cc': c.color }}
                 onClick={() => setFCamp(fCamp === c.id ? '' : c.id)}>
                 {c.label} <span className="n">{leads.filter(l => l.bucket === c.id).length}</span>
+              </button>
+            ))}
+            {['A', 'B', 'C'].map(g => (
+              <button key={g} className={`plv-camp${fGrado === g ? ' on' : ''}`} style={{ '--cc': GRADOS[g].color }}
+                title={GRADOS[g].desc} onClick={() => setFGrado(fGrado === g ? '' : g)}>
+                {g} <span className="n">{leads.filter(l => gradoDe(l.score) === g).length}</span>
               </button>
             ))}
             <select className="plv-select" value={fSocio} onChange={e => setFSocio(e.target.value)}>

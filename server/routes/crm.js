@@ -3371,6 +3371,7 @@ router.post('/prospectos', async (req, res) => {
     };
     const crypto = require('crypto');
     const wa = String(req.body.whatsapp || '').replace(/\D/g, '');
+    if (wa.length < 10) return res.status(400).json({ error: 'El WhatsApp es obligatorio (10 dígitos mínimo) — sin teléfono no hay contacto' });
     const waHash = crypto.createHash('sha256')
       .update(wa || String(req.body.linkedin_url || '').trim().toLowerCase() || `manual|${nombre}|${Date.now()}`).digest('hex');
     const asignado = SOCIOS_PROSPECTOS.includes(req.body.seg_assigned_to) ? req.body.seg_assigned_to : null;
@@ -3406,6 +3407,7 @@ router.post('/prospectos/:id/referido', async (req, res) => {
     if (!nombre) return res.status(400).json({ error: 'El referido necesita nombre' });
     const crypto = require('crypto');
     const wa = String(req.body.whatsapp || '').replace(/\D/g, '');
+    if (wa.length < 10) return res.status(400).json({ error: 'El WhatsApp del referido es obligatorio (10 dígitos mínimo) — sin teléfono no hay contacto' });
     const waHash = crypto.createHash('sha256')
       .update(wa || `ref|${padre.id}|${nombre}|${Date.now()}`).digest('hex');
     const fila = encryptFields({
