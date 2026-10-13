@@ -298,7 +298,7 @@ const PLV_CSS = `
   .plv-cal-ev .who { font-size:10.5px; color:${C.textLight}; }
   /* ── Modal nuevo prospecto ── */
   .plv-modal { position:fixed; inset:0; z-index:2005; display:flex; align-items:center; justify-content:center; padding:20px; }
-  .plv-modal-card { position:relative; width:min(430px, 94vw); background:var(--porcelain); border-radius:16px; border:1px solid rgba(193,151,91,.4); box-shadow:0 30px 70px -30px rgba(4,12,26,.6); overflow:hidden; animation:plvRise .3s ease; }
+  .plv-modal-card { position:relative; z-index:2006; width:min(430px, 94vw); background:var(--porcelain); border-radius:16px; border:1px solid rgba(193,151,91,.4); box-shadow:0 30px 70px -30px rgba(4,12,26,.6); overflow:hidden; animation:plvRise .3s ease; }
   .plv-modal-head { padding:16px 20px 13px; background:radial-gradient(140% 180% at 10% 0%, #14315E 0%, ${INK} 60%); color:#F2E4C8; display:flex; align-items:center; justify-content:space-between; }
   .plv-modal-head h3 { margin:0; font-family:'Fraunces',Georgia,serif; font-size:17px; font-weight:600; }
   .plv-modal-body { padding:16px 20px 20px; display:flex; flex-direction:column; gap:9px; }
@@ -638,7 +638,7 @@ function NuevoProspecto({ saving, onCreate, onClose }) {
   const set = (k) => (e) => setF(prev => ({ ...prev, [k]: e.target.value }));
   return (
     <div className="plv-modal">
-      <div className="plv-scrim" style={{ position: 'absolute' }} onClick={onClose} />
+      <div className="plv-scrim" style={{ position: 'absolute', zIndex: 0 }} onClick={onClose} />
       <div className="plv-modal-card">
         <div className="plv-modal-head">
           <h3>Nuevo prospecto</h3>
