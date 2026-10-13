@@ -17,6 +17,7 @@ import { C } from '../../constants';
 import {
   Search, Linkedin, RefreshCw, GitBranch, Crown, CalendarDays, Video,
   Plus, X, UserCheck, KanbanSquare, Network, ExternalLink, StickyNote, ChevronDown,
+  Send, Copy, Check,
 } from 'lucide-react';
 
 const GOLD = C.gold, INK = C.ink;
@@ -43,6 +44,80 @@ const etapaInfo = (id) => ETAPAS.find(s => s.id === id) || ETAPAS[0];
 
 const iniciales = (nombre = '') => nombre.trim().split(/\s+/).slice(0, 2).map(w => w[0] || '').join('').toUpperCase();
 const fmtFechaHora = (d) => d ? new Date(d).toLocaleString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
+
+/* ═══════ Mensajes personalizados — 100% locales, sin IA ni tokens ═══════
+   Para CADA lead, SIEMPRE: arma un mensaje según su campaña, su perfil
+   (rol/ciudad extraídos del origen), su etapa de venta y si es referido. */
+const CIUDADES_RE = /(CDMX|Ciudad de M[eé]xico|Guadalajara|Monterrey|Puebla|Quer[eé]taro|M[eé]rida|Tijuana|Le[oó]n|Canc[uú]n|Veracruz|Aguascalientes|Toluca|San Luis Potos[ií]|Chihuahua|Saltillo|Torre[oó]n|Hermosillo|Culiac[aá]n|Morelia|Cuernavaca|Pachuca|Mexicali|Durango)/i;
+
+function datosDelLead(l) {
+  const primerNombre = (l.nombre || '').trim().split(/\s+/)[0] || 'hola';
+  const texto = `${l.perfil || ''} · ${l.notas_origen || ''}`;
+  const ciudad = (texto.match(CIUDADES_RE) || [])[0] || '';
+  let rol = (l.perfil || '').replace(/\s+en\s+.+$/i, '').replace(/\s*[|/·].*$/, '').trim();
+  if (rol.length > 48) rol = rol.slice(0, 48).replace(/\s+\S*$/, '');
+  return { primerNombre, ciudad, rol };
+}
+
+function mensajesParaLead(l, padre) {
+  const { primerNombre, ciudad, rol } = datosDelLead(l);
+  const etapa = l.seg_status || 'pendiente';
+  const refLinea = padre ? `${padre.nombre.split(' ')[0]} me compartió tu contacto y me habló muy bien de ti. ` : '';
+  const trayecto = rol ? `vi tu trayectoria como ${rol}${ciudad ? ` en ${ciudad}` : ''}` : `vi tu perfil${ciudad ? ` (${ciudad})` : ''} y me llamó la atención tu trayectoria`;
+  const VALOR = {
+    'linkedin-medicos': 'acompaño a médicos con consulta privada a ordenar sus ingresos: bancarización, deducción y un plan de retiro hecho a su medida',
+    'linkedin-pyme': 'ayudo a dueños y directores a que su empresa les pague mejor: eficiencia fiscal, deducibilidad y patrimonio personal',
+    'linkedin-patrimonio': 'acompaño a directivos con trayectoria a convertir sus excedentes en patrimonio y un plan de retiro sólido (PPR)',
+  };
+  const valor = VALOR[l.bucket] || VALOR['linkedin-patrimonio'];
+  const notas = Array.isArray(l.seg_notes_log) ? l.seg_notes_log : [];
+  const ultimaNota = notas.length ? notas[notas.length - 1] : null;
+
+  if (etapa === 'pendiente') return [
+    `Hola ${primerNombre}, ${refLinea}${trayecto}. Soy socio en Finance S-Cool: ${valor}. ¿Te late que te comparta en 2 líneas cómo lo trabajamos? Sin compromiso.`,
+    `${primerNombre}, ¡un gusto saludarte! ${refLinea}${trayecto} y por eso te escribo: ${valor}. Si te hace sentido, te mando un ejemplo concreto para alguien con tu perfil.`,
+    `Hola ${primerNombre} 👋 ${refLinea}Te escribo porque ${trayecto}. En Finance S-Cool ${valor}. ¿Te comparto una idea puntual aplicable a tu caso? Son 2 minutos de lectura.`,
+  ];
+  if (etapa === 'contactado') return [
+    `Hola ${primerNombre}, ¿cómo vas? Te escribí hace unos días sobre cómo ${valor}. Sé que la agenda aprieta — si te late, te mando el resumen en 3 bullets y tú decides. ¿Va?`,
+    `${primerNombre}, no quiero saturarte: solo retomo mi mensaje anterior. Una llamada de 15 minutos me basta para mostrarte el beneficio concreto para alguien como tú${rol ? ` (${rol})` : ''}. ¿Qué día te acomoda?`,
+    `Hola ${primerNombre} 👋 Retomando: lo que te propongo no es genérico — ${valor}. Si esta semana no se puede, dime cuándo y yo me ajusto.`,
+  ];
+  if (etapa === 'interesado') return [
+    `${primerNombre}, ¡qué gusto que te interese! Te propongo 20 minutos esta semana para aterrizarlo a tus números${ultimaNota ? ' y retomar lo que platicamos' : ''}. ¿Te acomoda mañana o pasado? Yo mando la liga de la videollamada.`,
+    `Hola ${primerNombre}, para avanzar te preparo un comparativo con tu escenario real${rol ? ` como ${rol}` : ''}. Solo necesito 3 datos (te los paso por aquí) y agendamos 20 min para revisarlo juntos. ¿Va?`,
+  ];
+  if (etapa === 'negociando') return [
+    `${primerNombre}, quedó listo lo que acordamos${ultimaNota ? ` (${String(ultimaNota.text).slice(0, 60)}…)` : ''}. ¿Lo revisamos en una llamada corta o te lo mando por escrito para que lo veas con calma? Tú pones la fecha.`,
+    `Hola ${primerNombre}, para cerrar bien el traje a tu medida solo falta un paso. ¿Agendamos 15 minutos y lo dejamos resuelto esta semana?`,
+  ];
+  if (etapa === 'convertido') return [
+    `${primerNombre}, ¡bienvenido! 🎉 Gracias por la confianza. Mi compromiso es que esto funcione sin que tú te preocupes. Y oye — si alguien de tu círculo le serviría lo mismo, preséntamelo: cuido a tus referidos como te cuido a ti.`,
+    `¡Felicidades por la decisión, ${primerNombre}! Arrancamos. Te iré avisando de cada paso. PD: ¿a quién de tus colegas${ciudad ? ` en ${ciudad}` : ''} le haría bien esta misma estrategia? Un referido tuyo vale oro.`,
+  ];
+  return [ // descartado → puerta abierta
+    `${primerNombre}, entiendo que ahorita no es el momento — sin problema. Te dejo mi contacto: cuando quieras retomar lo del patrimonio/retiro, aquí estoy. ¡Éxito!`,
+    `Gracias por tu tiempo, ${primerNombre}. Si las cosas cambian (cierre fiscal, excedentes, retiro), escríbeme y lo retomamos donde lo dejamos. ¡Un abrazo!`,
+  ];
+}
+
+/* Origen legible: separa el texto crudo en renglones, quita el link de LinkedIn
+   (ya hay botón), el nombre repetido y los duplicados. */
+function origenEnLineas(texto, nombre, perfil) {
+  const out = []; const seen = new Set([(perfil || '').trim().toLowerCase()]);
+  const esc = (nombre || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const reNombre = esc ? new RegExp(`^${esc}\\s*[-–—:·]\\s*`, 'i') : null;
+  for (let s of String(texto || '').split(/\s*·\s*/)) {
+    s = s.trim().replace(/^[-–—]\s*/, '');
+    if (!s || /^linkedin\s*:/i.test(s)) continue;
+    if (reNombre) s = s.replace(reNombre, '').trim();
+    if (!s) continue;
+    const k = s.toLowerCase();
+    if (seen.has(k)) continue;
+    seen.add(k); out.push(s);
+  }
+  return out;
+}
 
 /* ═══════════════════════════ CSS ═══════════════════════════ */
 const PLV_CSS = `
@@ -151,9 +226,9 @@ const PLV_CSS = `
   .plv-node-add:hover { background:${C.goldBg}; border-style:solid; }
   .plv-mini-seal { width:9px; height:9px; border-radius:50%; box-shadow:inset 0 -1px 2px rgba(0,0,0,.25); flex-shrink:0; }
 
-  /* ── Drawer expediente ── */
-  .plv-scrim { position:fixed; inset:0; background:rgba(5,16,36,.35); backdrop-filter:blur(2px); z-index:60; }
-  .plv-drawer { position:fixed; top:0; right:0; bottom:0; width:min(440px, 94vw); background:var(--porcelain); z-index:61; box-shadow:-24px 0 60px -30px rgba(4,12,26,.5); display:flex; flex-direction:column; animation:plvDrawer .28s ease; border-left:1px solid rgba(193,151,91,.35); }
+  /* ── Drawer expediente (z-index arriba de la barra del admin) ── */
+  .plv-scrim { position:fixed; inset:0; background:rgba(5,16,36,.35); backdrop-filter:blur(2px); z-index:2000; }
+  .plv-drawer { position:fixed; top:0; right:0; bottom:0; width:min(440px, 94vw); background:var(--porcelain); z-index:2001; box-shadow:-24px 0 60px -30px rgba(4,12,26,.5); display:flex; flex-direction:column; animation:plvDrawer .28s ease; border-left:1px solid rgba(193,151,91,.35); }
   .plv-dw-head { position:relative; padding:20px 22px 16px; background:radial-gradient(140% 180% at 10% 0%, #14315E 0%, ${INK} 60%); color:#F2E4C8; }
   .plv-dw-close { position:absolute; top:14px; right:14px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.15); color:#E9DFC8; border-radius:50%; width:30px; height:30px; display:flex; align-items:center; justify-content:center; cursor:pointer; transition:all .2s; }
   .plv-dw-close:hover { background:rgba(193,151,91,.25); }
@@ -170,6 +245,13 @@ const PLV_CSS = `
   .plv-chip-btn:hover { transform:translateY(-1px); }
   .plv-chip-btn.on { color:#fff; border-color:transparent; box-shadow:0 6px 14px -8px var(--sc); }
   .plv-dw-origen { font-size:12px; color:${C.textMuted}; line-height:1.55; background:#fff; border:1px solid var(--hair); border-radius:10px; padding:10px 12px; }
+  .plv-og-line { padding:2.5px 0; color:${C.text}; }
+  .plv-og-line + .plv-og-line { border-top:1px dashed rgba(11,27,51,.07); }
+  .plv-og-line i { font-style:normal; font-size:8.5px; letter-spacing:1.6px; text-transform:uppercase; color:#8A6A34; font-weight:800; margin-right:7px; }
+  .plv-msg { background:linear-gradient(180deg,#FFFDF8,#FBF4E3); border:1px solid rgba(193,151,91,.5); border-radius:12px; padding:12px 14px; }
+  .plv-msg p { margin:0; font-size:12.5px; color:#3A2F17; line-height:1.6; white-space:pre-wrap; }
+  .plv-msg-foot { display:flex; gap:6px; margin-top:10px; align-items:center; }
+  .plv-msg-hint { font-size:10px; color:#8A6A34; margin-left:auto; }
   .plv-ln-btn { display:inline-flex; align-items:center; gap:7px; font-size:12px; font-weight:700; color:#fff; background:#0A66C2; border:none; border-radius:9px; padding:8px 14px; cursor:pointer; text-decoration:none; transition:all .2s; }
   .plv-ln-btn:hover { background:#084d93; }
   .plv-rapline { display:flex; align-items:center; justify-content:space-between; gap:10px; background:linear-gradient(180deg,#FFFDF8,#FBF4E3); border:1px solid rgba(193,151,91,.5); border-radius:12px; padding:11px 14px; }
@@ -215,7 +297,7 @@ const PLV_CSS = `
   .plv-cal-ev .hora { color:${C.textMuted}; width:86px; flex-shrink:0; font-variant-numeric:tabular-nums; font-weight:600; }
   .plv-cal-ev .who { font-size:10.5px; color:${C.textLight}; }
   /* ── Modal nuevo prospecto ── */
-  .plv-modal { position:fixed; inset:0; z-index:62; display:flex; align-items:center; justify-content:center; padding:20px; }
+  .plv-modal { position:fixed; inset:0; z-index:2005; display:flex; align-items:center; justify-content:center; padding:20px; }
   .plv-modal-card { position:relative; width:min(430px, 94vw); background:var(--porcelain); border-radius:16px; border:1px solid rgba(193,151,91,.4); box-shadow:0 30px 70px -30px rgba(4,12,26,.6); overflow:hidden; animation:plvRise .3s ease; }
   .plv-modal-head { padding:16px 20px 13px; background:radial-gradient(140% 180% at 10% 0%, #14315E 0%, ${INK} 60%); color:#F2E4C8; display:flex; align-items:center; justify-content:space-between; }
   .plv-modal-head h3 { margin:0; font-family:'Fraunces',Georgia,serif; font-size:17px; font-weight:600; }
@@ -297,11 +379,11 @@ function Nodo({ l, depth, hijosDe, onOpen, onAddRef }) {
   );
 }
 
-function Leaf({ l, idx, onOpen, onAddRef }) {
+function Leaf({ l, idx, color, onOpen, onAddRef }) {
   const et = etapaInfo(l.seg_status || 'pendiente');
   return (
     <div className="plv-leaf" style={{ animationDelay: `${Math.min(idx * 0.012, 0.3)}s` }} onClick={() => onOpen(l.id)}>
-      <span className="plv-mono">{iniciales(l.nombre)}</span>
+      <span className="plv-mono" style={color ? { color, borderColor: `${color}77`, background: `linear-gradient(180deg, #fff, ${color}14)` } : undefined}>{iniciales(l.nombre)}</span>
       <div className="plv-leaf-txt">
         <div className="plv-leaf-name">{l.nombre}</div>
         <div className="plv-leaf-sub">
@@ -318,8 +400,20 @@ function Leaf({ l, idx, onOpen, onAddRef }) {
   );
 }
 
+/* Correos Google conocidos de cada socio — para marcar quién falta por conectar. */
+const SOCIO_DE_EMAIL = {
+  'osvaldosuarezcruz@gmail.com': 'Arturo', 'admin@financescool.com': 'Arturo',
+  'ingrid.escobar@grupointegraccion.com': 'Ingrid',
+  'flavio.r@grupointegraccion.com': 'Flavio',
+};
+
 function Calendarios({ connections, calendars, calLoading, onReload }) {
+  const socioDe = (email) => SOCIO_DE_EMAIL[String(email || '').toLowerCase()] || null;
+  const conectados = new Set((connections || []).map(c => socioDe(c.google_email)).filter(Boolean));
+  const faltan = SOCIOS.filter(s => !conectados.has(s));
   const ownerColor = (email) => {
+    const s = socioDe(email);
+    if (s) return SOCIO_COLOR[s];
     const i = (calendars || []).findIndex(c => c.owner === email);
     return ['#8A6A34', '#7C3AED', '#0891B2', '#0E8A63'][((i % 4) + 4) % 4];
   };
@@ -336,14 +430,24 @@ function Calendarios({ connections, calendars, calLoading, onReload }) {
     <div className="plv-net">
       <div className="plv-cal-conns">
         {(connections || []).map(c => (
-          <span className="plv-cal-chip" key={c.google_email} style={{ color: ownerColor(c.google_email) }}>● {c.google_email}</span>
+          <span className="plv-cal-chip" key={c.google_email} style={{ color: ownerColor(c.google_email) }}>
+            ● {socioDe(c.google_email) || c.google_email} <span style={{ opacity: .55, fontWeight: 500 }}>conectado</span>
+          </span>
+        ))}
+        {faltan.map(s => (
+          <span className="plv-cal-chip" key={s} style={{ color: C.textLight, borderStyle: 'dashed' }}>
+            ○ {s} <span style={{ fontWeight: 500 }}>sin conectar</span>
+          </span>
         ))}
         <button className="plv-btn gold" onClick={async () => { const { url } = await api.getGoogleAuthUrl(); window.location.href = url; }}>
           <CalendarDays size={13} /> Conectar mi Google Calendar
         </button>
         <button className="plv-btn ghost" onClick={onReload}><RefreshCw size={12} /></button>
       </div>
-      <p className="plv-cal-hint">Cada socio conecta su Google una sola vez (con SU cuenta). Aquí se combinan las agendas de todos — próximos 14 días, con su Meet directo.</p>
+      <p className="plv-cal-hint">
+        Para ver las 3 agendas, cada socio entra aquí <b>con su propio usuario</b> y pulsa "Conectar mi Google Calendar" una sola vez (autoriza con SU cuenta de Google). Las agendas se combinan — próximos 14 días, con su Meet directo.
+        {faltan.length > 0 && <> Faltan por conectar: <b>{faltan.join(' y ')}</b>.</>}
+      </p>
       {calLoading && <p className="plv-empty">Cargando agendas…</p>}
       {!calLoading && porDia.length === 0 && <p className="plv-empty">Sin eventos en los próximos 14 días (o nadie ha conectado su calendario todavía).</p>}
       {porDia.map(([dia, evs]) => (
@@ -369,11 +473,19 @@ function Drawer({ l, porId, hijosDe, savingId, autoRef, onPatch, onCreateRef, on
   const emptyRef = { nombre: '', whatsapp: '', perfil: '', linkedin_url: '' };
   const [nota, setNota] = useState('');
   const [refForm, setRefForm] = useState(autoRef ? { ...emptyRef } : null);
+  const [msgIdx, setMsgIdx] = useState(0);
+  const [copiado, setCopiado] = useState(false);
   const camp = campanaInfo(l.bucket);
   const et = etapaInfo(l.seg_status || 'pendiente');
   const hijos = hijosDe.get(l.id) || [];
   const padre = l.referido_de ? porId.get(l.referido_de) : null;
   const guardaNota = () => { if (nota.trim()) { onPatch(l, { nota }); setNota(''); } };
+  const mensajes = mensajesParaLead(l, padre); // local, se re-arma al cambiar etapa o notas
+  const mensaje = mensajes[((msgIdx % mensajes.length) + mensajes.length) % mensajes.length];
+  const copiarMsg = () => {
+    navigator.clipboard?.writeText(mensaje).then(() => { setCopiado(true); setTimeout(() => setCopiado(false), 1600); });
+  };
+  const origen = origenEnLineas(l.notas_origen, l.nombre, l.perfil);
   return (
     <>
       <div className="plv-scrim" onClick={onClose} />
@@ -461,6 +573,22 @@ function Drawer({ l, porId, hijosDe, savingId, autoRef, onPatch, onCreateRef, on
             )}
           </div>
 
+          <div className="plv-dw-label"><Send size={11} /> Mensaje para enviar</div>
+          <div className="plv-msg">
+            <p>{mensaje}</p>
+            <div className="plv-msg-foot">
+              <button className="plv-btn gold" onClick={copiarMsg}>
+                {copiado ? <><Check size={12} /> Copiado</> : <><Copy size={12} /> Copiar</>}
+              </button>
+              {mensajes.length > 1 && (
+                <button className="plv-btn ghost" onClick={() => setMsgIdx(i => i + 1)}>
+                  <RefreshCw size={11} /> Otra versión
+                </button>
+              )}
+              <span className="plv-msg-hint">se adapta a su etapa y notas</span>
+            </div>
+          </div>
+
           {l.linkedin_url && (
             <>
               <div className="plv-dw-label">Contacto</div>
@@ -470,10 +598,17 @@ function Drawer({ l, porId, hijosDe, savingId, autoRef, onPatch, onCreateRef, on
             </>
           )}
 
-          {l.notas_origen && (
+          {origen.length > 0 && (
             <>
               <div className="plv-dw-label">Origen</div>
-              <div className="plv-dw-origen">{l.notas_origen}</div>
+              <div className="plv-dw-origen">
+                {origen.map((s, i) => {
+                  const m = s.match(/^(Experiencia|Ubicaci[oó]n|Educaci[oó]n|Actual|Empresa|Alta manual.*|Referido de.*)\s*:?\s*(.*)$/i);
+                  return m && m[2]
+                    ? <div className="plv-og-line" key={i}><i>{m[1]}</i>{m[2]}</div>
+                    : <div className="plv-og-line" key={i}>{s}</div>;
+                })}
+              </div>
             </>
           )}
 
@@ -757,14 +892,15 @@ export default function CrmProspectosView() {
             return (
               <div key={c.id}>
                 <button className={`plv-trunk${abierto ? '' : ' closed'}`}
+                  style={abierto ? { borderColor: `${c.color}55`, background: `linear-gradient(180deg, #fff, ${c.color}0E)` } : undefined}
                   onClick={() => setCampAbierta(p => ({ ...p, [c.id]: !abierto }))}>
                   <span className="plv-trunk-seal" style={{ background: `radial-gradient(circle at 35% 30%, ${c.color}CC, ${c.color})` }} />
-                  <b>{c.label}</b>
+                  <b style={abierto ? { color: c.color } : undefined}>{c.label}</b>
                   <i>{delCamp.length} prospectos{conRed.length ? ` · ${conRed.length} con red` : ''}{nRefs ? ` · ${nRefs} referidos` : ''}</i>
-                  <ChevronDown className="chev" size={16} />
+                  <ChevronDown className="chev" size={16} style={abierto ? { color: c.color } : undefined} />
                 </button>
                 {abierto && (
-                  <div className="plv-trunk-body">
+                  <div className="plv-trunk-body" style={{ borderLeftColor: `${c.color}55` }}>
                     {conRed.length > 0 && (
                       <>
                         <div className="plv-grove-lab">Redes activas</div>
@@ -773,9 +909,9 @@ export default function CrmProspectosView() {
                         </ul>
                       </>
                     )}
-                    <div className="plv-grove-lab">Ramas por abrir · {semillero.length}</div>
+                    <div className="plv-grove-lab" style={{ color: c.color }}>Ramas por abrir · {semillero.length}</div>
                     <div className="plv-grove">
-                      {semillero.map((l, i) => <Leaf key={l.id} l={l} idx={i} onOpen={abrir} onAddRef={abrirConReferido} />)}
+                      {semillero.map((l, i) => <Leaf key={l.id} l={l} idx={i} color={c.color} onOpen={abrir} onAddRef={abrirConReferido} />)}
                     </div>
                   </div>
                 )}
