@@ -85,8 +85,18 @@ app.use('/api', apiRoutes);
 
 // Serve React build in production
 if (isProd) {
-  app.use(express.static(path.join(__dirname, '..', 'client', 'dist')));
+  // Assets con hash en el nombre: cache inmutable. index.html: nunca cachear,
+  // o el navegador sigue cargando bundles viejos después de cada deploy.
+  app.use(express.static(path.join(__dirname, '..', 'client', 'dist'), {
+    index: false,
+    setHeaders: (res, filePath) => {
+      if (/\.(js|css|woff2?|png|jpg|svg|webp)$/.test(filePath)) {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      }
+    },
+  }));
   app.get('*', (req, res) => {
+    res.setHeader('Cache-Control', 'no-store, must-revalidate');
     res.sendFile(path.join(__dirname, '..', 'client', 'dist', 'index.html'));
   });
 }

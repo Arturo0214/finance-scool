@@ -16,7 +16,7 @@ import { api } from '../../../../utils/api';
 import { C } from '../../constants';
 import {
   Search, Linkedin, RefreshCw, GitBranch, Crown, CalendarDays, Video,
-  Plus, X, UserCheck, KanbanSquare, Network, ExternalLink, StickyNote,
+  Plus, X, UserCheck, KanbanSquare, Network, ExternalLink, StickyNote, ChevronDown,
 } from 'lucide-react';
 
 const GOLD = C.gold, INK = C.ink;
@@ -117,6 +117,25 @@ const PLV_CSS = `
   /* ── Red genealógica ── */
   .plv-net { animation:plvRise .5s .1s ease backwards; }
   .plv-net-hint { font-size:12px; color:${C.textMuted}; margin:0 0 14px; }
+  .plv-trunk { display:flex; align-items:center; gap:11px; width:100%; text-align:left; font-family:inherit; border:none; background:linear-gradient(180deg,#fff,#FBF8F2); border:1px solid rgba(193,151,91,.35); border-radius:14px; padding:12px 16px; margin:18px 0 0; cursor:pointer; transition:all .2s; }
+  .plv-trunk:first-child { margin-top:0; }
+  .plv-trunk:hover { border-color:var(--gold); box-shadow:0 10px 24px -18px rgba(0,43,117,.4); }
+  .plv-trunk-seal { width:14px; height:14px; border-radius:50%; box-shadow:inset 0 -2px 3px rgba(0,0,0,.3), 0 1px 2px rgba(0,0,0,.2); flex-shrink:0; }
+  .plv-trunk b { font-family:'Fraunces',Georgia,serif; font-size:16.5px; font-weight:600; color:var(--ink); letter-spacing:-.2px; }
+  .plv-trunk i { font-style:normal; font-size:11px; color:${C.textMuted}; font-weight:600; }
+  .plv-trunk .chev { margin-left:auto; color:#8A6A34; transition:transform .25s; }
+  .plv-trunk.closed .chev { transform:rotate(-90deg); }
+  .plv-trunk-body { padding:12px 4px 4px 10px; border-left:2px solid rgba(193,151,91,.35); margin:8px 0 4px 22px; }
+  .plv-grove-lab { font-size:9.5px; letter-spacing:2px; text-transform:uppercase; color:#8A6A34; font-weight:800; margin:12px 0 7px; }
+  .plv-grove { display:grid; grid-template-columns:repeat(auto-fill, minmax(235px, 1fr)); gap:7px; }
+  .plv-leaf { display:flex; align-items:center; gap:8px; background:linear-gradient(180deg,#fff,#FDFCFA); border:1px solid var(--hair); border-radius:11px; padding:7px 9px; cursor:pointer; transition:all .18s; min-width:0; animation:plvNode .3s ease backwards; }
+  .plv-leaf:hover { border-color:rgba(193,151,91,.55); box-shadow:0 10px 20px -16px rgba(0,43,117,.35); transform:translateY(-1px); }
+  .plv-leaf .plv-mono { width:26px; height:26px; font-size:9.5px; }
+  .plv-leaf-txt { flex:1; min-width:0; }
+  .plv-leaf-name { font-size:12px; font-weight:700; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .plv-leaf-sub { font-size:10px; color:${C.textMuted}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .plv-leaf-plus { width:24px; height:24px; border-radius:50%; border:1px dashed rgba(193,151,91,.65); background:none; color:#8A6A34; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:all .18s; }
+  .plv-leaf-plus:hover { background:${C.goldBg}; border-style:solid; transform:scale(1.1); }
   .plv-tree { list-style:none; margin:0; padding:0; }
   .plv-tree ul { list-style:none; margin:0; padding-left:34px; position:relative; }
   .plv-tree ul::before { content:''; position:absolute; left:15px; top:-6px; bottom:14px; width:2px; background:linear-gradient(180deg, rgba(193,151,91,.75), rgba(193,151,91,.2)); border-radius:2px; }
@@ -261,7 +280,7 @@ function Nodo({ l, depth, hijosDe, onOpen, onAddRef }) {
             <span className="plv-mini-seal" title={et.label} style={{ background: `radial-gradient(circle at 35% 30%, ${et.color}CC, ${et.color})` }} />
           </div>
           <div className="plv-node-sub">
-            {camp.label}{l.seg_assigned_to ? ` · ${l.seg_assigned_to}` : ' · sin asignar'}{hijos.length ? ` · ${hijos.length} referido${hijos.length > 1 ? 's' : ''}` : ''}
+            {l.perfil || camp.label}{l.seg_assigned_to ? ` · ${l.seg_assigned_to}` : ' · sin asignar'}{hijos.length ? ` · ${hijos.length} referido${hijos.length > 1 ? 's' : ''}` : ''}
           </div>
         </div>
         {l.linkedin_url && (
@@ -275,6 +294,27 @@ function Nodo({ l, depth, hijosDe, onOpen, onAddRef }) {
       </div>
       {hijos.length > 0 && <ul>{hijos.map(h => <Nodo key={h.id} l={h} depth={depth + 1} hijosDe={hijosDe} onOpen={onOpen} onAddRef={onAddRef} />)}</ul>}
     </li>
+  );
+}
+
+function Leaf({ l, idx, onOpen, onAddRef }) {
+  const et = etapaInfo(l.seg_status || 'pendiente');
+  return (
+    <div className="plv-leaf" style={{ animationDelay: `${Math.min(idx * 0.012, 0.3)}s` }} onClick={() => onOpen(l.id)}>
+      <span className="plv-mono">{iniciales(l.nombre)}</span>
+      <div className="plv-leaf-txt">
+        <div className="plv-leaf-name">{l.nombre}</div>
+        <div className="plv-leaf-sub">
+          <span className="plv-mini-seal" title={et.label} style={{ display: 'inline-block', verticalAlign: '-1px', marginRight: 5, background: `radial-gradient(circle at 35% 30%, ${et.color}CC, ${et.color})` }} />
+          {l.perfil || et.label}{l.seg_assigned_to ? ` · ${l.seg_assigned_to}` : ''}
+        </div>
+      </div>
+      {l.representante && <Crown className="plv-crown" size={11} />}
+      <button className="plv-leaf-plus" title={`Agregar referido de ${l.nombre}`}
+        onClick={(e) => { e.stopPropagation(); onAddRef(l.id); }}>
+        <GitBranch size={11} />
+      </button>
+    </div>
   );
 }
 
@@ -503,7 +543,8 @@ export default function CrmProspectosView() {
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [vista, setVista] = useState('pipeline'); // pipeline | red | calendarios
+  const [vista, setVista] = useState('red'); // red | pipeline | calendarios
+  const [campAbierta, setCampAbierta] = useState({});
   const [fCamp, setFCamp] = useState('');
   const [fSocio, setFSocio] = useState('');
   const [q, setQ] = useState('');
@@ -611,8 +652,6 @@ export default function CrmProspectosView() {
   }, [leads]);
 
   const selLead = sel != null ? porId.get(sel) : null;
-  const raicesRed = visibles.filter(l => !l.referido_de && (l.representante || (hijosDe.get(l.id) || []).length > 0));
-  const sueltos = visibles.filter(l => !l.referido_de && !l.representante && !(hijosDe.get(l.id) || []).length);
 
   return (
     <div className="plv">
@@ -638,8 +677,8 @@ export default function CrmProspectosView() {
 
       <div className="plv-bar">
         <div className="plv-views" role="tablist">
-          <button className={`plv-view${vista === 'pipeline' ? ' on' : ''}`} onClick={() => setVista('pipeline')}><KanbanSquare size={14} /> Pipeline</button>
           <button className={`plv-view${vista === 'red' ? ' on' : ''}`} onClick={() => setVista('red')}><Network size={14} /> Red de referidos</button>
+          <button className={`plv-view${vista === 'pipeline' ? ' on' : ''}`} onClick={() => setVista('pipeline')}><KanbanSquare size={14} /> Pipeline</button>
           <button className={`plv-view${vista === 'calendarios' ? ' on' : ''}`} onClick={() => setVista('calendarios')}><CalendarDays size={14} /> Calendarios</button>
         </div>
         {vista !== 'calendarios' && (
@@ -702,17 +741,48 @@ export default function CrmProspectosView() {
       {!loading && vista === 'red' && (
         <div className="plv-net">
           <p className="plv-net-hint">
-            La genealogía completa del esquema: cada <Crown size={11} style={{ verticalAlign: '-1px', color: '#B9872C' }} /> es un representante (Rap) y cada rama muestra de quién vino cada lead — referido del referido, sin límite. Agrega referidos con el botón de cada nodo.
+            Cada prospecto es una rama: tócale el <GitBranch size={11} style={{ verticalAlign: '-1px', color: '#8A6A34' }} /> y se le desprende un referido — y al referido otro, sin límite. Las redes con <Crown size={11} style={{ verticalAlign: '-1px', color: '#B9872C' }} /> (Raps) y ramificaciones se dibujan arriba de cada campaña.
           </p>
-          {raicesRed.length === 0 && <p className="plv-empty">Aún no hay representantes ni referidos. Marca un prospecto como Rap desde su expediente (clic en cualquier tarjeta del Pipeline), o agrégale un referido — aquí se dibuja su red.</p>}
-          <ul className="plv-tree">
-            {raicesRed.map(l => <Nodo key={l.id} l={l} depth={0} hijosDe={hijosDe} onOpen={abrir} onAddRef={abrirConReferido} />)}
-          </ul>
-          {sueltos.length > 0 && (
-            <p className="plv-net-hint" style={{ marginTop: 18 }}>
-              {sueltos.length.toLocaleString('es-MX')} prospectos más sin red todavía — viven en el Pipeline; cualquiera puede volverse Rap o recibir referidos desde su expediente.
-            </p>
-          )}
+          {CAMPANAS.filter(c => !fCamp || fCamp === c.id).map(c => {
+            const delCamp = visibles.filter(l => !l.referido_de && l.bucket === c.id);
+            if (!delCamp.length) return null;
+            const conRed = delCamp
+              .filter(l => l.representante || (hijosDe.get(l.id) || []).length > 0)
+              .sort((a, b) => (hijosDe.get(b.id) || []).length - (hijosDe.get(a.id) || []).length);
+            const semillero = delCamp
+              .filter(l => !l.representante && !(hijosDe.get(l.id) || []).length)
+              .sort((a, b) => (b.score || 0) - (a.score || 0));
+            const nRefs = delCamp.reduce((n, l) => n + (hijosDe.get(l.id) || []).length, 0);
+            const abierto = campAbierta[c.id] !== false;
+            return (
+              <div key={c.id}>
+                <button className={`plv-trunk${abierto ? '' : ' closed'}`}
+                  onClick={() => setCampAbierta(p => ({ ...p, [c.id]: !abierto }))}>
+                  <span className="plv-trunk-seal" style={{ background: `radial-gradient(circle at 35% 30%, ${c.color}CC, ${c.color})` }} />
+                  <b>{c.label}</b>
+                  <i>{delCamp.length} prospectos{conRed.length ? ` · ${conRed.length} con red` : ''}{nRefs ? ` · ${nRefs} referidos` : ''}</i>
+                  <ChevronDown className="chev" size={16} />
+                </button>
+                {abierto && (
+                  <div className="plv-trunk-body">
+                    {conRed.length > 0 && (
+                      <>
+                        <div className="plv-grove-lab">Redes activas</div>
+                        <ul className="plv-tree">
+                          {conRed.map(l => <Nodo key={l.id} l={l} depth={0} hijosDe={hijosDe} onOpen={abrir} onAddRef={abrirConReferido} />)}
+                        </ul>
+                      </>
+                    )}
+                    <div className="plv-grove-lab">Ramas por abrir · {semillero.length}</div>
+                    <div className="plv-grove">
+                      {semillero.map((l, i) => <Leaf key={l.id} l={l} idx={i} onOpen={abrir} onAddRef={abrirConReferido} />)}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {visibles.filter(l => !l.referido_de).length === 0 && <p className="plv-empty">Nada con esos filtros.</p>}
         </div>
       )}
 
