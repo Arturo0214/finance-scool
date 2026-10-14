@@ -3426,4 +3426,86 @@ router.post('/prospectos/:id/referido', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+/* ═══════════════ GRÁFICAS — Dashboard del libro de pólizas vivo ═══════════════
+   Lee crm_pru_polizas_indice (fuente oficial que se actualiza con el reporte
+   diario del Business Review). Agencia ve todo; un asesor ve solo su clave. */
+router.get('/polizas-dashboard', async (req, res) => {
+  try {
+    const db = getDB();
+    const agency = isAgency(req.user.role);
+    // Si no es agencia, limitar a las claves del asesor (crm_agents.clave)
+    let claves = null;
+    if (!agency) {
+      const { data: ag } = await db.from('crm_agents').select('clave').eq('user_id', req.user.id);
+      claves = (ag || []).map(a => a.clave).filter(Boolean);
+      if (!claves.length) return res.json({ scope: 'asesor', vacio: true, kpis: {}, charts: {} });
+    }
+    let rows = await fetchAllRows(() => {
+      let q = db.from('crm_pru_polizas_indice').select('clave, anio, periodo, plan_id, prima_neta_anualizada, frecuencia_pago, moneda, fecha_emision, pagado_hasta, tipo_cambio, base_a_conservar_mxn, estatus_calculo, estatus_conservacion, prima_pagada_periodo, base_conservada_mxn, fecha_ultima_cancelacion');
+      if (claves) q = q.in('clave', claves);
+      return q.order('id');
+    });
+
+    const num = (v) => Number(v) || 0;
+    const tally = (arr, key, val) => { const m = {}; for (const r of arr) { const k = r[key] || '—'; m[k] = (m[k] || 0) + (val ? num(r[val]) : 1); } return m; };
+    const vigentes = rows.filter(r => r.estatus_calculo === 'Vigente');
+    const baseConservar = rows.reduce((s, r) => s + num(r.base_a_conservar_mxn), 0);
+    const baseConservada = rows.reduce((s, r) => s + num(r.base_conservada_mxn), 0);
+    const primaVigente = vigentes.reduce((s, r) => s + num(r.prima_neta_anualizada), 0);
+
+    // Renovaciones próximas: pagado_hasta dentro de los próximos 60 días (y no cancelada)
+    const hoy = new Date(); const en60 = new Date(hoy.getTime() + 60 * 86400000);
+    const proximasRenov = vigentes
+      .filter(r => r.pagado_hasta && new Date(r.pagado_hasta) >= hoy && new Date(r.pagado_hasta) <= en60)
+      .sort((a, b) => String(a.pagado_hasta).localeCompare(String(b.pagado_hasta)))
+      .map(r => ({ clave: r.clave, plan: r.plan_id, prima: num(r.prima_neta_anualizada), pagado_hasta: r.pagado_hasta, base: num(r.base_a_conservar_mxn) }));
+
+    // Cartera por asesor (clave): base a conservar, conservada e índice
+    const porClaveMap = {};
+    for (const r of rows) {
+      const k = r.clave || '—';
+      porClaveMap[k] = porClaveMap[k] || { clave: k, polizas: 0, vigentes: 0, conservar: 0, conservada: 0 };
+      porClaveMap[k].polizas++;
+      if (r.estatus_calculo === 'Vigente') porClaveMap[k].vigentes++;
+      porClaveMap[k].conservar += num(r.base_a_conservar_mxn);
+      porClaveMap[k].conservada += num(r.base_conservada_mxn);
+    }
+    const porClave = Object.values(porClaveMap)
+      .map(c => ({ ...c, indice: c.conservar ? Math.round(c.conservada / c.conservar * 1000) / 10 : 0 }))
+      .sort((a, b) => b.conservar - a.conservar);
+
+    // Top planes por nº de pólizas
+    const planTally = tally(rows, 'plan_id');
+    const topPlanes = Object.entries(planTally).map(([plan, n]) => ({ plan, n })).sort((a, b) => b.n - a.n).slice(0, 12);
+
+    res.json({
+      scope: agency ? 'agencia' : 'asesor',
+      actualizado: rows.reduce((mx, r) => r.updated_at && r.updated_at > mx ? r.updated_at : mx, ''),
+      periodo: rows[0] ? `${rows[0].anio || ''} ${rows[0].periodo || ''}`.trim() : '',
+      kpis: {
+        total: rows.length,
+        vigentes: vigentes.length,
+        canceladas: rows.filter(r => r.estatus_calculo === 'Cancelada').length,
+        primaVigente: Math.round(primaVigente),
+        baseConservar: Math.round(baseConservar),
+        baseConservada: Math.round(baseConservada),
+        indiceConservacion: baseConservar ? Math.round(baseConservada / baseConservar * 1000) / 10 : 0,
+        asesores: new Set(rows.map(r => r.clave)).size,
+        planes: new Set(rows.map(r => r.plan_id)).size,
+        renovacion60: proximasRenov.length,
+      },
+      charts: {
+        estatusCalculo: tally(rows, 'estatus_calculo'),
+        estatusConservacion: tally(rows, 'estatus_conservacion'),
+        moneda: tally(rows, 'moneda'),
+        frecuencia: tally(rows, 'frecuencia_pago'),
+        primaPorFrecuencia: tally(vigentes, 'frecuencia_pago', 'prima_neta_anualizada'),
+        porClave,
+        topPlanes,
+      },
+      proximasRenov: proximasRenov.slice(0, 40),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 module.exports = router;

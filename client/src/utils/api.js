@@ -141,6 +141,7 @@ export const api = {
   crmUpdateReminder: (id, data) => request(`/crm/reminders/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   crmDeleteReminder: (id) => request(`/crm/reminders/${id}`, { method: 'DELETE' }),
   crmGetFiles: (params = {}) => request(`/crm/files?${new URLSearchParams(params)}`),
+  crmPolizasDashboard: () => request('/crm/polizas-dashboard'),
   crmGetMejoresLeads: () => request('/crm/mejores-leads'),
   crmUpdateMejorLead: (id, data) => request(`/crm/mejores-leads/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   // Prospectos LinkedIn (sección exclusiva de los 3 socios)

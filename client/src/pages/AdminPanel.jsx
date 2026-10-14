@@ -50,6 +50,7 @@ const CrmPipelineView     = lazy(() => import('./admin/views/crm/CrmPipelineView
 const CrmClientsView      = lazy(() => import('./admin/views/crm/CrmClientsView'));
 const CrmConsultoresView  = lazy(() => import('./admin/views/crm/CrmConsultoresView'));
 const CrmPoliciesView     = lazy(() => import('./admin/views/crm/CrmPoliciesView'));
+const CrmGraficasView     = lazy(() => import('./admin/views/crm/CrmGraficasView'));
 const CrmGoalsView        = lazy(() => import('./admin/views/crm/CrmGoalsView'));
 const CrmRemindersView    = lazy(() => import('./admin/views/crm/CrmRemindersView'));
 const CrmCommissionsView  = lazy(() => import('./admin/views/crm/CrmCommissionsView'));
@@ -127,6 +128,7 @@ export default function AdminPanel() {
     // Agencia gestiona consultores; el asesor solo ve SUS clientes
     { id: 'crm-clientes',     label: userSeesAllCrm ? 'Consultores' : 'Clientes', icon: Contact },
     { id: 'crm-polizas',      label: 'Pólizas',                       icon: FileText   },
+    { id: 'crm-graficas',     label: 'Gráficas',                      icon: PieChart   },
     { id: 'crm-ingresos',     label: 'Ingresos',                      icon: HandCoins  },
     { id: 'crm-campanas',     label: 'Campañas',                      icon: Plane      },
     { id: 'crm-metas',        label: 'Metas & Forecast',              icon: Target     },
@@ -362,6 +364,7 @@ export default function AdminPanel() {
               {!loading && activeView === 'crm-pipeline' && <CrmPipelineView isAgency={userSeesAllCrm} />}
               {!loading && activeView === 'crm-clientes' && <CrmConsultoresView isAgency={userSeesAllCrm} />}
               {!loading && activeView === 'crm-polizas' && <CrmPoliciesView isAgency={userSeesAllCrm} />}
+              {!loading && activeView === 'crm-graficas' && <CrmGraficasView />}
               {!loading && activeView === 'crm-ingresos' && <CrmIngresosView isAgency={userSeesAllCrm} />}
               {/* Ruta directa conservada: la vista de comisiones vive también como pestaña de Ingresos */}
               {!loading && activeView === 'crm-comisiones' && <CrmCommissionsView isAgency={userSeesAllCrm} />}
