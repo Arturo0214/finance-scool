@@ -12,6 +12,7 @@ const SCOPES = [
   'https://www.googleapis.com/auth/userinfo.email',
   'https://www.googleapis.com/auth/userinfo.profile',
   'https://www.googleapis.com/auth/meetings.space.readonly',
+  'https://www.googleapis.com/auth/gmail.readonly', // Bandeja de Correos (OTP Prudential)
 ];
 
 function getAuthUrl(frontendOrigin) {
@@ -38,4 +39,16 @@ function getCalendarClient(tokens, onTokenRefresh) {
   return google.calendar({ version: 'v3', auth: client });
 }
 
-module.exports = { oauth2Client, getAuthUrl, getCalendarClient, SCOPES };
+// Cliente de Gmail (solo lectura) para la bandeja de Correos
+function getGmailClient(tokens, onTokenRefresh) {
+  const client = new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    process.env.GOOGLE_REDIRECT_URI
+  );
+  client.setCredentials(tokens);
+  client.on('tokens', (nt) => { if (onTokenRefresh) onTokenRefresh(nt); });
+  return google.gmail({ version: 'v1', auth: client });
+}
+
+module.exports = { oauth2Client, getAuthUrl, getCalendarClient, getGmailClient, SCOPES };

@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { verifyToken } = require('../middleware/auth');
-const { oauth2Client, getAuthUrl, getCalendarClient } = require('../config/google-calendar');
+const { oauth2Client, getAuthUrl, getCalendarClient, getGmailClient } = require('../config/google-calendar');
 const { getDB } = require('../models/database');
 
 // Helper: persist refreshed tokens to Supabase
@@ -893,6 +893,118 @@ router.delete('/socio-events/:eventId', verifyToken, async (req, res) => {
     await sel.cal.events.delete({ calendarId: req.query.calendarId || 'primary', eventId: req.params.eventId, sendUpdates: 'all' });
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+/* ═══════════════ BANDEJA DE CORREOS (admin-only: Arturo·Ingrid·Flavio·Karina) ═══════════════
+   Lee el Gmail de las cuentas conectadas (uso principal: el correo de
+   integración de Flavio para ver los OTP de Prudential). Solo lectura. */
+const CORREOS_EMAILS = [
+  'admin@financescool.com', 'osvaldosuarezcruz@gmail.com',       // Arturo
+  'ingrid.escobar@grupointegraccion.com',                        // Ingrid
+  'flavio.r@grupointegraccion.com',                              // Flavio
+  'karina.arellano@financescool.com', 'karina.arellano@grupointegraccion.com', // Karina
+];
+const soloCorreos = (req, res) => {
+  if (!CORREOS_EMAILS.includes(String(req.user?.email || '').toLowerCase())) {
+    res.status(403).json({ error: 'Sección exclusiva de administración' });
+    return false;
+  }
+  return true;
+};
+
+async function getGmailForSocio(socioKey) {
+  const { data: rows } = await getDB().from('google_calendar_tokens').select('*');
+  const row = (rows || []).find(r => socioDeEmail(r.google_email) === socioKey);
+  if (!row) return null;
+  const persist = async (nt) => {
+    const upd = { updated_at: new Date().toISOString() };
+    if (nt.access_token) upd.access_token = nt.access_token;
+    if (nt.expiry_date) upd.expiry_date = new Date(nt.expiry_date).toISOString();
+    await getDB().from('google_calendar_tokens').update(upd).eq('google_email', row.google_email);
+  };
+  const gmail = getGmailClient({
+    access_token: row.access_token, refresh_token: row.refresh_token,
+    expiry_date: row.expiry_date ? new Date(row.expiry_date).getTime() : null,
+  }, persist);
+  return { gmail, email: row.google_email };
+}
+const headerVal = (headers, name) => (headers || []).find(h => h.name.toLowerCase() === name.toLowerCase())?.value || '';
+
+// Buzones disponibles (cuentas conectadas, mapeadas a socio)
+router.get('/correos/buzones', verifyToken, async (req, res) => {
+  if (!soloCorreos(req, res)) return;
+  try {
+    const { data: rows } = await getDB().from('google_calendar_tokens').select('google_email');
+    const buzones = [];
+    for (const r of rows || []) {
+      const k = socioDeEmail(r.google_email);
+      if (k && !buzones.some(b => b.socioKey === k)) buzones.push({ socioKey: k, email: r.google_email });
+    }
+    res.json(buzones);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Lista de correos de un buzón (default: bandeja; q opcional; filtro Prudential)
+router.get('/correos', verifyToken, async (req, res) => {
+  if (!soloCorreos(req, res)) return;
+  try {
+    const sel = await getGmailForSocio(req.query.socio);
+    if (!sel) return res.json({ mensajes: [], email: null, sinGmail: true });
+    const q = req.query.q || (req.query.prudential === '1'
+      ? 'from:prudential OR subject:(código OR verificación OR OTP OR Prudential)'
+      : 'in:inbox');
+    let list;
+    try {
+      list = await sel.gmail.users.messages.list({ userId: 'me', q, maxResults: 25 });
+    } catch (e) {
+      // Sin scope de Gmail o token viejo sin reconectar → pedir reconexión
+      if (/insufficient|scope|invalid_grant|invalid_request|unauthorized|403|401|metadata|forbidden/i.test(e.message || '') || e.code === 403 || e.code === 401) {
+        return res.json({ mensajes: [], email: sel.email, reconectar: true });
+      }
+      throw e;
+    }
+    const ids = (list.data.messages || []).map(m => m.id);
+    const mensajes = [];
+    for (const id of ids) {
+      try {
+        const m = await sel.gmail.users.messages.get({ userId: 'me', id, format: 'metadata', metadataHeaders: ['From', 'Subject', 'Date'] });
+        const h = m.data.payload?.headers;
+        mensajes.push({
+          id,
+          de: headerVal(h, 'From'),
+          asunto: headerVal(h, 'Subject') || '(sin asunto)',
+          fecha: headerVal(h, 'Date'),
+          snippet: m.data.snippet || '',
+          noLeido: (m.data.labelIds || []).includes('UNREAD'),
+          esPrudential: /prudential/i.test(headerVal(h, 'From') + headerVal(h, 'Subject')),
+        });
+      } catch { /* mensaje ilegible, saltar */ }
+    }
+    res.json({ mensajes, email: sel.email });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Cuerpo completo de un correo
+router.get('/correos/:id', verifyToken, async (req, res) => {
+  if (!soloCorreos(req, res)) return;
+  try {
+    const sel = await getGmailForSocio(req.query.socio);
+    if (!sel) return res.status(400).json({ error: 'Buzón no conectado' });
+    const m = await sel.gmail.users.messages.get({ userId: 'me', id: req.params.id, format: 'full' });
+    const h = m.data.payload?.headers;
+    // Extraer texto plano o HTML
+    const walk = (part) => {
+      if (!part) return '';
+      if (part.mimeType === 'text/plain' && part.body?.data) return Buffer.from(part.body.data, 'base64').toString('utf8');
+      if (part.parts) { for (const p of part.parts) { const t = walk(p); if (t) return t; } }
+      if (part.mimeType === 'text/html' && part.body?.data) return Buffer.from(part.body.data, 'base64').toString('utf8').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+      return '';
+    };
+    const cuerpo = walk(m.data.payload) || m.data.snippet || '';
+    // Detectar código OTP (4-8 dígitos) para resaltarlo
+    const otp = (cuerpo.match(/\b(\d{4,8})\b/) || [])[1] || null;
+    res.json({ id: req.params.id, de: headerVal(h, 'From'), asunto: headerVal(h, 'Subject'), fecha: headerVal(h, 'Date'), cuerpo: cuerpo.slice(0, 4000), otp });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 module.exports = router;

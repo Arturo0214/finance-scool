@@ -148,6 +148,10 @@ export const api = {
   calCreateEvent: (data) => request('/google/socio-events', { method: 'POST', body: JSON.stringify(data) }),
   calUpdateEvent: (id, data) => request(`/google/socio-events/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   calDeleteEvent: (id, socio, calendarId) => request(`/google/socio-events/${id}?socio=${socio}&calendarId=${encodeURIComponent(calendarId || 'primary')}`, { method: 'DELETE' }),
+  // Bandeja de Correos (admin-only)
+  correosBuzones: () => request('/google/correos/buzones'),
+  correosList: (socio, opts = {}) => request(`/google/correos?socio=${socio}${opts.q ? '&q=' + encodeURIComponent(opts.q) : ''}${opts.prudential ? '&prudential=1' : ''}`),
+  correoGet: (id, socio) => request(`/google/correos/${id}?socio=${socio}`),
   crmGetMejoresLeads: () => request('/crm/mejores-leads'),
   crmUpdateMejorLead: (id, data) => request(`/crm/mejores-leads/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   // Prospectos LinkedIn (sección exclusiva de los 3 socios)
