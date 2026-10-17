@@ -16,7 +16,7 @@ import {
   MessageCircle, Link as LinkIcon, Zap, Eye, Settings,
   Activity, Filter, PieChart, Megaphone, Briefcase,
   UserCheck, Bot, LayoutDashboard, Contact, FileText, Target, Bell,
-  KanbanSquare, HandCoins, ChevronsLeft, ChevronsRight, Sparkles, Mic, GraduationCap, Plane, Sprout, Gem, Handshake,
+  KanbanSquare, HandCoins, ChevronsLeft, ChevronsRight, Sparkles, Mic, GraduationCap, Plane, Sprout, Gem, Handshake, CalendarDays,
 } from 'lucide-react';
 
 import { C, SPANISH_LABELS, isAgencyRole } from './admin/constants';
@@ -51,6 +51,7 @@ const CrmClientsView      = lazy(() => import('./admin/views/crm/CrmClientsView'
 const CrmConsultoresView  = lazy(() => import('./admin/views/crm/CrmConsultoresView'));
 const CrmPoliciesView     = lazy(() => import('./admin/views/crm/CrmPoliciesView'));
 const CrmGraficasView     = lazy(() => import('./admin/views/crm/CrmGraficasView'));
+const CrmCalendariosView  = lazy(() => import('./admin/views/crm/CrmCalendariosView'));
 const CrmGoalsView        = lazy(() => import('./admin/views/crm/CrmGoalsView'));
 const CrmRemindersView    = lazy(() => import('./admin/views/crm/CrmRemindersView'));
 const CrmCommissionsView  = lazy(() => import('./admin/views/crm/CrmCommissionsView'));
@@ -139,6 +140,7 @@ export default function AdminPanel() {
     { id: 'crm-semillas',     label: 'Semillas',                      icon: Sprout     },
     { id: 'crm-mejores-leads', label: 'Mejores Leads',                icon: Gem        },
     { id: 'crm-prospectos',   label: 'Prospectos',                    icon: Handshake  },
+    { id: 'crm-calendarios',  label: 'Calendarios',                   icon: CalendarDays },
     { id: 'divider-2',        label: '── Administración ──',          icon: null       },
     { id: 'team',             label: SPANISH_LABELS.team,             icon: Settings   },
     { id: 'health',           label: 'Salud del sistema',             icon: Activity   },
@@ -147,6 +149,7 @@ export default function AdminPanel() {
     if (item.id === 'crm-semillas') return ['superadmin', 'agencia'].includes(user?.role);
     if (item.id === 'crm-mejores-leads') return canManageTeam; // base Tesipedia: solo administración
     if (item.id === 'crm-prospectos') return esSocioProspectos;
+    if (item.id === 'crm-calendarios') return esSocioProspectos;
     return (item.id !== 'team' && item.id !== 'divider-2') || canManageTeam;
   });
 
@@ -377,6 +380,7 @@ export default function AdminPanel() {
               {!loading && activeView === 'crm-cotizador' && <CrmQuoteView />}
               {!loading && activeView === 'crm-mejores-leads' && canManageTeam && <CrmMejoresLeadsView />}
               {!loading && activeView === 'crm-prospectos' && esSocioProspectos && <CrmProspectosView />}
+              {!loading && activeView === 'crm-calendarios' && esSocioProspectos && <CrmCalendariosView />}
               {!loading && activeView === 'health' && userIsAgency && <HealthView />}
             </Suspense>
           </main>

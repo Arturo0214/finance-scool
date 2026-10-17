@@ -142,6 +142,12 @@ export const api = {
   crmDeleteReminder: (id) => request(`/crm/reminders/${id}`, { method: 'DELETE' }),
   crmGetFiles: (params = {}) => request(`/crm/files?${new URLSearchParams(params)}`),
   crmPolizasDashboard: () => request('/crm/polizas-dashboard'),
+  // Calendarios por socio (Arturo/Ingrid/Flavio)
+  calSocios: () => request('/google/socios'),
+  calSocioEvents: (socio, timeMin, timeMax) => request(`/google/socio-events?socio=${socio}&timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}`),
+  calCreateEvent: (data) => request('/google/socio-events', { method: 'POST', body: JSON.stringify(data) }),
+  calUpdateEvent: (id, data) => request(`/google/socio-events/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  calDeleteEvent: (id, socio, calendarId) => request(`/google/socio-events/${id}?socio=${socio}&calendarId=${encodeURIComponent(calendarId || 'primary')}`, { method: 'DELETE' }),
   crmGetMejoresLeads: () => request('/crm/mejores-leads'),
   crmUpdateMejorLead: (id, data) => request(`/crm/mejores-leads/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   // Prospectos LinkedIn (sección exclusiva de los 3 socios)

@@ -770,4 +770,129 @@ router.post('/force-refresh', async (req, res) => {
   }
 });
 
+/* ═══════════════ CALENDARIOS por SOCIO (Arturo · Ingrid · Flavio) ═══════════════
+   Esquema portado de Tesipedia-F: cada socio conecta SU Google, se selecciona
+   uno y se ve/edita SU calendario. Correo→socio por whitelist. */
+const SOCIO_POR_EMAIL = {
+  'osvaldosuarezcruz@gmail.com': 'arturo', 'admin@financescool.com': 'arturo',
+  'ingrid.escobar@grupointegraccion.com': 'ingrid',
+  'flavio.r@grupointegraccion.com': 'flavio', 'flavio.rodriguez@grupointegraccion.com': 'flavio',
+};
+const socioDeEmail = (e) => SOCIO_POR_EMAIL[String(e || '').toLowerCase()] || null;
+
+async function getCalForSocio(socioKey) {
+  const { data: rows } = await getDB().from('google_calendar_tokens').select('*');
+  const row = (rows || []).find(r => socioDeEmail(r.google_email) === socioKey);
+  if (!row) return null;
+  const persist = async (nt) => {
+    const upd = { updated_at: new Date().toISOString() };
+    if (nt.access_token) upd.access_token = nt.access_token;
+    if (nt.expiry_date) upd.expiry_date = new Date(nt.expiry_date).toISOString();
+    await getDB().from('google_calendar_tokens').update(upd).eq('google_email', row.google_email);
+  };
+  const cal = getCalendarClient({
+    access_token: row.access_token, refresh_token: row.refresh_token,
+    expiry_date: row.expiry_date ? new Date(row.expiry_date).getTime() : null,
+  }, persist);
+  return { cal, email: row.google_email };
+}
+
+router.get('/socios', verifyToken, async (req, res) => {
+  try {
+    const { data: rows } = await getDB().from('google_calendar_tokens').select('google_email');
+    const conectados = [];
+    for (const r of rows || []) {
+      const k = socioDeEmail(r.google_email);
+      if (k && !conectados.some(c => c.socioKey === k)) conectados.push({ socioKey: k, googleEmail: r.google_email });
+    }
+    res.json(conectados);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.get('/socio-events', verifyToken, async (req, res) => {
+  try {
+    const sel = await getCalForSocio(req.query.socio);
+    if (!sel) return res.json({ items: [], calendarios: [] });
+    const { cal } = sel;
+    const now = new Date();
+    const tMin = req.query.timeMin || new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    const tMax = req.query.timeMax || new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString();
+    let calList = [];
+    try {
+      const cl = await cal.calendarList.list();
+      calList = (cl.data.items || []).map(c => ({ id: c.id, nombre: c.summary, color: c.backgroundColor, primary: !!c.primary }));
+    } catch { /* sin permiso de lista: solo primary */ }
+    const colorDe = (cid) => calList.find(c => c.id === cid)?.color || null;
+    const nombreDe = (cid) => calList.find(c => c.id === cid)?.nombre || null;
+    const fuentes = calList.length ? calList : [{ id: 'primary', primary: true }];
+    let items = [];
+    for (const c of fuentes) {
+      try {
+        let pageToken = null;
+        do {
+          const r = await cal.events.list({ calendarId: c.id, timeMin: tMin, timeMax: tMax, singleEvents: true, orderBy: 'startTime', maxResults: 250, pageToken });
+          for (const e of r.data.items || []) items.push({
+            id: e.id, summary: e.summary, description: e.description || '',
+            start: e.start, end: e.end, attendees: e.attendees || [],
+            hangoutLink: e.hangoutLink || e.conferenceData?.entryPoints?.find(ep => ep.entryPointType === 'video')?.uri || '',
+            calendarId: c.id, calendarColor: colorDe(c.id), calendarSummary: c.primary ? null : nombreDe(c.id),
+            readOnly: false,
+          });
+          pageToken = r.data.nextPageToken;
+        } while (pageToken);
+      } catch { /* calendario ilegible, saltar */ }
+    }
+    res.json({ items, calendarios: calList });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.post('/socio-events', verifyToken, async (req, res) => {
+  try {
+    const sel = await getCalForSocio(req.body.socio);
+    if (!sel) return res.status(400).json({ message: 'Ese socio no tiene calendario conectado' });
+    const { summary, description, startDate, endDate, startTime, endTime, attendees, meet } = req.body;
+    if (!summary || !startDate) return res.status(400).json({ message: 'Título y fecha requeridos' });
+    const allDay = !startTime;
+    const start = allDay ? { date: startDate } : { dateTime: `${startDate}T${startTime}:00`, timeZone: 'America/Mexico_City' };
+    const end = allDay ? { date: endDate || startDate } : { dateTime: `${endDate || startDate}T${endTime || startTime}:00`, timeZone: 'America/Mexico_City' };
+    const requestBody = { summary, description: description || '', start, end };
+    const atts = String(attendees || '').split(',').map(s => s.trim()).filter(Boolean);
+    if (atts.length) requestBody.attendees = atts.map(email => ({ email }));
+    const params = { calendarId: 'primary', requestBody, sendUpdates: 'all' };
+    if (meet) {
+      requestBody.conferenceData = { createRequest: { requestId: `fsc-${Date.now()}`, conferenceSolutionKey: { type: 'hangoutsMeet' } } };
+      params.conferenceDataVersion = 1;
+    }
+    const r = await sel.cal.events.insert(params);
+    res.json({ id: r.data.id, hangoutLink: r.data.hangoutLink || '' });
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+router.put('/socio-events/:eventId', verifyToken, async (req, res) => {
+  try {
+    const sel = await getCalForSocio(req.body.socio);
+    if (!sel) return res.status(400).json({ message: 'Socio sin calendario' });
+    const { summary, description, startDate, endDate, startTime, endTime, attendees, calendarId } = req.body;
+    const allDay = !startTime;
+    const requestBody = {
+      summary, description: description || '',
+      start: allDay ? { date: startDate } : { dateTime: `${startDate}T${startTime}:00`, timeZone: 'America/Mexico_City' },
+      end: allDay ? { date: endDate || startDate } : { dateTime: `${endDate || startDate}T${endTime || startTime}:00`, timeZone: 'America/Mexico_City' },
+    };
+    const atts = String(attendees || '').split(',').map(s => s.trim()).filter(Boolean);
+    if (atts.length) requestBody.attendees = atts.map(email => ({ email }));
+    await sel.cal.events.update({ calendarId: calendarId || 'primary', eventId: req.params.eventId, requestBody, sendUpdates: 'all' });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+router.delete('/socio-events/:eventId', verifyToken, async (req, res) => {
+  try {
+    const sel = await getCalForSocio(req.query.socio);
+    if (!sel) return res.status(400).json({ message: 'Socio sin calendario' });
+    await sel.cal.events.delete({ calendarId: req.query.calendarId || 'primary', eventId: req.params.eventId, sendUpdates: 'all' });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
 module.exports = router;
