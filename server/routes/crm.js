@@ -3332,6 +3332,13 @@ const PROSPECTOS_EMAILS = [
   'flavio.r@grupointegraccion.com',                             // Flavio
 ];
 const SOCIOS_PROSPECTOS = ['Arturo', 'Ingrid', 'Flavio'];
+/* Correo del socio que hace la petición → su nombre en seg_assigned_to. */
+const SOCIO_DE_EMAIL_PR = {
+  'admin@financescool.com': 'Arturo', 'osvaldosuarezcruz@gmail.com': 'Arturo',
+  'ingrid.escobar@grupointegraccion.com': 'Ingrid',
+  'flavio.r@grupointegraccion.com': 'Flavio',
+};
+const agenteProspeccion = require('../agente-prospeccion/motor');
 const soloProspectos = (req, res) => {
   if (!PROSPECTOS_EMAILS.includes(String(req.user.email || '').toLowerCase())) {
     res.status(403).json({ error: 'Sección exclusiva de los socios' });
@@ -3422,6 +3429,61 @@ router.post('/prospectos/:id/referido', async (req, res) => {
     const { data, error } = await db.from('crm_mejores_leads').insert([fila]).select();
     if (error) return res.status(500).json({ error: error.message });
     logActivity(req, 'crear', 'prospecto-referido', data[0].id, `referido de #${padre.id} (${padre.nombre})`);
+    res.json({ lead: decryptFields(data[0], 'crm_mejores_leads') });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* ═══════ AGENTE DE PROSPECCIÓN (local, sin tokens) — cola asistida ═══════
+   El motor (server/agente-prospeccion/motor.js) decide a quién contactar hoy,
+   redacta la secuencia de ventas por LinkedIn y respeta el tope de invitaciones.
+   El envío es asistido: el socio da el clic de enviar y marca el resultado. */
+
+/* Cola del día del socio que pregunta (asignados a él + sin asignar). */
+router.get('/prospectos/cola', async (req, res) => {
+  if (!soloProspectos(req, res)) return;
+  try {
+    const db = getDB();
+    const rows = await fetchAllRows(() =>
+      db.from('crm_mejores_leads').select('*').like('bucket', 'linkedin-%')
+        .order('score', { ascending: false, nullsFirst: false }).order('id')
+    );
+    const leads = decryptRows(rows, 'crm_mejores_leads');
+    const porId = new Map(leads.map(l => [l.id, l]));
+    const socio = SOCIO_DE_EMAIL_PR[String(req.user.email || '').toLowerCase()] || null;
+    const cola = agenteProspeccion.construirCola(leads, {
+      socio, porId, hoyISO: new Date().toISOString(),
+    });
+    res.json({ socio, ...cola });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* Registra el resultado de una acción del agente y avanza la secuencia.
+   body: { resultado }  (ids válidos en motor.RESULTADOS) */
+router.post('/prospectos/:id/outreach', async (req, res) => {
+  if (!soloProspectos(req, res)) return;
+  try {
+    const db = getDB();
+    const def = agenteProspeccion.RESULTADOS[String(req.body.resultado || '')];
+    if (!def) return res.status(400).json({ error: 'Resultado inválido' });
+    const { data: row, error: eGet } = await db.from('crm_mejores_leads')
+      .select('id, seg_status, seg_notes_log').eq('id', req.params.id).maybeSingle();
+    if (eGet) return res.status(500).json({ error: eGet.message });
+    if (!row) return res.status(404).json({ error: 'Prospecto no encontrado' });
+
+    const ahora = new Date().toISOString();
+    const log = Array.isArray(row.seg_notes_log) ? row.seg_notes_log : [];
+    const patch = {
+      seg_status: def.seg_status,
+      seg_last_contact: ahora,
+      updated_at: ahora,
+      seg_notes_log: [...log, {
+        type: 'outreach', step: def.paso, resultado: def.id,
+        text: def.texto, by: req.user.name || req.user.email, at: ahora,
+      }],
+    };
+    const { data, error } = await db.from('crm_mejores_leads').update(patch).eq('id', req.params.id).select();
+    if (error) return res.status(500).json({ error: error.message });
+    logActivity(req, 'actualizar', 'prospecto-outreach', req.params.id, def.texto);
     res.json({ lead: decryptFields(data[0], 'crm_mejores_leads') });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

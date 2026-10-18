@@ -158,6 +158,9 @@ export const api = {
   crmGetProspectos: () => request('/crm/prospectos'),
   crmAddProspecto: (data) => request('/crm/prospectos', { method: 'POST', body: JSON.stringify(data) }),
   crmAddReferidoProspecto: (id, data) => request(`/crm/prospectos/${id}/referido`, { method: 'POST', body: JSON.stringify(data) }),
+  // Agente de prospección (cola asistida, local sin tokens)
+  crmColaProspeccion: () => request('/crm/prospectos/cola'),
+  crmOutreachProspecto: (id, resultado) => request(`/crm/prospectos/${id}/outreach`, { method: 'POST', body: JSON.stringify({ resultado }) }),
   getCalendarConnections: () => request('/google/connections'),
   getCalendarEventsAll: (timeMin, timeMax) => request(`/google/events-all?timeMin=${encodeURIComponent(timeMin || '')}&timeMax=${encodeURIComponent(timeMax || '')}`),
   crmRunAutoReminders: () => request('/crm/auto-reminders', { method: 'POST', body: JSON.stringify({}) }),

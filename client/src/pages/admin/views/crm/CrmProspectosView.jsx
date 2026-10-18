@@ -17,7 +17,7 @@ import { C } from '../../constants';
 import {
   Search, Linkedin, RefreshCw, GitBranch, Crown, CalendarDays, Video,
   Plus, X, UserCheck, KanbanSquare, Network, ExternalLink, StickyNote, ChevronDown,
-  Send, Copy, Check,
+  Send, Copy, Check, Sparkles, Clock, Hourglass, ThumbsDown, CalendarCheck,
 } from 'lucide-react';
 
 const GOLD = C.gold, INK = C.ink;
@@ -310,6 +310,39 @@ const PLV_CSS = `
   .plv-modal-body input { padding:9px 12px; border:1px solid var(--hair); border-radius:9px; font-size:12.5px; font-family:inherit; outline:none; background:#fff; color:${C.text}; }
   .plv-modal-body input:focus { border-color:var(--gold); box-shadow:0 0 0 3px rgba(193,151,91,.14); }
   .plv-modal-lab { font-size:9.5px; letter-spacing:1.8px; text-transform:uppercase; color:#8A6A34; font-weight:800; margin-top:4px; }
+
+  /* ── Agente de ventas: cola asistida ── */
+  .plv-q { animation:plvRise .5s .1s ease backwards; max-width:780px; }
+  .plv-q-intro { display:flex; gap:11px; align-items:flex-start; background:linear-gradient(180deg,#FFFDF8,#FBF4E3); border:1px solid rgba(193,151,91,.4); border-radius:14px; padding:13px 16px; margin-bottom:14px; }
+  .plv-q-intro svg { color:#8A6A34; flex-shrink:0; margin-top:1px; }
+  .plv-q-intro p { margin:0; font-size:12px; color:#6F5426; line-height:1.55; }
+  .plv-q-intro b { color:#51400F; }
+  .plv-q-stats { display:flex; gap:16px; flex-wrap:wrap; margin-bottom:16px; }
+  .plv-q-stat { display:flex; flex-direction:column; }
+  .plv-q-stat b { font-family:'Fraunces',Georgia,serif; font-size:21px; font-weight:600; color:var(--ink); font-variant-numeric:tabular-nums; line-height:1.1; }
+  .plv-q-stat i { font-style:normal; font-size:9.5px; letter-spacing:1.4px; text-transform:uppercase; color:#8A6A34; font-weight:800; margin-top:2px; }
+  .plv-q-stat.mut b { color:${C.textMuted}; }
+  .plv-q-sec { font-size:10.5px; letter-spacing:2px; text-transform:uppercase; color:#8A6A34; font-weight:800; margin:18px 0 9px; display:flex; align-items:center; gap:7px; }
+  .plv-q-sec::after { content:''; flex:1; height:1px; background:linear-gradient(90deg, rgba(193,151,91,.35), transparent); }
+  .plv-q-card { background:linear-gradient(180deg,#fff,#FDFCFA); border:1px solid var(--hair); border-radius:14px; padding:13px 15px 12px; margin-bottom:10px; transition:all .18s; animation:plvRise .35s ease backwards; }
+  .plv-q-card:hover { border-color:rgba(193,151,91,.45); box-shadow:0 12px 26px -18px rgba(0,43,117,.3); }
+  .plv-q-card.wait { background:linear-gradient(180deg,#FCFCFA,#F7F6F2); opacity:.92; }
+  .plv-q-top { display:flex; align-items:center; gap:10px; }
+  .plv-q-name { font-size:13.5px; font-weight:700; color:var(--ink); cursor:pointer; }
+  .plv-q-name:hover { color:#8A6A34; }
+  .plv-q-sub { font-size:10.5px; color:${C.textMuted}; margin-top:1px; }
+  .plv-q-right { margin-left:auto; display:flex; align-items:center; gap:6px; }
+  .plv-q-step { display:inline-flex; align-items:center; gap:5px; font-size:10px; font-weight:800; letter-spacing:.4px; text-transform:uppercase; padding:4px 10px; border-radius:16px; }
+  .plv-q-hard { font-size:9px; font-weight:800; letter-spacing:.4px; text-transform:uppercase; color:#A6703A; background:#F6ECDC; border:1px solid rgba(166,112,58,.3); padding:3px 8px; border-radius:12px; }
+  .plv-q-msg { position:relative; background:linear-gradient(180deg,#FFFDF8,#FBF4E3); border:1px solid rgba(193,151,91,.45); border-radius:11px; padding:11px 13px; margin:10px 0 0; }
+  .plv-q-msg p { margin:0; font-size:12.5px; color:#3A2F17; line-height:1.55; white-space:pre-wrap; }
+  .plv-q-count { position:absolute; top:8px; right:11px; font-size:9.5px; font-weight:700; font-variant-numeric:tabular-nums; color:#A6703A; }
+  .plv-q-count.over { color:#C0392B; }
+  .plv-q-wait-note { font-size:11.5px; color:${C.textMuted}; margin:8px 0 0; font-style:italic; }
+  .plv-q-acts { display:flex; gap:7px; flex-wrap:wrap; align-items:center; margin-top:11px; }
+  .plv-q-ln { display:inline-flex; align-items:center; gap:6px; font-family:inherit; font-size:11.5px; font-weight:700; color:#fff; background:#0A66C2; border:none; border-radius:9px; padding:8px 13px; cursor:pointer; text-decoration:none; transition:all .2s; }
+  .plv-q-ln:hover { background:#084d93; }
+  .plv-q-spacer { flex:1; }
 
   .plv-empty { color:${C.textMuted}; font-size:13px; padding:16px 4px; }
 
@@ -683,12 +716,106 @@ function NuevoProspecto({ saving, onCreate, onClose }) {
   );
 }
 
+/* ═══════════ Agente de ventas: tarjeta de acción + vista de cola ═══════════ */
+const PASO_VISUAL = {
+  invitacion:        { c: '#0A66C2', Icon: Send },
+  bienvenida:        { c: '#7C3AED', Icon: Send },
+  seguimiento:       { c: '#B97F1E', Icon: RefreshCw },
+  proponer_sesion:   { c: '#0891B2', Icon: CalendarDays },
+  agendar_sesion:    { c: '#0E8A63', Icon: CalendarCheck },
+  espera_aceptacion: { c: '#7A8698', Icon: Hourglass },
+};
+const pasoVisual = (p) => PASO_VISUAL[p] || { c: '#7A8698', Icon: Clock };
+const accIcon = (id) => (id === 'descartar' ? ThumbsDown : id === 'sesion_agendada' ? CalendarCheck : Check);
+
+function QueueCard({ it, busy, onAccion, onOpen }) {
+  const [copiado, setCopiado] = useState(false);
+  const camp = campanaInfo(it.bucket);
+  const { c, Icon } = pasoVisual(it.paso);
+  const wait = it.grupo === 'esperando';
+  const over = it.limite && it.mensaje && it.mensaje.length > it.limite;
+  const copiar = () => { if (it.mensaje) navigator.clipboard?.writeText(it.mensaje).then(() => { setCopiado(true); setTimeout(() => setCopiado(false), 1600); }); };
+  return (
+    <div className={`plv-q-card${wait ? ' wait' : ''}`}>
+      <div className="plv-q-top">
+        <span className="plv-mono">{iniciales(it.nombre)}</span>
+        <div style={{ minWidth: 0 }}>
+          <div className="plv-q-name" onClick={() => onOpen(it.id)}>{it.nombre}</div>
+          <div className="plv-q-sub">{it.perfil || camp.label}{it.padre ? ` · ↳ ref. de ${it.padre.nombre.split(' ')[0]}` : ''}</div>
+        </div>
+        <div className="plv-q-right">
+          {it.dificultad === 'dificil' && <span className="plv-q-hard" title="Ejecutivo corporativo alto — baja probabilidad en frío, mejor por referido">difícil</span>}
+          {(() => { const g = GRADOS[gradoDe(it.score)]; return <span className="plv-grado" style={{ color: g.color, background: g.bg }}>{g.label}</span>; })()}
+          <span className="plv-q-step" style={{ color: c, background: `${c}14` }}><Icon size={11} /> {it.etiqueta}</span>
+        </div>
+      </div>
+      {it.mensaje && (
+        <div className="plv-q-msg">
+          {it.limite && <span className={`plv-q-count${over ? ' over' : ''}`}>{it.mensaje.length}/{it.limite}</span>}
+          <p>{it.mensaje}</p>
+        </div>
+      )}
+      {it.nota && <p className="plv-q-wait-note">{it.nota}</p>}
+      <div className="plv-q-acts">
+        {it.mensaje && (
+          <button className="plv-btn gold" onClick={copiar}>
+            {copiado ? <><Check size={12} /> Copiado</> : <><Copy size={12} /> Copiar</>}
+          </button>
+        )}
+        {it.linkedin_url && (
+          <a className="plv-q-ln" href={it.linkedin_url} target="_blank" rel="noreferrer"><Linkedin size={13} /> Abrir LinkedIn</a>
+        )}
+        <span className="plv-q-spacer" />
+        {it.acciones.map(a => { const AI = accIcon(a.id); return (
+          <button key={a.id} className={`plv-btn ${a.tono === 'ghost' ? 'ghost' : 'gold'}`} disabled={busy}
+            onClick={() => onAccion(it.id, a.id)}>
+            <AI size={12} /> {a.label}
+          </button>
+        ); })}
+      </div>
+    </div>
+  );
+}
+
+function AgenteVentas({ cola, loading, busyId, onAccion, onOpen, onReload }) {
+  if (loading && !cola) return <p className="plv-empty">Armando la cola de hoy…</p>;
+  if (!cola) return <p className="plv-empty">Sin datos.</p>;
+  const r = cola.resumen || {};
+  return (
+    <div className="plv-q">
+      <div className="plv-q-intro">
+        <Sparkles size={18} />
+        <p>El agente eligió <b>a quién contactar hoy</b>, redactó cada mensaje de ventas y sacó los perfiles muertos. <b>Tú das el clic de enviar</b> en LinkedIn (copiar-pegar) y marcas el resultado — así tu cuenta nunca se expone a un baneo. Tope seguro: <b>{r.tope_diario} invitaciones nuevas al día</b>.</p>
+      </div>
+      <div className="plv-q-stats">
+        <div className="plv-q-stat"><b>{r.para_hoy || 0}</b><i>Para hoy</i></div>
+        <div className="plv-q-stat"><b>{(r.invitaciones_en_cola || 0)}/{r.tope_diario || 20}</b><i>Invitaciones</i></div>
+        <div className="plv-q-stat"><b>{r.esperando || 0}</b><i>Esperando</i></div>
+        <div className="plv-q-stat mut"><b>{r.descartados_perfil_muerto || 0}</b><i>Muertos fuera</i></div>
+        {r.pospuestas_por_tope > 0 && <div className="plv-q-stat mut"><b>{r.pospuestas_por_tope}</b><i>Van mañana</i></div>}
+        <button className="plv-refresh" style={{ alignSelf: 'center' }} onClick={onReload} title="Recalcular cola"><RefreshCw size={15} /></button>
+      </div>
+
+      <div className="plv-q-sec"><Sparkles size={12} /> Acciones de hoy · {cola.hoy.length}</div>
+      {cola.hoy.length === 0 && <p className="plv-empty">Nada pendiente de enviar hoy. Todo al día 🎉</p>}
+      {cola.hoy.map(it => <QueueCard key={`${it.id}|${it.paso}`} it={it} busy={busyId === it.id} onAccion={onAccion} onOpen={onOpen} />)}
+
+      {cola.esperando.length > 0 && (
+        <>
+          <div className="plv-q-sec"><Hourglass size={12} /> Esperando respuesta · {cola.esperando.length}</div>
+          {cola.esperando.map(it => <QueueCard key={`${it.id}|${it.paso}`} it={it} busy={busyId === it.id} onAccion={onAccion} onOpen={onOpen} />)}
+        </>
+      )}
+    </div>
+  );
+}
+
 /* ═══════════════════════════ Componente ═══════════════════════════ */
 export default function CrmProspectosView() {
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [vista, setVista] = useState('red'); // red | pipeline | calendarios
+  const [vista, setVista] = useState('agente'); // agente | red | pipeline | calendarios
   const [campAbierta, setCampAbierta] = useState({});
   const [fCamp, setFCamp] = useState('');
   const [fGrado, setFGrado] = useState('');
@@ -703,6 +830,9 @@ export default function CrmProspectosView() {
   const [connections, setConnections] = useState([]);
   const [calendars, setCalendars] = useState(null);
   const [calLoading, setCalLoading] = useState(false);
+  const [cola, setCola] = useState(null);
+  const [colaLoading, setColaLoading] = useState(false);
+  const [colaBusy, setColaBusy] = useState(null);
   const dragLeadRef = useRef(null);
 
   async function load() {
@@ -727,6 +857,24 @@ export default function CrmProspectosView() {
     finally { setCalLoading(false); }
   }
   useEffect(() => { if (vista === 'calendarios' && calendars === null) loadCalendars(); }, [vista]); // eslint-disable-line
+
+  async function loadCola() {
+    setColaLoading(true);
+    try { setCola(await api.crmColaProspeccion()); }
+    catch { setCola({ hoy: [], esperando: [], resumen: {} }); }
+    finally { setColaLoading(false); }
+  }
+  useEffect(() => { if (vista === 'agente' && cola === null) loadCola(); }, [vista]); // eslint-disable-line
+
+  async function accionCola(id, resultado) {
+    setColaBusy(id);
+    try {
+      const { lead } = await api.crmOutreachProspecto(id, resultado);
+      setLeads(prev => prev.map(l => (l.id === lead.id ? lead : l)));
+      await loadCola();
+    } catch (e) { alert(e.message || 'No se pudo registrar la acción'); }
+    finally { setColaBusy(null); }
+  }
 
   async function patch(lead, data) {
     setSavingId(lead.id);
@@ -824,11 +972,12 @@ export default function CrmProspectosView() {
 
       <div className="plv-bar">
         <div className="plv-views" role="tablist">
+          <button className={`plv-view${vista === 'agente' ? ' on' : ''}`} onClick={() => setVista('agente')}><Sparkles size={14} /> Agente de ventas</button>
           <button className={`plv-view${vista === 'red' ? ' on' : ''}`} onClick={() => setVista('red')}><Network size={14} /> Red de referidos</button>
           <button className={`plv-view${vista === 'pipeline' ? ' on' : ''}`} onClick={() => setVista('pipeline')}><KanbanSquare size={14} /> Pipeline</button>
           <button className={`plv-view${vista === 'calendarios' ? ' on' : ''}`} onClick={() => setVista('calendarios')}><CalendarDays size={14} /> Calendarios</button>
         </div>
-        {vista !== 'calendarios' && (
+        {vista !== 'calendarios' && vista !== 'agente' && (
           <>
             <button className="plv-btn gold" onClick={() => setShowNew(true)}><Plus size={13} /> Nuevo prospecto</button>
             {CAMPANAS.map(c => (
@@ -857,7 +1006,12 @@ export default function CrmProspectosView() {
       </div>
 
       {error && <p style={{ color: C.red }}>{error}</p>}
-      {loading && vista !== 'calendarios' && <p className="plv-empty">Cargando prospectos…</p>}
+      {loading && vista !== 'calendarios' && vista !== 'agente' && <p className="plv-empty">Cargando prospectos…</p>}
+
+      {vista === 'agente' && (
+        <AgenteVentas cola={cola} loading={colaLoading} busyId={colaBusy}
+          onAccion={accionCola} onOpen={abrir} onReload={loadCola} />
+      )}
 
       {!loading && vista === 'pipeline' && (
         <div className="plv-board">
