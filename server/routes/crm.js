@@ -58,6 +58,52 @@ router.get('/portal', async (req, res) => {
   } catch { res.status(401).json({ error: 'Enlace inválido o expirado. Pide a tu asesor uno nuevo.' }); }
 });
 
+/* ═══════ AGENTE DE PROSPECCIÓN — endpoints con API key (para n8n) ═══════
+   Gateados por FSC_AGENTE_KEY (header x-agente-key), registrados ANTES de
+   verifyToken para que el copiloto n8n jale la cola y registre envíos SIN
+   un JWT admin permanente. Reusan el motor local (agente-prospeccion/motor). */
+const agenteProspeccion = require('../agente-prospeccion/motor');
+const agenteKeyOk = (req) => {
+  const k = process.env.FSC_AGENTE_KEY;
+  return !!k && req.get('x-agente-key') === k;
+};
+
+router.get('/prospectos/cola-agente', async (req, res) => {
+  if (!agenteKeyOk(req)) return res.status(401).json({ error: 'key inválida' });
+  try {
+    const db = getDB();
+    const rows = await fetchAllRows(() =>
+      db.from('crm_mejores_leads').select('*').like('bucket', 'linkedin-%')
+        .order('score', { ascending: false, nullsFirst: false }).order('id'));
+    const leads = decryptRows(rows, 'crm_mejores_leads');
+    const porId = new Map(leads.map(l => [l.id, l]));
+    const socio = ['Arturo', 'Ingrid', 'Flavio'].includes(req.query.socio) ? req.query.socio : 'Arturo';
+    const cola = agenteProspeccion.construirCola(leads, { socio, porId, hoyISO: new Date().toISOString() });
+    res.json({ socio, ...cola });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.post('/prospectos/:id/outreach-agente', async (req, res) => {
+  if (!agenteKeyOk(req)) return res.status(401).json({ error: 'key inválida' });
+  try {
+    const db = getDB();
+    const def = agenteProspeccion.RESULTADOS[String(req.body.resultado || '')];
+    if (!def) return res.status(400).json({ error: 'Resultado inválido' });
+    const { data: row } = await db.from('crm_mejores_leads')
+      .select('id, seg_status, seg_notes_log').eq('id', req.params.id).maybeSingle();
+    if (!row) return res.status(404).json({ error: 'Prospecto no encontrado' });
+    const ahora = new Date().toISOString();
+    const log = Array.isArray(row.seg_notes_log) ? row.seg_notes_log : [];
+    const patch = {
+      seg_status: def.seg_status, seg_last_contact: ahora, updated_at: ahora,
+      seg_notes_log: [...log, { type: 'outreach', step: def.paso, resultado: def.id, text: def.texto, by: 'Agente n8n', at: ahora }],
+    };
+    const { data, error } = await db.from('crm_mejores_leads').update(patch).eq('id', req.params.id).select();
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ ok: true, id: data[0].id, step: def.paso, seg_status: def.seg_status });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 router.use(verifyToken);
 
 const isAgency = (role) => ['superadmin', 'agencia', 'admin'].includes(role);
@@ -3338,7 +3384,7 @@ const SOCIO_DE_EMAIL_PR = {
   'ingrid.escobar@grupointegraccion.com': 'Ingrid',
   'flavio.r@grupointegraccion.com': 'Flavio',
 };
-const agenteProspeccion = require('../agente-prospeccion/motor');
+// agenteProspeccion ya está requerido arriba (sección endpoints con API key)
 const soloProspectos = (req, res) => {
   if (!PROSPECTOS_EMAILS.includes(String(req.user.email || '').toLowerCase())) {
     res.status(403).json({ error: 'Sección exclusiva de los socios' });
