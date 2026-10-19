@@ -312,7 +312,9 @@ const PLV_CSS = `
   .plv-modal-lab { font-size:9.5px; letter-spacing:1.8px; text-transform:uppercase; color:#8A6A34; font-weight:800; margin-top:4px; }
 
   /* ── Agente de ventas: cola asistida ── */
-  .plv-q { animation:plvRise .5s .1s ease backwards; max-width:780px; }
+  .plv-q { animation:plvRise .5s .1s ease backwards; width:100%; }
+  .plv-q-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(420px, 1fr)); gap:12px; align-items:start; margin-bottom:6px; }
+  @media (max-width: 900px) { .plv-q-grid { grid-template-columns:1fr; } }
   .plv-q-intro { display:flex; gap:11px; align-items:flex-start; background:linear-gradient(180deg,#FFFDF8,#FBF4E3); border:1px solid rgba(193,151,91,.4); border-radius:14px; padding:13px 16px; margin-bottom:14px; }
   .plv-q-intro svg { color:#8A6A34; flex-shrink:0; margin-top:1px; }
   .plv-q-intro p { margin:0; font-size:12px; color:#6F5426; line-height:1.55; }
@@ -324,7 +326,7 @@ const PLV_CSS = `
   .plv-q-stat.mut b { color:${C.textMuted}; }
   .plv-q-sec { font-size:10.5px; letter-spacing:2px; text-transform:uppercase; color:#8A6A34; font-weight:800; margin:18px 0 9px; display:flex; align-items:center; gap:7px; }
   .plv-q-sec::after { content:''; flex:1; height:1px; background:linear-gradient(90deg, rgba(193,151,91,.35), transparent); }
-  .plv-q-card { background:linear-gradient(180deg,#fff,#FDFCFA); border:1px solid var(--hair); border-radius:14px; padding:13px 15px 12px; margin-bottom:10px; transition:all .18s; animation:plvRise .35s ease backwards; }
+  .plv-q-card { background:linear-gradient(180deg,#fff,#FDFCFA); border:1px solid var(--hair); border-radius:14px; padding:13px 15px 12px; transition:all .18s; animation:plvRise .35s ease backwards; }
   .plv-q-card:hover { border-color:rgba(193,151,91,.45); box-shadow:0 12px 26px -18px rgba(0,43,117,.3); }
   .plv-q-card.wait { background:linear-gradient(180deg,#FCFCFA,#F7F6F2); opacity:.92; }
   .plv-q-top { display:flex; align-items:center; gap:10px; }
@@ -798,12 +800,16 @@ function AgenteVentas({ cola, loading, busyId, onAccion, onOpen, onReload }) {
 
       <div className="plv-q-sec"><Sparkles size={12} /> Acciones de hoy · {cola.hoy.length}</div>
       {cola.hoy.length === 0 && <p className="plv-empty">Nada pendiente de enviar hoy. Todo al día 🎉</p>}
-      {cola.hoy.map(it => <QueueCard key={`${it.id}|${it.paso}`} it={it} busy={busyId === it.id} onAccion={onAccion} onOpen={onOpen} />)}
+      <div className="plv-q-grid">
+        {cola.hoy.map(it => <QueueCard key={`${it.id}|${it.paso}`} it={it} busy={busyId === it.id} onAccion={onAccion} onOpen={onOpen} />)}
+      </div>
 
       {cola.esperando.length > 0 && (
         <>
           <div className="plv-q-sec"><Hourglass size={12} /> Esperando respuesta · {cola.esperando.length}</div>
-          {cola.esperando.map(it => <QueueCard key={`${it.id}|${it.paso}`} it={it} busy={busyId === it.id} onAccion={onAccion} onOpen={onOpen} />)}
+          <div className="plv-q-grid">
+            {cola.esperando.map(it => <QueueCard key={`${it.id}|${it.paso}`} it={it} busy={busyId === it.id} onAccion={onAccion} onOpen={onOpen} />)}
+          </div>
         </>
       )}
     </div>
