@@ -83,6 +83,16 @@ router.get('/prospectos/cola-agente', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+/* Cazador: busca perfiles ICP nuevos (DDG gratis) y los mete al banco. */
+router.post('/prospectos/sourcing-agente', async (req, res) => {
+  if (!agenteKeyOk(req)) return res.status(401).json({ error: 'key inválida' });
+  try {
+    const max = Math.min(60, Math.max(5, Number(req.body.max) || 30));
+    const rep = await require('../agente-prospeccion/cazador').cazar({ max });
+    res.json(rep);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 router.post('/prospectos/:id/outreach-agente', async (req, res) => {
   if (!agenteKeyOk(req)) return res.status(401).json({ error: 'key inválida' });
   try {
