@@ -1,15 +1,24 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronDown, Menu, X, MessageCircle, BarChart3, Lightbulb, Target, Wallet, Clock, Landmark, TrendingUp, GraduationCap, Briefcase, FileText, Shield, Brain, Users, CheckCircle, Camera, Linkedin, Volume2, VolumeX, Heart, PiggyBank, HandCoins } from 'lucide-react';
+import { Menu, X, MessageCircle, Check, ArrowRight, Star, ShieldCheck, TrendingUp, PiggyBank, Calculator, Landmark, Users, HeartHandshake } from 'lucide-react';
 import Logo from '../components/Logo';
 import ChatSofia from '../components/ChatSofia';
-import {
-  getWhatsAppURL, trackWhatsAppClick, trackCalculadoraISR,
-  trackMetaViewContent, initScrollTracking, detectLeadSource,
-  trackMetaLead
-} from '../utils/tracking';
+import { getWhatsAppURL, trackWhatsAppClick, trackCalculadoraISR, trackMetaViewContent, initScrollTracking, trackMetaLead } from '../utils/tracking';
 
-// ==================== ISR 2026 Tax Calculator Logic ====================
+/* ============================================================================
+   Finance S-Cool — Landing v3
+   Estructura y mecánica de conversión inspirada en contratado.com.mx
+   (hero con mockup flotante + rating ★, strip de stats, tarjetas de beneficio,
+   3 pasos, calculadora ISR real, CASOS DE ÉXITO, banda CTA final), pero con la
+   identidad financiera FSC: navy #003DA5 + oro #C9A84C, Playfair Display + Inter.
+   Conserva lo que ya vende: calculadora ISR 2026, formulario → /api/leads
+   (mismo pipeline + ping Telegram), chat Sofia y tracking Meta Pixel.
+   ========================================================================== */
+
+const API_URL = import.meta.env.VITE_API_URL || '/api';
+const CALENDLY = 'https://calendly.com/ingrid-escobar-grupointegraccion/new-meeting';
+
+// ===== ISR 2026 (lógica reutilizada del landing anterior) =====
 const ISR_TABLE_2026 = [
   { limInf: 0.01, limSup: 10135.11, cuota: 0, pct: 0.0192 },
   { limInf: 10135.12, limSup: 86022.11, cuota: 171.88, pct: 0.064 },
@@ -23,3000 +32,661 @@ const ISR_TABLE_2026 = [
   { limInf: 1702567.98, limSup: 5107703.92, cuota: 392294.17, pct: 0.34 },
   { limInf: 5107703.93, limSup: Infinity, cuota: 1414947.85, pct: 0.35 },
 ];
+const CINCO_UMAS_ANUALES = 213973.20; // tope deducible PPR (art. 151 LISR)
 
-const UMA_ANUAL = 39606.36;
-const CINCO_UMAS = UMA_ANUAL * 5; // ~198,031.80 but doc says 213,973.20 with UMA 2024 108.57
-const UMA_DIARIA = 117.16; // 2026
-const CINCO_UMAS_ANUALES = 213973.20;
-const VALOR_UDI = 8.672954;
-
-function calcISR(ingreso) {
-  if (ingreso <= 0) return 0;
-  for (const bracket of ISR_TABLE_2026) {
-    if (ingreso >= bracket.limInf && ingreso <= bracket.limSup) {
-      const excedente = ingreso - bracket.limInf;
-      return bracket.cuota + excedente * bracket.pct;
-    }
+function calcISR(ingresoAnual) {
+  if (ingresoAnual <= 0) return 0;
+  for (const b of ISR_TABLE_2026) {
+    if (ingresoAnual >= b.limInf && ingresoAnual <= b.limSup) return b.cuota + (ingresoAnual - b.limInf) * b.pct;
   }
   const last = ISR_TABLE_2026[ISR_TABLE_2026.length - 1];
-  const excedente = ingreso - last.limInf;
-  return last.cuota + excedente * last.pct;
+  return last.cuota + (ingresoAnual - last.limInf) * last.pct;
 }
-
-function getMarginalRate(ingreso) {
-  for (const bracket of ISR_TABLE_2026) {
-    if (ingreso >= bracket.limInf && ingreso <= bracket.limSup) {
-      return bracket.pct;
-    }
-  }
+function tasaMarginal(ingresoAnual) {
+  for (const b of ISR_TABLE_2026) if (ingresoAnual >= b.limInf && ingresoAnual <= b.limSup) return b.pct;
   return 0.35;
 }
+const fmt = (n) => '$' + Math.round(n).toLocaleString('es-MX');
 
-const TUITION_LIMITS = {
-  preescolar: 14200,
-  primaria: 12900,
-  secundaria: 19900,
-  profesional_tecnico: 17100,
-  bachillerato: 24500,
-};
-
-// ==================== Lazy Video Component ====================
-function LazyVideo({ src, className, style, globalMuted = true }) {
-  const ref = useRef(null);
-  const videoRef = useRef(null);
-  const [loaded, setLoaded] = useState(false);
-  const [inView, setInView] = useState(false);
-
-  // Lazy load: start loading when near viewport
+// ===== Reveal al hacer scroll =====
+function useReveal() {
   useEffect(() => {
-    const obs = new IntersectionObserver(([e]) => { if (e.isIntersecting) { setLoaded(true); obs.disconnect(); } }, { rootMargin: '200px' });
-    if (ref.current) obs.observe(ref.current);
-    return () => obs.disconnect();
+    const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } }), { threshold: 0.12 });
+    document.querySelectorAll('.fsc-rv').forEach((el) => io.observe(el));
+    return () => io.disconnect();
   }, []);
-
-  // Track if currently in viewport (for sound)
-  useEffect(() => {
-    if (!videoRef.current) return;
-    const obs = new IntersectionObserver(([e]) => setInView(e.isIntersecting), { threshold: 0.5 });
-    obs.observe(videoRef.current);
-    return () => obs.disconnect();
-  }, [loaded]);
-
-  // Only unmute if globalMuted is off AND this video is in view
-  useEffect(() => {
-    if (videoRef.current) {
-      videoRef.current.muted = globalMuted || !inView;
-    }
-  }, [globalMuted, inView]);
-
-  return (
-    <div ref={ref} className={className} style={style}>
-      {loaded && <video ref={videoRef} autoPlay loop muted playsInline style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }}><source src={src} type="video/mp4" /></video>}
-    </div>
-  );
 }
 
-// ==================== Premium Floating Particles (Canvas) ====================
-function PremiumParticles({ color = 'gold', density = 35, className = '' }) {
-  const canvasRef = useRef(null);
-  const animRef = useRef(null);
-  const particlesRef = useRef([]);
-  const mouseRef = useRef({ x: -999, y: -999 });
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    let w, h;
-
-    const palette = color === 'gold'
-      ? ['rgba(212,175,55,', 'rgba(201,168,76,', 'rgba(240,215,140,', 'rgba(0,61,165,']
-      : ['rgba(0,61,165,', 'rgba(0,103,197,', 'rgba(52,211,153,', 'rgba(212,175,55,'];
-
-    const resize = () => {
-      const rect = canvas.parentElement.getBoundingClientRect();
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      w = rect.width; h = rect.height;
-      canvas.width = w * dpr; canvas.height = h * dpr;
-      canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
-      ctx.scale(dpr, dpr);
-      initParticles();
-    };
-
-    const initParticles = () => {
-      const count = density;
-      particlesRef.current = Array.from({ length: count }, () => ({
-        x: Math.random() * w,
-        y: Math.random() * h,
-        vx: (Math.random() - 0.5) * 0.4,
-        vy: (Math.random() - 0.5) * 0.25 - 0.12,
-        r: Math.random() * 3.2 + 1.2,
-        baseR: Math.random() * 3.2 + 1.2,
-        color: palette[Math.floor(Math.random() * palette.length)],
-        alpha: Math.random() * 0.45 + 0.35,
-        pulseSpeed: Math.random() * 0.025 + 0.008,
-        pulsePhase: Math.random() * Math.PI * 2,
-        drift: Math.random() * 0.5 + 0.15,
-        driftPhase: Math.random() * Math.PI * 2,
-      }));
-    };
-
-    const draw = (time) => {
-      ctx.clearRect(0, 0, w, h);
-      const particles = particlesRef.current;
-      const mx = mouseRef.current.x;
-      const my = mouseRef.current.y;
-
-      // Draw connections between nearby particles
-      for (let i = 0; i < particles.length; i++) {
-        for (let j = i + 1; j < particles.length; j++) {
-          const dx = particles[i].x - particles[j].x;
-          const dy = particles[i].y - particles[j].y;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist < 130) {
-            const opacity = (1 - dist / 130) * 0.12;
-            ctx.beginPath();
-            ctx.strokeStyle = `rgba(212,175,55,${opacity})`;
-            ctx.lineWidth = 0.5;
-            ctx.moveTo(particles[i].x, particles[i].y);
-            ctx.lineTo(particles[j].x, particles[j].y);
-            ctx.stroke();
-          }
-        }
-      }
-
-      // Draw and update particles
-      for (const p of particles) {
-        // Organic floating motion
-        p.driftPhase += 0.008;
-        p.pulsePhase += p.pulseSpeed;
-        const driftX = Math.sin(p.driftPhase) * p.drift;
-        const driftY = Math.cos(p.driftPhase * 0.7) * p.drift * 0.6;
-
-        p.x += p.vx + driftX * 0.3;
-        p.y += p.vy + driftY * 0.3;
-
-        // Mouse repulsion
-        const dmx = p.x - mx;
-        const dmy = p.y - my;
-        const dMouse = Math.sqrt(dmx * dmx + dmy * dmy);
-        if (dMouse < 120 && dMouse > 0) {
-          const force = (1 - dMouse / 120) * 1.5;
-          p.x += (dmx / dMouse) * force;
-          p.y += (dmy / dMouse) * force;
-        }
-
-        // Pulse size
-        p.r = p.baseR + Math.sin(p.pulsePhase) * 0.6;
-
-        // Wrap around edges
-        if (p.x < -10) p.x = w + 10;
-        if (p.x > w + 10) p.x = -10;
-        if (p.y < -10) p.y = h + 10;
-        if (p.y > h + 10) p.y = -10;
-
-        // Draw particle with glow
-        const alpha = p.alpha + Math.sin(p.pulsePhase) * 0.12;
-        // Outer glow (large soft halo)
-        const grd = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * 6);
-        grd.addColorStop(0, p.color + (alpha * 0.8) + ')');
-        grd.addColorStop(0.3, p.color + (alpha * 0.25) + ')');
-        grd.addColorStop(0.7, p.color + (alpha * 0.06) + ')');
-        grd.addColorStop(1, p.color + '0)');
-        ctx.beginPath();
-        ctx.fillStyle = grd;
-        ctx.arc(p.x, p.y, p.r * 6, 0, Math.PI * 2);
-        ctx.fill();
-        // Core (bright center)
-        ctx.beginPath();
-        ctx.fillStyle = p.color + Math.min(alpha * 1.2, 0.95) + ')';
-        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-        ctx.fill();
-        // Hot center dot
-        ctx.beginPath();
-        ctx.fillStyle = 'rgba(255,255,255,' + (alpha * 0.5) + ')';
-        ctx.arc(p.x, p.y, p.r * 0.35, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      animRef.current = requestAnimationFrame(draw);
-    };
-
-    const handleMouse = (e) => {
-      const rect = canvas.getBoundingClientRect();
-      mouseRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-    };
-    const handleLeave = () => { mouseRef.current = { x: -999, y: -999 }; };
-
-    resize();
-    animRef.current = requestAnimationFrame(draw);
-    window.addEventListener('resize', resize);
-    canvas.addEventListener('mousemove', handleMouse);
-    canvas.addEventListener('mouseleave', handleLeave);
-
-    // Pause when out of viewport
-    const obs = new IntersectionObserver(([e]) => {
-      if (e.isIntersecting) {
-        if (!animRef.current) animRef.current = requestAnimationFrame(draw);
-      } else {
-        if (animRef.current) { cancelAnimationFrame(animRef.current); animRef.current = null; }
-      }
-    }, { threshold: 0.05 });
-    obs.observe(canvas);
-
-    return () => {
-      cancelAnimationFrame(animRef.current);
-      window.removeEventListener('resize', resize);
-      canvas.removeEventListener('mousemove', handleMouse);
-      canvas.removeEventListener('mouseleave', handleLeave);
-      obs.disconnect();
-    };
-  }, [color, density]);
-
-  return (
-    <canvas
-      ref={canvasRef}
-      className={className}
-      style={{
-        position: 'absolute', inset: 0, width: '100%', height: '100%',
-        pointerEvents: 'auto', zIndex: 0, borderRadius: 'inherit',
-      }}
-    />
-  );
-}
-
-// ==================== Animated Counter Hook (rAF optimized) ====================
-function useCountUp(end, duration = 2000, startOnView = true) {
-  const [count, setCount] = useState(0);
-  const [started, setStarted] = useState(false);
+// ===== Contador animado =====
+function useCountUp(end, duration = 1800) {
+  const [n, setN] = useState(0);
+  const [go, setGo] = useState(false);
   const ref = useRef(null);
   useEffect(() => {
-    if (!startOnView) return;
-    const obs = new IntersectionObserver(([e]) => { if (e.isIntersecting && !started) { setStarted(true); obs.disconnect(); } }, { threshold: 0.3 });
-    if (ref.current) obs.observe(ref.current);
-    return () => obs.disconnect();
-  }, [started]);
+    const io = new IntersectionObserver(([e]) => { if (e.isIntersecting) { setGo(true); io.disconnect(); } }, { threshold: 0.4 });
+    if (ref.current) io.observe(ref.current);
+    return () => io.disconnect();
+  }, []);
   useEffect(() => {
-    if (!started) return;
-    let startTime = null;
-    let rafId;
-    const animate = (timestamp) => {
-      if (!startTime) startTime = timestamp;
-      const progress = Math.min((timestamp - startTime) / duration, 1);
-      setCount(Math.floor(progress * end));
-      if (progress < 1) { rafId = requestAnimationFrame(animate); }
-      else { setCount(end); }
-    };
-    rafId = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(rafId);
-  }, [started, end, duration]);
-  return [count, ref];
+    if (!go) return;
+    let raf, t0 = null;
+    const step = (t) => { if (!t0) t0 = t; const p = Math.min((t - t0) / duration, 1); setN(p * end); if (p < 1) raf = requestAnimationFrame(step); else setN(end); };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [go, end, duration]);
+  return [n, ref];
 }
 
-// ==================== Component ====================
+const STARS = (n = 5) => Array.from({ length: n }, (_, i) => <Star key={i} size={16} fill="currentColor" stroke="none" />);
+
+// ===== CASOS DE ÉXITO (ilustrativos — reemplazar por reales con consentimiento) =====
+const CASOS = [
+  { ini: 'AM', nombre: 'Dr. Alejandro M.', rol: 'Médico · CDMX', stat: '+$82,000', statK: 'recuperados de ISR', quote: 'Lo que pagaba de impuestos ahora vuelve a mi retiro. Recuperé $82,000 en mi primera declaración con mi PPR.' },
+  { ini: 'LG', nombre: 'Laura G.', rol: 'Emprendedora · GDL', stat: '35%', statK: 'menos ISR al año', quote: 'Pasé de no entender nada de impuestos a tener una estrategia clara. Ahorro y deduzco al mismo tiempo.' },
+  { ini: 'FR', nombre: 'Familia Ríos', rol: 'Monterrey', stat: '2 en 1', statK: 'retiro + protección', quote: 'Protegimos a nuestros hijos y empezamos nuestro retiro el mismo mes. El acompañamiento fue total.' },
+];
+
 export default function Landing() {
-  const [isNavScrolled, setIsNavScrolled] = useState(false);
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [formData, setFormData] = useState({
-    name: '', phone: '', email: '', incomeType: '', approxIncome: '',
-    declaracion: '', retiroPlan: ''
-  });
-  const [formStatus, setFormStatus] = useState('');
-  const [formErrors, setFormErrors] = useState({});
-  const [openFaqIndex, setOpenFaqIndex] = useState(null);
-  const [heroSlide, setHeroSlide] = useState(0);
-  const [visibleSections, setVisibleSections] = useState({});
-  const [isMuted, setIsMuted] = useState(true);
-  const [heroInView, setHeroInView] = useState(true);
-  const heroVideoRefs = useRef([]);
-  const heroSectionRef = useRef(null);
-  const observerRefs = useRef([]);
-  const sectionRefs = useRef({});
   const navigate = useNavigate();
+  const [navOpen, setNavOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+  useReveal();
 
-  // Animated counters for trust bar
-  const [trustCount1, trustRef1] = useCountUp(900, 2000);
-  const [trustCount2, trustRef2] = useCountUp(100, 1500);
-  const [trustCount3, trustRef3] = useCountUp(10, 1200);
-
-  // Live "people requesting" counter (random 6-20, changes every 8s)
-  const [liveUsers, setLiveUsers] = useState(() => Math.floor(Math.random() * 15) + 6);
+  // Tracking de entrada
   useEffect(() => {
-    const interval = setInterval(() => setLiveUsers(Math.floor(Math.random() * 15) + 6), 30000);
-    return () => clearInterval(interval);
+    try { initScrollTracking(); trackMetaViewContent({ seccion: 'Landing_Home' }); } catch { /* best-effort */ }
+  }, []);
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 20);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  // Tracking — inicializar scroll depth tracking al montar
+  // ===== Stats =====
+  const [c1, r1] = useCountUp(900);
+  const [c2, r2] = useCountUp(35);
+  const [c3, r3] = useCountUp(15);
+
+  // ===== Calculadora ISR =====
+  const [ingresoMensual, setIngresoMensual] = useState(60000);
+  const ingresoAnual = ingresoMensual * 12;
+  const isrActual = calcISR(ingresoAnual);
+  const marginal = tasaMarginal(ingresoAnual);
+  const aportacionPPR = Math.min(ingresoAnual * 0.10, CINCO_UMAS_ANUALES);
+  const devolucion = aportacionPPR * marginal;
+  const isrOptimizado = Math.max(0, isrActual - devolucion);
+  const pctAhorro = isrActual > 0 ? Math.round((devolucion / isrActual) * 100) : 0;
   useEffect(() => {
-    initScrollTracking();
-    trackMetaViewContent({ seccion: 'Landing_Home' });
-  }, []);
+    const t = setTimeout(() => { try { trackCalculadoraISR(ingresoMensual, devolucion); } catch { /* noop */ } }, 1200);
+    return () => clearTimeout(t);
+  }, [ingresoMensual, devolucion]);
 
-  // Hero carousel slides with videos
-  const heroSlides = [
-    {
-      video: 'https://res.cloudinary.com/dihxi7zgv/video/upload/Hero_raises_shield_202603302047_cakk6l.mp4',
-      title: 'Tu dinero puede hacer más por ti',
-      subtitle: 'cuando entiendes cómo moverlo con estrategia',
-      stat: '$1,250,000+ MXN',
-      statLabel: 'Proyección estimada a 25 años',
-    },
-    {
-      video: 'https://res.cloudinary.com/dihxi7zgv/video/upload/Man_points_at_202603302047_ifuc9e.mp4',
-      title: 'Menos impuestos, más patrimonio',
-      subtitle: 'Conecta ahorro, retiro y deducción fiscal de forma inteligente',
-      stat: 'Hasta 30%',
-      statLabel: 'Devolución estimada de impuestos',
-    },
-    {
-      video: 'https://res.cloudinary.com/dihxi7zgv/video/upload/Flow_202603302047_bp5gbq.mp4',
-      title: 'Planea hoy, vive tranquilo mañana',
-      subtitle: 'Cada año que esperas, necesitas ahorrar más para llegar al mismo objetivo',
-      stat: '25+ años',
-      statLabel: 'De crecimiento compuesto a tu favor',
-    },
-  ];
-
-  // Auto-rotate carousel — wait for current video to finish, then advance
-  useEffect(() => {
-    const video = heroVideoRefs.current[heroSlide];
-    if (!video) return;
-    // Restart from beginning so user sees full video
-    video.currentTime = 0;
-    video.loop = false;
-    const onEnded = () => {
-      setHeroSlide((prev) => (prev + 1) % heroSlides.length);
-    };
-    video.addEventListener('ended', onEnded);
-    // Fallback: if video is very long (>30s), advance anyway
-    const fallback = setTimeout(onEnded, 30000);
-    return () => {
-      video.removeEventListener('ended', onEnded);
-      clearTimeout(fallback);
-      video.loop = true;
-    };
-  }, [heroSlide]);
-
-  // Track hero section visibility — mute all hero videos when scrolled away
-  useEffect(() => {
-    if (!heroSectionRef.current) return;
-    const obs = new IntersectionObserver(([e]) => setHeroInView(e.isIntersecting), { threshold: 0.1 });
-    obs.observe(heroSectionRef.current);
-    return () => obs.disconnect();
-  }, []);
-
-  // Sync mute state on hero videos — only active slide plays sound AND only when hero is in view
-  useEffect(() => {
-    heroVideoRefs.current.forEach((v, i) => {
-      if (v) v.muted = isMuted || !heroInView || i !== heroSlide;
-    });
-  }, [isMuted, heroSlide, heroInView]);
-
-  // Tax calculator state
-  const [taxCalc, setTaxCalc] = useState({
-    ingresoAnual: 1200000,
-    otrosIngresos: 0,
-    medicos: 0,
-    funerarios: 0,
-    donativos: 0,
-    hipotecarios: 0,
-    seguroGMM: 0,
-    transporteEscolar: 0,
-    numHijos: 0,
-    hijos: [],
-    art185: 0,
-    ppr: 100000,
-  });
-
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [storyStep, setStoryStep] = useState(1);
-  const [animatedISR, setAnimatedISR] = useState(0);
-
-  // Calculate tax results
-  const calcTaxResults = () => {
-    const totalIngresos = taxCalc.ingresoAnual + taxCalc.otrosIngresos;
-    if (totalIngresos <= 0) return { sinDed: 0, conDedSinRetiro: 0, conDedConRetiro: 0, devolucion: 0, ingresoReal: 0, mensual: 0, pctRecup: 0 };
-
-    // Personal deduction caps
-    const capFunerarios = 42794.64;
-    const capDonativos = totalIngresos * 0.07;
-    const capPersonalTotal = Math.min(totalIngresos * 0.15, CINCO_UMAS_ANUALES);
-
-    let totalPersonal = 0;
-    totalPersonal += taxCalc.medicos;
-    totalPersonal += Math.min(taxCalc.funerarios, capFunerarios);
-    totalPersonal += Math.min(taxCalc.donativos, capDonativos);
-    totalPersonal += taxCalc.hipotecarios;
-    totalPersonal += taxCalc.seguroGMM;
-    totalPersonal += taxCalc.transporteEscolar;
-
-    // Tuition deductions
-    taxCalc.hijos.forEach((hijo) => {
-      if (hijo.nivel && hijo.monto > 0) {
-        const limit = TUITION_LIMITS[hijo.nivel] || 0;
-        totalPersonal += Math.min(hijo.monto, limit);
-      }
-    });
-
-    totalPersonal = Math.min(totalPersonal, capPersonalTotal);
-
-    // Retirement deductions
-    const capPPR = Math.min(totalIngresos * 0.10, CINCO_UMAS_ANUALES);
-    const capArt185 = 152000;
-    const dedArt185 = Math.min(taxCalc.art185, capArt185);
-    const dedPPR = Math.min(taxCalc.ppr, capPPR);
-    const totalRetiro = dedArt185 + dedPPR;
-
-    // ISR calculations
-    const isrSinDed = calcISR(totalIngresos);
-    const isrConDedSinRetiro = calcISR(totalIngresos - totalPersonal);
-    const isrConDedConRetiro = calcISR(totalIngresos - totalPersonal - totalRetiro);
-
-    const devolucion = isrSinDed - isrConDedConRetiro;
-    const ingresoReal = totalIngresos - isrConDedConRetiro;
-    const mensual = ingresoReal / 12;
-    const pctRecup = totalIngresos > 0 ? getMarginalRate(totalIngresos) * 100 : 0;
-
-    // What they're losing by not using deductions (capped to income)
-    const maxDeduciblePersonal = capPersonalTotal;
-    const maxDeducibleRetiro = capPPR + capArt185;
-    const maxDeducibleTotal = Math.min(maxDeduciblePersonal + maxDeducibleRetiro, totalIngresos);
-    const deduciblesNoUsados = Math.max(0, maxDeducibleTotal - totalPersonal - totalRetiro);
-
-    return {
-      totalIngresos,
-      totalPersonal,
-      totalRetiro,
-      isrSinDed,
-      isrConDedSinRetiro,
-      isrConDedConRetiro,
-      devolucion,
-      devolucionSinRetiro: isrSinDed - isrConDedSinRetiro,
-      ingresoReal,
-      ingresoRealSinDed: totalIngresos - isrSinDed,
-      mensual,
-      pctRecup,
-      maxDeduciblePersonal,
-      maxDeducibleRetiro,
-      deduciblesNoUsados,
-      capPPR,
-    };
-  };
-
-  const taxResults = calcTaxResults();
-
-  // Animate ISR count-up when step 2 reveals
-  useEffect(() => {
-    if (storyStep < 2) { setAnimatedISR(0); return; }
-    const target = Math.round(taxResults.isrSinDed);
-    if (target <= 0) { setAnimatedISR(0); return; }
-    let startTime = null;
-    let rafId;
-    const duration = 1800;
-    const animate = (ts) => {
-      if (!startTime) startTime = ts;
-      const progress = Math.min((ts - startTime) / duration, 1);
-      const eased = 1 - Math.pow(1 - progress, 3); // easeOutCubic
-      setAnimatedISR(Math.floor(eased * target));
-      if (progress < 1) rafId = requestAnimationFrame(animate);
-      else setAnimatedISR(target);
-    };
-    rafId = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(rafId);
-  }, [storyStep, taxResults.isrSinDed]);
-
-  // Auto-scroll to newly revealed step
-  const storyStepRefs = useRef({});
-  useEffect(() => {
-    if (storyStep > 1 && storyStepRefs.current[storyStep]) {
-      setTimeout(() => {
-        storyStepRefs.current[storyStep]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }, 150);
-    }
-  }, [storyStep]);
-
-  // Scroll effects (throttled + passive)
-  useEffect(() => {
-    let ticking = false;
-    const handleScroll = () => {
-      if (!ticking) {
-        requestAnimationFrame(() => {
-          setIsNavScrolled(window.scrollY > 50);
-          ticking = false;
-        });
-        ticking = true;
-      }
-    };
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => entries.forEach((entry) => {
-        if (entry.isIntersecting) {
-          entry.target.classList.add('slide-up');
-          const id = entry.target.dataset.section;
-          if (id) setVisibleSections(prev => ({ ...prev, [id]: true }));
-        }
-      }),
-      { threshold: 0.1 }
-    );
-    observerRefs.current.forEach((ref) => { if (ref) observer.observe(ref); });
-    Object.values(sectionRefs.current).forEach((ref) => { if (ref) observer.observe(ref); });
-
-    return () => observer.disconnect();
-  }, []);
-
-  // Pause infinite animations when sections are out of viewport
-  useEffect(() => {
-    const animObserver = new IntersectionObserver(
-      (entries) => entries.forEach((entry) => {
-        entry.target.classList.toggle('anim-paused', !entry.isIntersecting);
-      }),
-      { rootMargin: '100px 0px' }
-    );
-    document.querySelectorAll('.landing-section').forEach((s) => animObserver.observe(s));
-    return () => animObserver.disconnect();
-  }, []);
-
-  const scrollToSection = (id) => {
-    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
-    setIsMobileMenuOpen(false);
-  };
-
-  const sanitize = (str) => str.replace(/[<>"'&]/g, '').trim();
-  const validateForm = () => {
-    const errors = {};
+  // ===== Formulario =====
+  const [formData, setFormData] = useState({ name: '', phone: '', email: '', incomeType: '', approxIncome: '', declaracion: '', retiroPlan: '' });
+  const [formErrors, setFormErrors] = useState({});
+  const [formStatus, setFormStatus] = useState('');
+  const sanitize = (s) => s.replace(/[<>"'&]/g, '').trim();
+  const setField = (k, v) => { setFormData((d) => ({ ...d, [k]: v })); setFormErrors((e) => ({ ...e, [k]: '' })); };
+  const validate = () => {
+    const e = {};
     const name = formData.name.trim();
-    if (!name || name.length < 2 || name.length > 100) errors.name = 'Ingresa tu nombre completo';
-    if (!/^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s.'-]+$/.test(name)) errors.name = 'El nombre contiene caracteres no válidos';
-    const phone = formData.phone.replace(/[\s\-().+]/g, '');
-    if (!/^\d{10,15}$/.test(phone)) errors.phone = 'Ingresa un teléfono válido (10 dígitos mínimo)';
-    const email = formData.email.trim().toLowerCase();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) errors.email = 'Ingresa un correo electrónico válido';
-    if (!formData.incomeType) errors.incomeType = 'Selecciona tu tipo de ingreso';
-    if (!formData.approxIncome) errors.approxIncome = 'Selecciona tu ingreso aproximado';
-    return errors;
+    if (!name || name.length < 2) e.name = 'Ingresa tu nombre';
+    else if (!/^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s.'-]+$/.test(name)) e.name = 'Nombre no válido';
+    if (!/^\d{10,15}$/.test(formData.phone.replace(/[\s\-().+]/g, ''))) e.phone = 'Teléfono válido (10 dígitos)';
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(formData.email.trim().toLowerCase())) e.email = 'Correo no válido';
+    if (!formData.incomeType) e.incomeType = 'Selecciona tu tipo de ingreso';
+    if (!formData.approxIncome) e.approxIncome = 'Selecciona tu rango de ingreso';
+    return e;
   };
-
-  const handleFormSubmit = async (e) => {
-    e.preventDefault();
-    const errors = validateForm();
-    setFormErrors(errors);
-    if (Object.keys(errors).length > 0) return;
+  const submit = async (ev) => {
+    ev.preventDefault();
+    const e = validate();
+    setFormErrors(e);
+    if (Object.keys(e).length) return;
     setFormStatus('loading');
     try {
-      const cleanData = {
-        name: sanitize(formData.name),
-        phone: formData.phone.replace(/[^\d+\-() ]/g, ''),
-        email: formData.email.trim().toLowerCase(),
-        incomeType: formData.incomeType,
-        approxIncome: formData.approxIncome,
-        declaracion: formData.declaracion,
-        retiroPlan: formData.retiroPlan,
+      const payload = {
+        name: sanitize(formData.name), phone: formData.phone.replace(/[^\d+\-() ]/g, ''),
+        email: formData.email.trim().toLowerCase(), incomeType: formData.incomeType,
+        approxIncome: formData.approxIncome, declaracion: formData.declaracion, retiroPlan: formData.retiroPlan,
       };
-      const API_URL = import.meta.env.VITE_API_URL || '/api';
-      const response = await fetch(`${API_URL}/leads`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(cleanData),
-      });
-      if (response.ok) {
-        setFormStatus('success');
-        trackMetaLead({
-          tipo: 'CTA Landing Form',
-          categoria: cleanData.incomeType,
-          valor_estimado: 0,
-          ingreso: cleanData.approxIncome,
-        });
-        const savedName = cleanData.name;
-        const savedEmail = cleanData.email;
-        setFormData({ name: '', phone: '', email: '', incomeType: '', approxIncome: '', declaracion: '', retiroPlan: '' });
-        setTimeout(() => setFormStatus(''), 3000);
-        if (window.Calendly) {
-          window.Calendly.initPopupWidget({
-            url: 'https://calendly.com/ingrid-escobar-grupointegraccion/new-meeting',
-            prefill: { name: savedName, email: savedEmail },
-          });
-        }
-      } else { setFormStatus('error'); }
+      const r = await fetch(`${API_URL}/leads`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      if (!r.ok) throw new Error();
+      setFormStatus('success');
+      try { trackMetaLead({ tipo: 'CTA Landing Form', categoria: payload.incomeType, valor_estimado: 0, ingreso: payload.approxIncome }); } catch { /* noop */ }
+      const savedName = payload.name, savedEmail = payload.email;
+      setFormData({ name: '', phone: '', email: '', incomeType: '', approxIncome: '', declaracion: '', retiroPlan: '' });
+      setTimeout(() => setFormStatus(''), 4000);
+      if (window.Calendly) window.Calendly.initPopupWidget({ url: CALENDLY, prefill: { name: savedName, email: savedEmail } });
     } catch { setFormStatus('error'); }
   };
 
-  const formatMXN = (n) => {
-    if (n === undefined || n === null || isNaN(n)) return '$0';
-    return '$' + Math.round(n).toLocaleString('es-MX');
-  };
-
-  const faqItems = [
-    { question: '¿Cuáles son las deducciones fiscales autorizadas?', answer: 'Las principales son: honorarios médicos y dentales, gastos funerarios, donativos, intereses reales por créditos hipotecarios, seguro de gastos médicos mayores y transporte escolar obligatorio. Cada una tiene topes específicos conforme a la ley.' },
-    { question: '¿Cuánto puedo deducir de la escuela de mis hijos?', answer: 'Depende del nivel educativo. Preescolar: $14,200, Primaria: $12,900, Secundaria: $19,900, Profesional técnico: $17,100 y Bachillerato: $24,500 anuales por hijo. Estos montos son los topes máximos deducibles.' },
-    { question: '¿Hay algún artículo para deducción de retiro?', answer: 'Sí, los artículos 151 y 185 de la LISR. Sin embargo, no aplican para todos los casos — necesitas un especialista fiscal que analice tu situación particular para determinar cuál te conviene y cómo aplicarlos correctamente.' },
-    { question: '¿Qué me conviene, exentar o deducir? ¿Puedo aplicar ambas?', answer: 'En algunos casos sí puedes combinar ambas estrategias. Todo depende de tu estructura de ingresos, tipo de régimen fiscal y situación particular. Un análisis personalizado te da la respuesta correcta.' },
-    { question: '¿Qué me ofrecen con la asesoría personalizada?', answer: 'Revisamos tu situación fiscal completa, calculamos tus escenarios reales con la tabla ISR vigente, identificamos oportunidades de deducción que no estás aprovechando, y diseñamos una estrategia de retiro + ahorro fiscal adaptada a tu caso.' },
-    { question: '¿El PPR es seguro?', answer: 'Sí. Los Planes Personales de Retiro están regulados por la CNBV (Comisión Nacional Bancaria y de Valores) y operan bajo el marco legal del Art. 151 LISR, con respaldo institucional en México.' },
-  ];
-
-  const styles = `
-    /* ==================== Navbar ==================== */
-    .landing-navbar {
-      position: fixed; top: 0; left: 0; right: 0;
-      background: rgba(255,255,255,0.95);
-      backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-      z-index: 1030; transition: all 400ms cubic-bezier(0.4,0,0.2,1);
-      box-shadow: 0 1px 0 rgba(0,18,51,0.06);
-      transform: translateZ(0);
-    }
-    .landing-navbar.scrolled {
-      box-shadow: 0 4px 20px rgba(0,18,51,0.1);
-      background: rgba(255,255,255,0.98);
-    }
-    .landing-navbar-content {
-      max-width: 1200px; margin: 0 auto; padding: 0 1.5rem;
-      display: flex; justify-content: space-between; align-items: center; height: 56px;
-    }
-    .landing-navbar-logo { text-decoration: none; display: flex; align-items: center; }
-    .landing-navbar-logo:hover { opacity: 0.85; }
-    .landing-navbar-menu {
-      display: flex; gap: 2rem; list-style: none; align-items: center;
-    }
-    .landing-navbar-menu a {
-      color: #2D3436; text-decoration: none; font-weight: 500;
-      font-size: 0.9rem; transition: color 150ms;
-    }
-    .landing-navbar-menu a:hover { color: #003DA5; }
-    .landing-navbar-cta { display: flex; gap: 1rem; align-items: center; }
-    .landing-btn {
-      padding: 0.5rem 1.5rem; border-radius: 1.25rem; font-weight: 600;
-      font-size: 0.875rem; border: none; cursor: pointer; transition: all 300ms;
-      font-family: 'Inter', sans-serif;
-    }
-    .landing-btn-primary {
-      background: linear-gradient(135deg, #003DA5, #0067C5); color: white;
-      box-shadow: 0 10px 15px -3px rgba(0,61,165,0.12);
-    }
-    .landing-btn-primary:hover { transform: translateY(-2px); box-shadow: 0 20px 25px -5px rgba(0,61,165,0.15); }
-    .landing-btn-outline { background: transparent; color: #003DA5; border: 1.5px solid #003DA5; border-radius: 2rem; }
-    .landing-btn-outline:hover { background: rgba(0,61,165,0.05); }
-    .landing-btn-gold {
-      background: linear-gradient(135deg, #D4AF37, #C9A84C, #B99830); color: #001233;
-      box-shadow: 0 8px 24px rgba(212,175,55,0.3); font-weight: 700;
-    }
-    .landing-btn-gold:hover { transform: translateY(-3px); box-shadow: 0 16px 32px rgba(212,175,55,0.4); }
-    .landing-navbar .landing-btn-outline { color: #003DA5; border-color: #003DA5; }
-    .landing-navbar .landing-btn-outline:hover { background: rgba(0,61,165,0.05); }
-    .landing-navbar .landing-btn-primary { background: linear-gradient(135deg, #003DA5, #0052D4); color: white; box-shadow: 0 4px 12px rgba(0,61,165,0.2); }
-    .landing-navbar .landing-btn-primary:hover { background: linear-gradient(135deg, #002B75, #003DA5); box-shadow: 0 6px 16px rgba(0,61,165,0.3); }
-    .landing-hamburger { display: none; flex-direction: column; gap: 5px; background: transparent; border: none; cursor: pointer; }
-    .landing-hamburger span { width: 24px; height: 2.5px; background: #2D3436; border-radius: 2px; transition: all 300ms; }
-
-    /* ==================== Hero ==================== */
-    .landing-hero {
-      background: linear-gradient(160deg, #001233 0%, #001845 30%, #002855 60%, #003DA5 100%);
-      padding-top: 56px; position: relative; overflow: hidden;
-      display: flex; align-items: center; min-height: 100vh;
-    }
-    .landing-hero::before {
-      content: ''; position: absolute; top: -20%; right: -10%; width: 700px; height: 700px;
-      background: radial-gradient(circle, rgba(201,168,76,0.12) 0%, rgba(0,103,197,0.06) 40%, transparent 70%);
-      border-radius: 50%; animation: float 8s ease-in-out infinite;
-    }
-    .landing-hero::after {
-      content: ''; position: absolute; bottom: -30%; left: -15%; width: 600px; height: 600px;
-      background: radial-gradient(circle, rgba(0,103,197,0.08) 0%, transparent 60%);
-      border-radius: 50%; animation: float 10s ease-in-out infinite reverse;
-    }
-    @keyframes float { 0%,100% { transform: translate3d(0,0,0); } 50% { transform: translate3d(0,-20px,0); } }
-    .landing-hero-content {
-      max-width: 1200px; width: 100%; padding: 2rem 1.5rem;
-      display: grid; grid-template-columns: 1fr 1fr; gap: 3rem;
-      align-items: center; position: relative; z-index: 1; margin: 0 auto;
-    }
-    .landing-hero-text h1 {
-      color: #FFFFFF; margin-bottom: 1.25rem; font-size: clamp(2rem, 4vw, 3rem);
-      line-height: 1.15; letter-spacing: -0.03em; font-weight: 800;
-      font-family: 'Playfair Display', serif;
-    }
-    .landing-hero-text h1 span.gold { color: #D4AF37; }
-    .landing-hero-text p { color: rgba(255,255,255,0.8); font-size: 1.05rem; margin-bottom: 2rem; line-height: 1.7; }
-    .landing-hero-cta { display: flex; gap: 1rem; flex-wrap: wrap; }
-    .landing-hero-cta .landing-btn { padding: 0.85rem 2rem; font-size: 1rem; min-height: 48px; border-radius: 2rem; }
-    .landing-btn-outline-hero {
-      background: rgba(255,255,255,0.1); color: white; border: 2px solid rgba(255,255,255,0.4);
-      backdrop-filter: blur(8px); font-weight: 600; border-radius: 2rem;
-      transition: all 300ms;
-    }
-    .landing-btn-outline-hero:hover { background: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.7); transform: translateY(-3px); }
-
-    /* Hero Carousel - Video Based */
-    .hero-carousel {
-      border-radius: 1.5rem; position: relative; overflow: hidden;
-      min-height: 440px; box-shadow: 0 20px 60px rgba(0,0,0,0.4);
-    }
-    .hero-carousel-video {
-      position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
-      opacity: 0; transition: opacity 600ms ease; border-radius: 1.5rem;
-    }
-    .hero-carousel-video.active { opacity: 1; }
-    .hero-carousel-overlay {
-      position: absolute; inset: 0; border-radius: 1.5rem;
-      background: linear-gradient(to top, rgba(0,18,51,0.85) 0%, rgba(0,18,51,0.3) 50%, transparent 100%);
-      z-index: 1;
-    }
-    .hero-slide-content {
-      position: absolute; bottom: 0; left: 0; right: 0; padding: 2rem;
-      z-index: 2; opacity: 0; transform: translateY(15px); transition: all 500ms ease;
-    }
-    .hero-slide-content.active { opacity: 1; transform: translateY(0); }
-    .hero-slide-title { color: #FFFFFF; font-size: 1.35rem; font-weight: 700; margin-bottom: 0.35rem; line-height: 1.3; font-family: 'Playfair Display', serif; }
-    .hero-slide-subtitle { color: rgba(255,255,255,0.75); font-size: 0.9rem; line-height: 1.5; margin-bottom: 1rem; }
-    .hero-slide-stat {
-      display: inline-flex; align-items: center; gap: 1rem;
-      background: rgba(201,168,76,0.12); border: 1px solid rgba(201,168,76,0.3);
-      border-radius: 1rem; padding: 0.75rem 1.25rem;
-    }
-    .hero-slide-stat-value { color: #D4AF37; font-size: 1.5rem; font-weight: 700; font-family: 'Playfair Display', serif; }
-    .hero-slide-stat-label { color: rgba(255,255,255,0.7); font-size: 0.8rem; }
-    .hero-dots { display: flex; gap: 0.5rem; position: absolute; bottom: 1rem; left: 50%; transform: translateX(-50%); z-index: 3; }
-    .hero-dot {
-      width: 8px; height: 8px; border-radius: 50%; border: none; cursor: pointer;
-      background: rgba(255,255,255,0.3); transition: all 300ms;
-    }
-    .hero-dot.active { background: #D4AF37; width: 24px; border-radius: 4px; box-shadow: 0 0 12px rgba(212,175,55,0.4); }
-
-    /* ==================== Reveal Animations ==================== */
-    @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
-    @keyframes pulseGlow { 0%,100% { box-shadow: 0 0 20px rgba(212,175,55,0.2); } 50% { box-shadow: 0 0 40px rgba(212,175,55,0.4); } }
-    @keyframes gradientShift { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
-
-    /* ===== Apple-style scroll reveal system (GPU composited) ===== */
-    .reveal-up { opacity: 0; transform: translate3d(0,32px,0); filter: blur(3px); will-change: opacity, transform, filter; transition: opacity 0.55s cubic-bezier(0.25,0.46,0.45,0.94), transform 0.55s cubic-bezier(0.25,0.46,0.45,0.94), filter 0.55s cubic-bezier(0.25,0.46,0.45,0.94); }
-    .reveal-left { opacity: 0; transform: translate3d(-32px,0,0); filter: blur(3px); will-change: opacity, transform, filter; transition: opacity 0.55s cubic-bezier(0.25,0.46,0.45,0.94), transform 0.55s cubic-bezier(0.25,0.46,0.45,0.94), filter 0.55s cubic-bezier(0.25,0.46,0.45,0.94); }
-    .reveal-right { opacity: 0; transform: translate3d(32px,0,0); filter: blur(3px); will-change: opacity, transform, filter; transition: opacity 0.55s cubic-bezier(0.25,0.46,0.45,0.94), transform 0.55s cubic-bezier(0.25,0.46,0.45,0.94), filter 0.55s cubic-bezier(0.25,0.46,0.45,0.94); }
-    .reveal-scale { opacity: 0; transform: scale3d(0.92,0.92,1); filter: blur(3px); will-change: opacity, transform, filter; transition: opacity 0.55s cubic-bezier(0.25,0.46,0.45,0.94), transform 0.55s cubic-bezier(0.25,0.46,0.45,0.94), filter 0.55s cubic-bezier(0.25,0.46,0.45,0.94); }
-    .revealed { opacity: 1 !important; transform: translate3d(0,0,0) scale3d(1,1,1) !important; filter: blur(0) !important; will-change: auto; }
-    .stagger-1 { transition-delay: 0ms; } .stagger-2 { transition-delay: 80ms; } .stagger-3 { transition-delay: 160ms; }
-    .stagger-4 { transition-delay: 240ms; } .stagger-5 { transition-delay: 320ms; }
-
-    /* Section-level reveal (GPU composited) */
-    .landing-section-header { opacity: 0; transform: translate3d(0,28px,0); filter: blur(3px); will-change: opacity, transform, filter; transition: opacity 0.5s cubic-bezier(0.25,0.46,0.45,0.94), transform 0.5s cubic-bezier(0.25,0.46,0.45,0.94), filter 0.5s cubic-bezier(0.25,0.46,0.45,0.94); }
-    .landing-section-header.revealed { opacity: 1; transform: translate3d(0,0,0); filter: blur(0); will-change: auto; }
-    .brand-grid { opacity: 0; transform: translate3d(0,24px,0); filter: blur(3px); will-change: opacity, transform, filter; transition: opacity 0.55s cubic-bezier(0.25,0.46,0.45,0.94) 0.1s, transform 0.55s cubic-bezier(0.25,0.46,0.45,0.94) 0.1s, filter 0.55s cubic-bezier(0.25,0.46,0.45,0.94) 0.1s; }
-    .brand-grid.revealed { opacity: 1; transform: translate3d(0,0,0); filter: blur(0); will-change: auto; }
-    .emotion-grid { opacity: 0; transform: translate3d(0,24px,0); filter: blur(3px); will-change: opacity, transform, filter; transition: opacity 0.55s cubic-bezier(0.25,0.46,0.45,0.94) 0.1s, transform 0.55s cubic-bezier(0.25,0.46,0.45,0.94) 0.1s, filter 0.55s cubic-bezier(0.25,0.46,0.45,0.94) 0.1s; }
-    .emotion-grid.revealed { opacity: 1; transform: translate3d(0,0,0); filter: blur(0); will-change: auto; }
-
-    /* Pause infinite animations when out of viewport */
-    .anim-paused * { animation-play-state: paused !important; }
-
-    /* ==================== Section Base ==================== */
-    .landing-section { scroll-margin-top: 80px; }
-    .landing-section-padding {
-      padding: 3rem 1.5rem;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-    }
-    .landing-section-compact {
-      padding: 2rem 1.5rem;
-      min-height: auto;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-    }
-    .landing-section-light { background: #fff; }
-    .landing-section-gray { background: linear-gradient(180deg, #F8F9FC, #F0F2F7); }
-    .landing-section-blue { background: linear-gradient(160deg, #001233, #001845, #002B75); color: white; position: relative; overflow: hidden; display: flex; flex-direction: column; justify-content: center; }
-    .landing-section-blue::before {
-      content: ''; position: absolute; top: -50%; right: -20%; width: 500px; height: 500px;
-      background: radial-gradient(circle, rgba(212,175,55,0.08) 0%, transparent 60%); border-radius: 50%;
-    }
-    .landing-section-header { text-align: center; margin-bottom: 2.5rem; }
-    .landing-section-header h2 {
-      color: #001233; font-size: clamp(1.75rem, 3.5vw, 2.5rem);
-      margin-bottom: 1rem; line-height: 1.2; font-weight: 700;
-      font-family: 'Playfair Display', serif; letter-spacing: -0.02em;
-    }
-    .landing-section-header p { font-size: 1.05rem; color: #5A6577; max-width: 700px; margin: 0 auto; line-height: 1.7; }
-    .landing-section-subtitle {
-      color: #C9A84C; font-size: 0.8rem; text-transform: uppercase;
-      letter-spacing: 0.15em; font-weight: 700; margin-bottom: 1rem; display: inline-block;
-      background: linear-gradient(135deg, rgba(201,168,76,0.1), rgba(201,168,76,0.05));
-      padding: 0.35rem 1rem; border-radius: 2rem; border: 1px solid rgba(201,168,76,0.2);
-    }
-    .blue-section-header h2 { color: white; }
-    .blue-section-header p { color: rgba(255,255,255,0.85); }
-
-    /* ==================== Brand Identity Block ==================== */
-    .brand-block { max-width: 1200px; margin: 0 auto; width: 100%; box-sizing: border-box; }
-    .brand-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 3rem; align-items: center; overflow: hidden; }
-    .brand-left { position: relative; min-width: 0; }
-    .brand-right { min-width: 0; }
-    .brand-img-card {
-      max-height: 440px; width: auto; max-width: 100%;
-      border-radius: 1.5rem; box-shadow: 0 20px 50px rgba(0,18,51,0.15);
-      display: block; object-fit: contain;
-    }
-    .brand-video-wrapper {
-      border-radius: 1.5rem; overflow: hidden; box-shadow: 0 20px 50px rgba(0,18,51,0.15);
-      position: relative; aspect-ratio: 4/3;
-    }
-    .brand-video-wrapper::after {
-      content: ''; position: absolute; inset: 0; border-radius: 1.5rem;
-      border: 1px solid rgba(0,61,165,0.1);
-    }
-    .brand-name-highlight {
-      display: inline-block; background: linear-gradient(135deg, #003DA5, #0067C5);
-      color: white; padding: 0.6rem 1.75rem; border-radius: 0.75rem;
-      font-size: 1.35rem; font-weight: 700; margin: 1.5rem 0;
-      box-shadow: 0 8px 24px rgba(0,61,165,0.2);
-    }
-    .oo-infinity {
-      background: linear-gradient(90deg, #43A047, #FDD835, #FF8F00, #E91E63, #00ACC1, #FF6D00, #E53935, #3949AB, #43A047);
-      background-size: 300% 100%;
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-      background-clip: text;
-      animation: ooRainbow 4s linear infinite;
-      font-weight: 800;
-    }
-    @keyframes ooRainbow { 0% { background-position: 0% 50%; } 100% { background-position: 300% 50%; } }
-    .brand-quote {
-      background: linear-gradient(160deg, #001233, #001845);
-      border-left: 4px solid #D4AF37; padding: 1.5rem 2rem; border-radius: 0 1rem 1rem 0;
-      margin: 2rem 0 0; font-size: 1.15rem; color: white; font-weight: 600; font-style: italic;
-      font-family: 'Playfair Display', serif; line-height: 1.5;
-      box-shadow: 0 8px 32px rgba(0,18,51,0.15);
-    }
-    .brand-text { color: #4B5563; font-size: 1rem; line-height: 1.7; margin-bottom: 0.75rem; }
-    .brand-text strong { color: #003DA5; }
-
-    /* ==================== Emotional Connection ==================== */
-    .emotion-list {
-      list-style: none; padding: 0; max-width: 700px; margin: 1.5rem auto;
-    }
-    .emotion-list li {
-      padding: 0.6rem 0; color: #4B5563; font-size: 1.05rem;
-      display: flex; align-items: flex-start; gap: 0.5rem;
-    }
-    .emotion-list li::before { content: ''; display: none; }
-    .emotion-check { color: #C9A84C; font-weight: 700; font-size: 1.1rem; flex-shrink: 0; }
-    .emotion-combo {
-      display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; margin: 1rem 0;
-    }
-    .emotion-combo-item {
-      background: linear-gradient(145deg, #001845, #003DA5); color: white;
-      padding: 0.85rem 2rem; border-radius: 2rem; font-weight: 600;
-      box-shadow: 0 6px 20px rgba(0,24,69,0.2); font-size: 0.95rem;
-      border: 1px solid rgba(255,255,255,0.05);
-    }
-    .emotion-mini { text-align: center; color: #003DA5; font-weight: 600; font-size: 1.1rem; margin-top: 1.5rem; }
-    .emotion-badge {
-      font-size: 0.8rem; font-weight: 600; letter-spacing: 0.03em;
-      color: #003DA5; padding: 0.4rem 1rem; border-radius: 2rem;
-      background: linear-gradient(135deg, rgba(0,61,165,0.08), rgba(201,168,76,0.08));
-      border: 1px solid rgba(0,61,165,0.15);
-      box-shadow: 0 2px 8px rgba(0,61,165,0.06);
-      transition: all 0.3s ease;
-    }
-    .emotion-badge:hover {
-      background: linear-gradient(135deg, rgba(0,61,165,0.14), rgba(201,168,76,0.14));
-      border-color: rgba(201,168,76,0.4);
-      box-shadow: 0 4px 12px rgba(201,168,76,0.15);
-      transform: translateY(-1px);
-    }
-    .emotion-cta-wrapper { text-align: center; margin-top: 2rem; }
-    .emotion-cta {
-      display: inline-block; background: linear-gradient(135deg, #003DA5, #0052D4);
-      color: white; padding: 1.1rem 2.5rem; border-radius: 1rem;
-      font-size: 1.2rem; font-weight: 700;
-      box-shadow: 0 8px 24px rgba(0,61,165,0.25);
-      animation: ctaPulse 2.5s ease-in-out infinite;
-      position: relative; overflow: hidden;
-    }
-    .emotion-cta::before {
-      content: ''; position: absolute; top: -50%; left: -50%;
-      width: 200%; height: 200%;
-      background: linear-gradient(45deg, transparent 40%, rgba(255,255,255,0.15) 50%, transparent 60%);
-      animation: ctaShine 3s ease-in-out infinite;
-    }
-    @keyframes ctaPulse {
-      0%, 100% { box-shadow: 0 8px 24px rgba(0,61,165,0.25); transform: scale(1); }
-      50% { box-shadow: 0 12px 36px rgba(0,61,165,0.4), 0 0 20px rgba(0,82,212,0.2); transform: scale(1.02); }
-    }
-    @keyframes ctaShine {
-      0% { transform: translateX(-100%) rotate(25deg); }
-      60%, 100% { transform: translateX(100%) rotate(25deg); }
-    }
-
-    /* ==================== Problem Cards ==================== */
-    .landing-problems-grid { max-width: 1200px; margin: 0 auto; display: grid; grid-template-columns: repeat(3, 1fr); gap: 2.5rem; }
-    .landing-problem-card {
-      background: white; border: none; border-radius: 1.25rem;
-      padding: 2.5rem 2rem; position: relative; overflow: hidden;
-      box-shadow: 0 4px 20px rgba(0,18,51,0.06);
-      opacity: 0; transform: translateY(28px); filter: blur(3px);
-      transition: opacity 0.5s cubic-bezier(0.25,0.46,0.45,0.94), transform 0.5s cubic-bezier(0.25,0.46,0.45,0.94), filter 0.5s cubic-bezier(0.25,0.46,0.45,0.94), box-shadow 400ms ease;
-    }
-    .landing-problem-card.revealed { opacity: 1; transform: translateY(0); filter: blur(0); }
-    .landing-problem-card::before {
-      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 4px;
-      background: linear-gradient(90deg, #D4AF37, #C9A84C, #B99830); transform: scaleX(0);
-      transform-origin: left; transition: transform 400ms cubic-bezier(0.4,0,0.2,1);
-    }
-    .landing-problem-card:hover::before { transform: scaleX(1); }
-    .landing-problem-card:hover { box-shadow: 0 20px 40px rgba(0,18,51,0.12); }
-    .problem-number {
-      position: absolute; top: 0.5rem; right: 1rem; font-size: 6rem; font-weight: 900;
-      background: linear-gradient(180deg, #D4AF37, rgba(212,175,55,0.15));
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-      background-clip: text; font-family: 'Playfair Display', serif; line-height: 1;
-      transition: all 500ms ease; filter: drop-shadow(0 2px 4px rgba(212,175,55,0.2));
-    }
-    .landing-problem-card:hover .problem-number {
-      background: linear-gradient(180deg, #D4AF37, rgba(212,175,55,0.3));
-      -webkit-background-clip: text; background-clip: text;
-      transform: scale(1.08); filter: drop-shadow(0 4px 8px rgba(212,175,55,0.3));
-    }
-    .landing-problem-icon {
-      width: 60px; height: 60px; background: linear-gradient(145deg, #001845, #003DA5);
-      border-radius: 1rem; display: flex; align-items: center; justify-content: center;
-      margin-bottom: 1.25rem; color: white;
-      box-shadow: 0 8px 20px rgba(0,61,165,0.2);
-    }
-    .landing-problem-card h3 { color: #001233; margin-bottom: 0.75rem; font-size: 1.2rem; font-weight: 700; font-family: 'Playfair Display', serif; }
-    .landing-problem-card p { color: #5A6577; line-height: 1.7; margin: 0; font-size: 1rem; }
-
-    /* ==================== Solution Cards ==================== */
-    .landing-services-grid {
-      max-width: 1200px; margin: 0 auto; display: grid; grid-template-columns: repeat(3, 1fr); gap: 2.5rem;
-      position: relative;
-    }
-    .landing-services-grid::before {
-      content: ''; position: absolute; top: 50%; left: 10%; right: 10%; height: 2px;
-      background: linear-gradient(90deg, transparent, rgba(0,61,165,0.15), rgba(212,175,55,0.3), rgba(0,61,165,0.15), transparent);
-      z-index: 0;
-    }
-    .landing-service-card {
-      background: white; border-radius: 1.5rem; padding: 2.5rem 2rem;
-      border: 1px solid rgba(0,18,51,0.06); position: relative; overflow: visible;
-      box-shadow: 0 4px 20px rgba(0,18,51,0.06);
-      opacity: 0; transform: translateY(28px) scale(0.97); filter: blur(3px);
-      transition: opacity 0.5s cubic-bezier(0.25,0.46,0.45,0.94), transform 0.5s cubic-bezier(0.25,0.46,0.45,0.94), filter 0.5s cubic-bezier(0.25,0.46,0.45,0.94), box-shadow 400ms ease, border-color 400ms ease;
-      z-index: 1;
-    }
-    .landing-service-card::before {
-      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 4px; border-radius: 1.5rem 1.5rem 0 0;
-      background: linear-gradient(90deg, #001845, #003DA5, #D4AF37); transform: scaleX(0);
-      transform-origin: left; transition: transform 500ms cubic-bezier(0.34,1.56,0.64,1);
-    }
-    .landing-service-card::after {
-      content: ''; position: absolute; inset: 0; border-radius: 1.5rem;
-      background: linear-gradient(135deg, rgba(0,61,165,0.03), rgba(212,175,55,0.03));
-      opacity: 0; transition: opacity 400ms ease; z-index: -1;
-    }
-    .landing-service-card:hover { box-shadow: 0 24px 48px rgba(0,18,51,0.14); transform: translateY(-8px) scale(1.02); border-color: rgba(0,61,165,0.15); }
-    .landing-service-card:hover::before { transform: scaleX(1); }
-    .landing-service-card:hover::after { opacity: 1; }
-    .landing-service-card.revealed { opacity: 1; transform: translateY(0) scale(1); filter: blur(0) !important; }
-    .landing-service-card.revealed:hover { transform: translateY(-8px) scale(1.02); }
-
-    .service-step-number {
-      position: absolute; top: -18px; right: 24px;
-      width: 36px; height: 36px; border-radius: 50%;
-      background: linear-gradient(135deg, #001845, #003DA5);
-      color: white; font-weight: 800; font-size: 0.85rem;
-      display: flex; align-items: center; justify-content: center;
-      box-shadow: 0 4px 12px rgba(0,61,165,0.3);
-      transition: transform 400ms cubic-bezier(0.34,1.56,0.64,1), background 400ms ease;
-    }
-    .landing-service-card:hover .service-step-number {
-      transform: scale(1.2) rotate(10deg);
-      background: linear-gradient(135deg, #D4AF37, #B99830);
-    }
-
-    .landing-service-icon {
-      margin-bottom: 1.5rem; display: flex; align-items: center; justify-content: center;
-      width: 64px; height: 64px; border-radius: 1rem;
-      background: linear-gradient(135deg, rgba(0,61,165,0.08), rgba(0,61,165,0.04));
-      transition: transform 500ms cubic-bezier(0.34,1.56,0.64,1), background 400ms ease, box-shadow 400ms ease;
-    }
-    .landing-service-card:hover .landing-service-icon {
-      transform: scale(1.1) rotate(-5deg);
-      background: linear-gradient(135deg, rgba(0,61,165,0.15), rgba(212,175,55,0.1));
-      box-shadow: 0 8px 20px rgba(0,61,165,0.15);
-    }
-
-    .landing-service-card h3 { color: #001233; margin-bottom: 0.75rem; font-size: 1.2rem; font-weight: 700; font-family: 'Playfair Display', serif; }
-    .landing-service-card p { color: #5A6577; line-height: 1.8; font-size: 0.95rem; }
-
-    .service-tag {
-      display: inline-block; margin-top: 1.25rem; padding: 0.35rem 1rem; border-radius: 2rem;
-      font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
-      background: rgba(0,61,165,0.06); color: #003DA5;
-      transition: background 300ms, color 300ms;
-    }
-    .landing-service-card:hover .service-tag {
-      background: linear-gradient(135deg, #001845, #003DA5); color: white;
-    }
-
-    /* ==================== Video/Concept Block ==================== */
-    .video-concept-block {
-      max-width: 800px; margin: 0 auto; text-align: center;
-    }
-    .video-concept-block p { color: rgba(255,255,255,0.9); font-size: 1.05rem; line-height: 1.8; margin-bottom: 2rem; }
-
-    /* ==================== Tax Calculator ==================== */
-    .tax-calc-container {
-      max-width: 1100px; margin: 0 auto; background: white;
-      border: none; border-radius: 1.25rem;
-      padding: 1.5rem; box-shadow: 0 20px 50px rgba(0,18,51,0.08);
-      position: relative; overflow: hidden;
-      opacity: 0; transform: translateY(28px) scale(0.98); filter: blur(3px);
-      transition: opacity 0.55s cubic-bezier(0.25,0.46,0.45,0.94), transform 0.55s cubic-bezier(0.25,0.46,0.45,0.94), filter 0.55s cubic-bezier(0.25,0.46,0.45,0.94);
-    }
-    .tax-calc-container.revealed { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
-    .tax-calc-container::before {
-      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 6px;
-      background: linear-gradient(90deg, #D4AF37, #003DA5, #001845);
-      border-radius: 1rem 1rem 0 0;
-    }
-    .tax-calc-support { text-align: center; color: #5A6577; font-size: 0.9rem; margin-bottom: 1rem; font-style: italic; }
-    .tax-calc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; align-items: stretch; }
-    .tax-calc-inputs { display: flex; flex-direction: column; gap: 0.5rem; }
-    .tax-input-group { display: flex; flex-direction: column; gap: 0.2rem; }
-    .tax-input-group label { font-weight: 600; color: #2D3436; font-size: 0.8rem; }
-    .tax-input-group input, .tax-input-group select {
-      padding: 0.45rem 0.75rem; border: 1.5px solid #E5E7EB; border-radius: 0.5rem;
-      font-size: 0.85rem; transition: all 300ms; font-family: 'Inter', sans-serif;
-    }
-    .tax-input-group input:focus, .tax-input-group select:focus {
-      outline: none; border-color: #003DA5; box-shadow: 0 0 0 3px rgba(0,61,165,0.1);
-    }
-    .tax-toggle-advanced {
-      background: none; border: none; color: #003DA5; font-weight: 600;
-      cursor: pointer; font-size: 0.9rem; padding: 0.5rem 0; text-align: left;
-      display: flex; align-items: center; gap: 0.5rem;
-    }
-    .tax-toggle-advanced:hover { color: #0067C5; }
-    .tax-results {
-      background: linear-gradient(160deg, #060a14 0%, #0a1225 40%, #0e1a33 100%);
-      border-radius: 1.25rem; padding: 1.25rem; border: none;
-      box-shadow: 0 10px 40px rgba(0,0,0,0.4), 0 0 80px rgba(212,175,55,0.04);
-      display: flex; flex-direction: column; justify-content: space-between;
-      position: relative; overflow: hidden;
-    }
-    /* Animated border gradient */
-    .tax-results::before {
-      content: ''; position: absolute; inset: -1px; border-radius: 1.25rem; padding: 1px; z-index: 0;
-      background: linear-gradient(var(--border-angle, 0deg), rgba(212,175,55,0.4), rgba(0,61,165,0.2), rgba(212,175,55,0.1), rgba(52,211,153,0.2), rgba(212,175,55,0.4));
-      -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-      -webkit-mask-composite: xor; mask-composite: exclude;
-      animation: borderSpin 6s linear infinite;
-    }
-    @keyframes borderSpin { to { --border-angle: 360deg; } }
-    @property --border-angle { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
-    /* Floating particles */
-    .tax-results::after {
-      content: ''; position: absolute; inset: 0; z-index: 0;
-      background:
-        radial-gradient(1.5px 1.5px at 15% 25%, rgba(212,175,55,0.3) 50%, transparent 50%),
-        radial-gradient(1px 1px at 75% 15%, rgba(255,255,255,0.15) 50%, transparent 50%),
-        radial-gradient(1.5px 1.5px at 85% 70%, rgba(212,175,55,0.2) 50%, transparent 50%),
-        radial-gradient(1px 1px at 35% 80%, rgba(255,255,255,0.1) 50%, transparent 50%),
-        radial-gradient(1px 1px at 55% 45%, rgba(52,211,153,0.15) 50%, transparent 50%);
-      animation: particleFloat 6s ease-in-out infinite alternate;
-    }
-    @keyframes particleFloat { 0% { transform: translateY(0); } 100% { transform: translateY(-6px); } }
-    .tax-results > * { position: relative; z-index: 1; }
-    .tax-results h3 {
-      color: transparent; font-size: 1rem; margin-bottom: 0.5rem; text-align: center;
-      font-family: 'Playfair Display', serif; letter-spacing: 0.03em;
-      background: linear-gradient(135deg, #D4AF37 0%, #F0D78C 50%, #D4AF37 100%);
-      background-size: 200% 100%; -webkit-background-clip: text; background-clip: text;
-      animation: goldShift 4s ease-in-out infinite;
-    }
-    @keyframes goldShift { 0%,100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
-    /* Stat cards with glass morphism */
-    .tax-stat-card {
-      text-align: center; padding: 0.65rem; border-radius: 0.65rem;
-      background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07);
-      backdrop-filter: blur(12px); transition: all 400ms cubic-bezier(0.34,1.56,0.64,1);
-      animation: statReveal 600ms ease-out backwards;
-    }
-    .tax-stat-card:first-child { animation-delay: 100ms; }
-    .tax-stat-card:last-child { animation-delay: 250ms; }
-    @keyframes statReveal { from { opacity: 0; transform: translateY(10px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
-    .tax-stat-card:hover { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.15); transform: translateY(-3px) scale(1.02); box-shadow: 0 8px 25px rgba(0,0,0,0.3); }
-    .tax-stat-card .stat-label { font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.15rem; }
-    .tax-stat-card .stat-value { font-size: 1.5rem; font-weight: 800; font-family: 'Montserrat', sans-serif; }
-    .tax-stat-card .stat-sub { font-size: 0.55rem; color: rgba(255,255,255,0.35); margin-top: 0.05rem; }
-    /* Hero card with pulse glow */
-    .tax-hero-card {
-      text-align: center; padding: 0.85rem; border-radius: 0.75rem;
-      background: linear-gradient(135deg, rgba(52,211,153,0.05), rgba(52,211,153,0.01));
-      border: 1px solid rgba(52,211,153,0.12);
-      position: relative; overflow: hidden;
-      animation: statReveal 600ms ease-out 400ms backwards;
-      box-shadow: 0 0 30px rgba(52,211,153,0.05);
-    }
-    .tax-hero-card::before {
-      content: ''; position: absolute; inset: 0;
-      background: linear-gradient(90deg, transparent 0%, rgba(52,211,153,0.06) 50%, transparent 100%);
-      animation: heroShimmer 4s ease-in-out infinite;
-    }
-    @keyframes heroShimmer { 0%,100% { opacity: 0; transform: translateX(-100%); } 50% { opacity: 1; transform: translateX(100%); } }
-    .tax-hero-card:hover { box-shadow: 0 0 40px rgba(52,211,153,0.1); border-color: rgba(52,211,153,0.25); }
-    .tax-hero-card > * { position: relative; z-index: 1; }
-    /* Result rows */
-    .tax-result-row {
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 0.4rem 0; border-bottom: 1px solid rgba(255,255,255,0.04);
-      animation: statReveal 500ms ease-out backwards;
-    }
-    .tax-result-row:nth-child(1) { animation-delay: 550ms; }
-    .tax-result-row:nth-child(2) { animation-delay: 650ms; }
-    .tax-result-row:nth-child(3) { animation-delay: 750ms; }
-    .tax-result-row:last-child { border-bottom: none; }
-    .tax-result-label { color: rgba(255,255,255,0.45); font-size: 0.75rem; font-weight: 500; }
-    .tax-result-value { color: rgba(255,255,255,0.95); font-size: 1.05rem; font-weight: 700; font-family: 'Montserrat', sans-serif; }
-    .tax-result-highlight {
-      background: linear-gradient(135deg, rgba(212,175,55,0.12), rgba(212,175,55,0.05));
-      border: 1px solid rgba(212,175,55,0.3); border-radius: 0.75rem; padding: 1rem;
-      margin-top: 0.75rem; text-align: center;
-    }
-    .tax-result-highlight .tax-result-value { color: #D4AF37; font-size: 1.75rem; font-family: 'Playfair Display', serif; }
-    .tax-result-highlight .tax-result-label { color: rgba(255,255,255,0.8); font-weight: 600; font-size: 0.85rem; }
-    .tax-scenarios {
-      display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-top: 1.5rem;
-    }
-    .tax-scenario {
-      background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 0.75rem; padding: 0.75rem; text-align: center;
-    }
-    .tax-scenario-label { font-size: 0.7rem; color: rgba(255,255,255,0.6); margin-bottom: 0.25rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
-    .tax-scenario-value { font-size: 0.95rem; font-weight: 700; color: #FFFFFF; }
-
-    /* ==================== Storytelling Flow — Premium ==================== */
-    .tax-calc-container.story-mode {
-      max-width: 720px; padding: 2.5rem 2.5rem 2rem;
-      background: linear-gradient(180deg, #FFFFFF 0%, #F8F9FC 100%);
-      box-shadow: 0 25px 60px rgba(0,18,51,0.1), 0 0 0 1px rgba(0,61,165,0.04);
-    }
-
-    /* === Step base & timeline === */
-    .story-step {
-      padding-bottom: 0.25rem; position: relative; z-index: 1;
-    }
-    .story-step-visible { opacity: 1; }
-
-    /* Multi-stage premium entrance animation */
-    @keyframes storyRevealUp {
-      0% { opacity: 0; transform: translate3d(0, 40px, 0) scale(0.97); filter: blur(6px); }
-      60% { opacity: 1; filter: blur(0); }
-      100% { opacity: 1; transform: translate3d(0, 0, 0) scale(1); filter: blur(0); }
-    }
-    @keyframes storyChildStagger {
-      0% { opacity: 0; transform: translate3d(0, 18px, 0); }
-      100% { opacity: 1; transform: translate3d(0, 0, 0); }
-    }
-    .story-step-enter {
-      animation: storyRevealUp 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-      will-change: opacity, transform, filter;
-    }
-    .story-step-enter > * {
-      opacity: 0;
-      animation: storyChildStagger 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-    }
-    .story-step-enter > *:nth-child(1) { animation-delay: 0.15s; }
-    .story-step-enter > *:nth-child(2) { animation-delay: 0.25s; }
-    .story-step-enter > *:nth-child(3) { animation-delay: 0.35s; }
-    .story-step-enter > *:nth-child(4) { animation-delay: 0.45s; }
-    .story-step-enter > *:nth-child(5) { animation-delay: 0.55s; }
-    .story-step-enter > *:nth-child(6) { animation-delay: 0.65s; }
-    .story-step-enter > *:nth-child(7) { animation-delay: 0.7s; }
-
-    /* Timeline connector */
-    .story-step-divider {
-      width: 2px; height: 40px; margin: 1rem auto;
-      background: linear-gradient(180deg, #D4AF37 0%, rgba(0,61,165,0.3) 50%, transparent 100%);
-      border-radius: 2px; position: relative;
-      animation: dividerGrow 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-      transform-origin: top center;
-    }
-    @keyframes dividerGrow {
-      0% { transform: scaleY(0); opacity: 0; }
-      100% { transform: scaleY(1); opacity: 1; }
-    }
-    .story-step-divider::after {
-      content: ''; position: absolute; bottom: -4px; left: 50%; transform: translateX(-50%);
-      width: 8px; height: 8px; border-radius: 50%;
-      background: linear-gradient(135deg, #D4AF37, #C9A84C);
-      box-shadow: 0 0 12px rgba(212,175,55,0.4);
-      animation: dividerDotPulse 2s ease-in-out infinite;
-    }
-    @keyframes dividerDotPulse {
-      0%, 100% { box-shadow: 0 0 8px rgba(212,175,55,0.3); transform: translateX(-50%) scale(1); }
-      50% { box-shadow: 0 0 18px rgba(212,175,55,0.6); transform: translateX(-50%) scale(1.3); }
-    }
-
-    /* Step header */
-    .story-step-header {
-      display: flex; align-items: center; gap: 0.85rem; margin-bottom: 0.75rem;
-    }
-    .story-step-number {
-      width: 42px; height: 42px; border-radius: 50%; flex-shrink: 0;
-      background: linear-gradient(145deg, #003DA5, #0067C5); color: white;
-      display: flex; align-items: center; justify-content: center;
-      font-weight: 800; font-size: 1rem; font-family: 'Montserrat', sans-serif;
-      box-shadow: 0 6px 20px rgba(0,61,165,0.3), 0 0 0 3px rgba(0,61,165,0.08);
-      position: relative; overflow: hidden;
-      transition: transform 400ms cubic-bezier(0.34,1.56,0.64,1), box-shadow 400ms ease;
-    }
-    .story-step-number::after {
-      content: ''; position: absolute; inset: 0; border-radius: 50%;
-      background: linear-gradient(135deg, rgba(255,255,255,0.25) 0%, transparent 60%);
-    }
-    .story-step-number:hover { transform: scale(1.1) rotate(5deg); }
-    .story-step-number-gold {
-      background: linear-gradient(145deg, #D4AF37, #B99830); color: #001233;
-      box-shadow: 0 6px 20px rgba(212,175,55,0.4), 0 0 0 3px rgba(212,175,55,0.12);
-    }
-    .story-step-title {
-      font-size: 1.25rem; font-weight: 700; color: #001233; margin: 0;
-      font-family: 'Playfair Display', serif; line-height: 1.3;
-      letter-spacing: -0.01em;
-    }
-    .story-step-desc {
-      color: #4B5563; font-size: 0.92rem; line-height: 1.65; margin: 0 0 0.6rem;
-      padding-left: 0.25rem;
-    }
-
-    /* Next step buttons — premium */
-    .story-next-btn {
-      display: block; margin: 0.85rem auto 0; padding: 0.8rem 2.25rem;
-      font-size: 0.9rem; border-radius: 2rem; position: relative; overflow: hidden;
-      transition: all 400ms cubic-bezier(0.34,1.56,0.64,1);
-    }
-    .story-next-btn::before {
-      content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%;
-      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
-      transition: left 600ms ease;
-    }
-    .story-next-btn:hover::before { left: 100%; }
-    .story-next-btn:hover { transform: translateY(-3px); box-shadow: 0 12px 28px rgba(0,61,165,0.25); }
-    .story-next-btn:disabled {
-      opacity: 0.35; cursor: not-allowed; transform: none !important;
-      box-shadow: none !important; filter: grayscale(0.5);
-    }
-    .story-next-btn:disabled::before { display: none; }
-
-    /* ===== Paso 1 — Input premium ===== */
-    .story-input-wrapper {
-      margin: 1.25rem 0; text-align: center;
-      background: linear-gradient(135deg, rgba(0,61,165,0.03), rgba(212,175,55,0.02));
-      border-radius: 1rem; padding: 1.5rem; border: 1px solid rgba(0,61,165,0.06);
-    }
-    .story-input-label {
-      display: block; font-weight: 700; color: #003DA5; font-size: 0.8rem;
-      margin-bottom: 0.6rem; text-align: center; text-transform: uppercase;
-      letter-spacing: 0.08em;
-    }
-    .story-input-big {
-      width: 100%; padding: 1rem 1.25rem; font-size: 1.5rem; font-weight: 700;
-      border: 2px solid rgba(0,61,165,0.15); border-radius: 0.85rem; text-align: center;
-      font-family: 'Montserrat', 'Inter', sans-serif; color: #001233;
-      background: white;
-      transition: border-color 400ms ease, box-shadow 400ms ease, transform 200ms ease;
-      box-shadow: 0 4px 16px rgba(0,18,51,0.06);
-    }
-    .story-input-big:focus {
-      outline: none; border-color: #003DA5; transform: scale(1.02);
-      box-shadow: 0 8px 30px rgba(0,61,165,0.12), 0 0 0 4px rgba(0,61,165,0.06);
-    }
-    .story-input-big::placeholder { color: #B8C0CC; font-weight: 400; font-size: 1.1rem; }
-    .story-input-preview {
-      display: inline-block; margin-top: 0.6rem; font-size: 0.85rem;
-      color: #003DA5; font-weight: 600;
-      background: linear-gradient(135deg, rgba(0,61,165,0.08), rgba(0,61,165,0.03));
-      padding: 0.3rem 1rem; border-radius: 2rem;
-      animation: storyChildStagger 0.4s ease forwards;
-    }
-
-    /* ===== Paso 2 — ISR Reveal premium ===== */
-    .story-isr-reveal {
-      text-align: center; padding: 2rem 1.5rem;
-      background: linear-gradient(160deg, #060a14 0%, #0a1225 40%, #0e1a33 100%);
-      border-radius: 1.25rem; margin: 1rem 0;
-      box-shadow: 0 16px 50px rgba(0,0,0,0.3), 0 0 80px rgba(224,82,82,0.05);
-      position: relative; overflow: hidden;
-    }
-    /* Animated border like tax-results */
-    .story-isr-reveal::before {
-      content: ''; position: absolute; inset: -1px; border-radius: 1.25rem; padding: 1px; z-index: 0;
-      background: linear-gradient(var(--border-angle, 0deg), rgba(224,82,82,0.5), rgba(0,61,165,0.2), rgba(224,82,82,0.1), rgba(212,175,55,0.2), rgba(224,82,82,0.5));
-      -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-      -webkit-mask-composite: xor; mask-composite: exclude;
-      animation: borderSpin 6s linear infinite;
-    }
-    /* Floating particles */
-    .story-isr-reveal::after {
-      content: ''; position: absolute; inset: 0; z-index: 0;
-      background:
-        radial-gradient(1.5px 1.5px at 20% 30%, rgba(224,82,82,0.25) 50%, transparent 50%),
-        radial-gradient(1px 1px at 70% 20%, rgba(255,255,255,0.12) 50%, transparent 50%),
-        radial-gradient(1.5px 1.5px at 80% 65%, rgba(224,82,82,0.18) 50%, transparent 50%),
-        radial-gradient(1px 1px at 40% 75%, rgba(255,255,255,0.08) 50%, transparent 50%);
-      animation: particleFloat 6s ease-in-out infinite alternate;
-    }
-    .story-isr-reveal > * { position: relative; z-index: 1; }
-    .story-isr-amount {
-      font-size: clamp(2.25rem, 6vw, 3.5rem); font-weight: 800; color: #E05252;
-      font-family: 'Montserrat', sans-serif; line-height: 1.1;
-      text-shadow: 0 0 40px rgba(224,82,82,0.35), 0 0 80px rgba(224,82,82,0.15);
-      animation: isrPulseGlow 3s ease-in-out infinite;
-    }
-    @keyframes isrPulseGlow {
-      0%, 100% { text-shadow: 0 0 30px rgba(224,82,82,0.3), 0 0 60px rgba(224,82,82,0.1); }
-      50% { text-shadow: 0 0 50px rgba(224,82,82,0.5), 0 0 100px rgba(224,82,82,0.2); }
-    }
-    .story-isr-label {
-      color: rgba(255,255,255,0.5); font-size: 0.9rem; margin-top: 0.4rem;
-      font-weight: 500; letter-spacing: 0.03em;
-    }
-
-    /* ===== Paso 3 — Deducciones premium ===== */
-    .story-deductions-list {
-      display: flex; flex-direction: column; gap: 0;
-      background: linear-gradient(135deg, #F7F8FC, #FFFFFF);
-      border-radius: 0.85rem; padding: 0.25rem 1rem;
-      border: 1px solid rgba(0,61,165,0.08); margin: 0.6rem 0;
-      box-shadow: 0 4px 20px rgba(0,18,51,0.04);
-    }
-    .story-deduction-row {
-      display: flex; align-items: center; gap: 0.6rem;
-      padding: 0.4rem 0.5rem; border-bottom: 1px solid rgba(0,61,165,0.06);
-      transition: background 300ms ease, transform 200ms ease;
-      border-radius: 0.5rem; margin: 0 -0.25rem;
-    }
-    .story-deduction-row:last-child { border-bottom: none; }
-    .story-deduction-row:hover { background: rgba(0,61,165,0.03); transform: translateX(4px); }
-    .story-deduction-icon {
-      font-size: 1rem; flex-shrink: 0; width: 28px; height: 28px;
-      display: flex; align-items: center; justify-content: center;
-      background: rgba(0,61,165,0.06); border-radius: 0.5rem;
-    }
-    .story-deduction-name { flex: 1; font-size: 0.82rem; color: #2D3436; font-weight: 500; }
-    .story-deduction-limit {
-      font-size: 0.68rem; color: #003DA5; font-weight: 700;
-      white-space: nowrap; background: linear-gradient(135deg, rgba(0,61,165,0.08), rgba(0,61,165,0.03));
-      padding: 0.2rem 0.55rem; border-radius: 2rem;
-      border: 1px solid rgba(0,61,165,0.08);
-    }
-
-    /* Alert OJO — premium */
-    .story-alert-ojo {
-      display: flex; gap: 0.7rem; align-items: flex-start;
-      background: linear-gradient(135deg, rgba(212,175,55,0.08), rgba(232,160,48,0.03));
-      border-left: 4px solid #D4AF37; border-radius: 0 1rem 1rem 0;
-      padding: 0.85rem 1.15rem; margin: 0.75rem 0;
-      font-size: 0.82rem; color: #4B5563; line-height: 1.6;
-      box-shadow: 0 4px 20px rgba(212,175,55,0.08);
-      position: relative; overflow: hidden;
-    }
-    .story-alert-ojo::before {
-      content: ''; position: absolute; top: 0; right: 0; width: 120px; height: 120px;
-      background: radial-gradient(circle, rgba(212,175,55,0.08), transparent 70%);
-      border-radius: 50%;
-    }
-    .story-alert-ojo-icon { font-size: 1.25rem; flex-shrink: 0; margin-top: 0.05rem; }
-    .story-alert-ojo strong { color: #996B00; font-weight: 700; }
-    .story-alert-tope {
-      font-size: 1.2rem; font-weight: 800; color: #003DA5;
-      font-family: 'Montserrat', sans-serif; margin-top: 0.35rem;
-      background: linear-gradient(135deg, #003DA5, #0067C5);
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-
-    /* ===== Paso 4 — PPR premium ===== */
-    .story-ppr-input {
-      margin: 1.25rem 0;
-      background: linear-gradient(135deg, rgba(201,168,76,0.05), rgba(201,168,76,0.01));
-      border-radius: 1rem; padding: 1.5rem; border: 1px solid rgba(201,168,76,0.12);
-    }
-    .story-ppr-cap {
-      display: block; font-size: 0.78rem; color: #8B7D3C;
-      margin-top: 0.5rem; text-align: center; font-weight: 500;
-    }
-    .story-comparison {
-      display: flex; align-items: stretch; gap: 0; justify-content: center;
-      margin: 1.5rem 0 0.75rem; position: relative;
-    }
-    .story-comparison-item {
-      flex: 1; min-width: 150px; text-align: center;
-      padding: 1.25rem 1rem; position: relative; overflow: hidden;
-    }
-    .story-comp-orange {
-      background: linear-gradient(160deg, rgba(232,160,48,0.06), rgba(232,160,48,0.02));
-      border: 1px solid rgba(232,160,48,0.15);
-      border-radius: 1rem 0 0 1rem; border-right: none;
-    }
-    .story-comp-green {
-      background: linear-gradient(160deg, rgba(52,211,153,0.06), rgba(52,211,153,0.02));
-      border: 1px solid rgba(52,211,153,0.15);
-      border-radius: 0 1rem 1rem 0; border-left: none;
-    }
-    .story-comp-label {
-      font-size: 0.68rem; font-weight: 700; color: #5A6577;
-      text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.4rem;
-    }
-    .story-comp-orange .story-comp-value {
-      font-size: 1.5rem; font-weight: 800; color: #E8A030;
-      font-family: 'Montserrat', sans-serif;
-    }
-    .story-comp-green .story-comp-value {
-      font-size: 1.5rem; font-weight: 800; color: #34D399;
-      font-family: 'Montserrat', sans-serif;
-    }
-    .story-comparison-arrow {
-      display: flex; align-items: center; justify-content: center;
-      width: 44px; flex-shrink: 0;
-      background: linear-gradient(135deg, #003DA5, #0052D4);
-      color: white; font-size: 1.2rem; font-weight: 700;
-      z-index: 1; box-shadow: 0 4px 16px rgba(0,61,165,0.3);
-    }
-    .story-comp-savings {
-      text-align: center; font-size: 0.95rem; color: #4B5563; margin: 0.75rem 0 0;
-      padding: 0.6rem 1rem; border-radius: 2rem;
-      background: linear-gradient(135deg, rgba(52,211,153,0.06), rgba(52,211,153,0.02));
-      border: 1px solid rgba(52,211,153,0.1);
-      display: inline-block;
-    }
-
-    /* ===== Paso 5 — Final CTA premium ===== */
-    .story-final-box {
-      background: linear-gradient(160deg, #001233 0%, #001845 40%, #002B75 100%);
-      border-radius: 1.25rem; padding: 2.5rem 2rem; text-align: center;
-      position: relative; overflow: hidden;
-      box-shadow: 0 20px 60px rgba(0,18,51,0.3), 0 0 80px rgba(212,175,55,0.05);
-    }
-    /* Animated border */
-    .story-final-box::before {
-      content: ''; position: absolute; inset: -1px; border-radius: 1.25rem; padding: 1px; z-index: 0;
-      background: linear-gradient(var(--border-angle, 0deg), rgba(212,175,55,0.5), rgba(0,61,165,0.2), rgba(52,211,153,0.2), rgba(212,175,55,0.5));
-      -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-      -webkit-mask-composite: xor; mask-composite: exclude;
-      animation: borderSpin 6s linear infinite;
-    }
-    /* Decorative glow */
-    .story-final-box::after {
-      content: ''; position: absolute; top: -60%; right: -30%; width: 400px; height: 400px;
-      background: radial-gradient(circle, rgba(212,175,55,0.1), transparent 60%);
-      border-radius: 50%; z-index: 0;
-    }
-    .story-final-box > * { position: relative; z-index: 1; }
-    .story-final-text {
-      color: rgba(255,255,255,0.88); font-size: 1.05rem; line-height: 1.75; margin: 0 0 1.75rem;
-      max-width: 520px; margin-left: auto; margin-right: auto;
-    }
-    .story-final-text strong { color: #D4AF37; }
-    .story-final-summary {
-      display: flex; gap: 0.85rem; margin-bottom: 2rem; justify-content: center; flex-wrap: wrap;
-    }
-    .story-final-stat {
-      flex: 1; min-width: 140px; padding: 1rem; border-radius: 1rem;
-      background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
-      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-      transition: all 400ms cubic-bezier(0.34,1.56,0.64,1);
-    }
-    .story-final-stat:hover {
-      background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.15);
-      transform: translateY(-4px); box-shadow: 0 8px 25px rgba(0,0,0,0.3);
-    }
-    .story-final-stat-highlight {
-      border-color: rgba(212,175,55,0.3);
-      background: linear-gradient(135deg, rgba(212,175,55,0.08), rgba(212,175,55,0.02));
-      animation: pulseGlow 3s ease-in-out infinite;
-    }
-    .story-final-stat-label {
-      font-size: 0.65rem; color: rgba(255,255,255,0.5); font-weight: 600;
-      text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.3rem;
-    }
-    .story-final-stat-value {
-      font-size: 1.5rem; font-weight: 800; font-family: 'Montserrat', sans-serif;
-    }
-    .story-recalc-btn {
-      display: block; margin: 1.25rem auto 0; background: none; border: none;
-      color: rgba(255,255,255,0.45); font-size: 0.82rem; cursor: pointer;
-      font-family: 'Inter', sans-serif; font-weight: 500;
-      transition: all 300ms ease; padding: 0.4rem 1rem; border-radius: 2rem;
-    }
-    .story-recalc-btn:hover {
-      color: rgba(255,255,255,0.85);
-      background: rgba(255,255,255,0.06);
-    }
-
-    /* ==================== Para Quien Block ==================== */
-    /* ==================== Para Quién + Trust Combined ==================== */
-    .landing-trust-bar { background: linear-gradient(160deg, #001233, #001845); }
-    .paraquien-grid {
-      display: grid; grid-template-columns: 1.1fr 1fr; gap: 3rem; align-items: start;
-    }
-    .paraquien-cards-col { display: flex; flex-direction: column; gap: 0.65rem; }
-    .pq-card {
-      display: flex; align-items: center; gap: 0.85rem;
-      background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.18);
-      border-radius: 0.85rem; padding: 0.85rem 1.25rem;
-      color: white; font-size: 0.95rem; font-style: italic;
-      backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
-      opacity: 0; transform: translateX(-24px); filter: blur(3px);
-      transition: opacity 0.5s cubic-bezier(0.25,0.46,0.45,0.94), transform 0.5s cubic-bezier(0.25,0.46,0.45,0.94), filter 0.5s cubic-bezier(0.25,0.46,0.45,0.94), background 300ms ease, border-color 300ms ease;
-    }
-    .pq-card.revealed { opacity: 1; transform: translateX(0); filter: blur(0); }
-    .pq-card:hover { background: rgba(255,255,255,0.2); border-color: rgba(212,175,55,0.5); }
-    .pq-icon { flex-shrink: 0; color: #D4AF37; display: flex; align-items: center; }
-    .pq-text { line-height: 1.5; }
-    .pq-cta-text { color: #D4AF37; font-weight: 600; font-size: 0.95rem; margin-top: 0.75rem; font-style: italic; }
-
-    .paraquien-stats-col { display: grid; grid-template-columns: 1fr 1fr; gap: 0.85rem; }
-    .trust-stat-card {
-      position: relative; overflow: hidden;
-      background: linear-gradient(145deg, #003DA5, #0052D4);
-      border: none; border-radius: 1rem;
-      padding: 1.5rem 1.25rem; text-align: center;
-      box-shadow: 0 8px 24px rgba(0,61,165,0.35);
-      transition: transform 400ms cubic-bezier(0.34,1.56,0.64,1), box-shadow 400ms ease;
-    }
-    .trust-stat-card:hover { transform: translateY(-6px); box-shadow: 0 16px 36px rgba(0,61,165,0.45); }
-    .trust-stat-number {
-      color: #FFFFFF; font-size: 2.25rem; font-weight: 800; font-family: 'Playfair Display', serif;
-      line-height: 1; margin-bottom: 0.4rem;
-    }
-    .trust-stat-label { color: rgba(255,255,255,0.9); font-size: 0.82rem; line-height: 1.3; font-weight: 500; }
-    .trust-stat-bg-icon {
-      position: absolute; top: 10px; right: 10px; color: rgba(212,175,55,0.5);
-    }
-
-    /* ==================== Live Banner ==================== */
-    .live-banner-wrapper { text-align: center; margin-top: 2rem; }
-    .live-banner {
-      display: inline-flex; align-items: center; gap: 0.75rem;
-      background: linear-gradient(135deg, #8B6914 0%, #A67C1A 30%, #C9A84C 60%, #A67C1A 100%);
-      border: 1px solid rgba(255,255,255,0.3);
-      border-radius: 3rem; padding: 0.9rem 2.2rem;
-      box-shadow: 0 6px 24px rgba(201,168,76,0.35), 0 0 0 3px rgba(212,175,55,0.15), inset 0 1px 0 rgba(255,255,255,0.3);
-      animation: liveBannerPulse 3s ease-in-out infinite;
-      position: relative; overflow: hidden;
-    }
-    .live-banner::before {
-      content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%;
-      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
-      animation: liveBannerShine 3s ease-in-out infinite;
-    }
-    .live-dot {
-      width: 10px; height: 10px; border-radius: 50%;
-      background: #003DA5; flex-shrink: 0;
-      box-shadow: 0 0 6px rgba(0,61,165,0.8), 0 0 12px rgba(0,61,165,0.4);
-      animation: liveDotPulse 1.5s ease-in-out infinite;
-    }
-    .live-text {
-      color: #ffffff; font-weight: 600; font-size: 0.95rem;
-      letter-spacing: 0.01em; text-shadow: 0 1px 2px rgba(0,0,0,0.15);
-    }
-    .live-count {
-      color: #003DA5; font-weight: 800; font-size: 1.1rem;
-      text-shadow: none;
-    }
-    @keyframes liveDotPulse {
-      0%, 100% { box-shadow: 0 0 4px rgba(0,61,165,0.5); transform: scale(1); }
-      50% { box-shadow: 0 0 12px rgba(0,61,165,0.9), 0 0 20px rgba(0,61,165,0.4); transform: scale(1.2); }
-    }
-    @keyframes liveBannerPulse {
-      0%, 100% { box-shadow: 0 6px 24px rgba(201,168,76,0.35), 0 0 0 3px rgba(212,175,55,0.15); transform: scale(1); }
-      50% { box-shadow: 0 10px 36px rgba(201,168,76,0.5), 0 0 0 5px rgba(212,175,55,0.25); transform: scale(1.02); }
-    }
-    @keyframes liveBannerShine {
-      0% { left: -100%; }
-      50%, 100% { left: 200%; }
-    }
-
-    /* ==================== About Block ==================== */
-    .about-block { max-width: 1200px; margin: 0 auto; }
-    .about-top { text-align: center; margin-bottom: 3rem; }
-    .about-top p { color: #4B5563; font-size: 1.15rem; line-height: 1.8; max-width: 700px; margin: 0 auto; }
-    .about-grid {
-      display: grid; grid-template-columns: repeat(5, 1fr); gap: 1.5rem; margin-bottom: 3rem;
-    }
-    .about-card {
-      background: white; border-radius: 1.25rem; padding: 2rem 1.5rem; text-align: center;
-      box-shadow: 0 4px 24px rgba(0,18,51,0.06); transition: all 400ms cubic-bezier(0.4,0,0.2,1);
-      position: relative; overflow: hidden; border: 1px solid rgba(0,18,51,0.04);
-    }
-    .about-card::before {
-      content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 4px;
-      background: linear-gradient(90deg, #003DA5, #D4AF37); transform: scaleX(0);
-      transform-origin: center; transition: transform 400ms;
-    }
-    .about-card:hover::before { transform: scaleX(1); }
-    .about-card:hover { transform: translateY(-8px); box-shadow: 0 20px 40px rgba(0,18,51,0.12); }
-    .about-card-icon {
-      width: 64px; height: 64px; border-radius: 1rem; display: flex; align-items: center; justify-content: center;
-      margin: 0 auto 1rem; font-size: 1.75rem;
-      background: linear-gradient(145deg, #001845, #003DA5); color: white;
-      box-shadow: 0 8px 20px rgba(0,61,165,0.2);
-    }
-    .about-card h4 {
-      color: #001233; font-size: 1rem; font-weight: 700; margin: 0;
-      font-family: 'Playfair Display', serif; text-transform: capitalize;
-    }
-    .about-highlight {
-      background: linear-gradient(160deg, #001233, #001845, #002B75);
-      border-radius: 1.5rem; padding: 3rem 2.5rem; text-align: center;
-      position: relative; overflow: hidden;
-      box-shadow: 0 20px 50px rgba(0,18,51,0.25);
-    }
-    .about-highlight::before {
-      content: ''; position: absolute; top: -50%; right: -20%; width: 400px; height: 400px;
-      background: radial-gradient(circle, rgba(212,175,55,0.1) 0%, transparent 60%); border-radius: 50%;
-    }
-    .about-highlight::after {
-      content: ''; position: absolute; bottom: -30%; left: -10%; width: 300px; height: 300px;
-      background: radial-gradient(circle, rgba(0,103,197,0.08) 0%, transparent 60%); border-radius: 50%;
-    }
-    .about-highlight p {
-      color: white; font-weight: 600; font-size: 1.35rem; line-height: 1.6;
-      position: relative; z-index: 1; margin: 0;
-      font-family: 'Playfair Display', serif;
-    }
-    .about-highlight p span { color: #D4AF37; }
-
-    /* ==================== About Full ==================== */
-    .about-full { max-width: 1200px; margin: 0 auto; }
-    .about-pillars {
-      display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.25rem; margin-bottom: 2rem;
-    }
-    .about-pillar-card {
-      position: relative; text-align: center; padding: 2rem 1.25rem 1.75rem; border-radius: 1.25rem;
-      background: linear-gradient(160deg, #ffffff 0%, #f8faff 100%);
-      border: 1px solid transparent;
-      background-clip: padding-box;
-      box-shadow: 0 4px 20px rgba(0,18,51,0.06);
-      transition: all 500ms cubic-bezier(0.34,1.56,0.64,1);
-      overflow: hidden;
-    }
-    .about-pillar-card::before {
-      content: ''; position: absolute; inset: 0; border-radius: 1.25rem; padding: 1px;
-      background: linear-gradient(135deg, rgba(0,61,165,0.15), rgba(212,175,55,0.3), rgba(0,61,165,0.1));
-      -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-      -webkit-mask-composite: xor; mask-composite: exclude;
-      transition: all 400ms ease;
-    }
-    .about-pillar-card::after {
-      content: ''; position: absolute; top: -50%; right: -50%; width: 100%; height: 100%;
-      background: radial-gradient(circle, rgba(212,175,55,0.06) 0%, transparent 70%);
-      transition: all 600ms ease; pointer-events: none;
-    }
-    .about-pillar-card:hover {
-      transform: translateY(-8px) scale(1.02);
-      box-shadow: 0 20px 50px rgba(0,61,165,0.15), 0 0 30px rgba(212,175,55,0.08);
-    }
-    .about-pillar-card:hover::before {
-      background: linear-gradient(135deg, rgba(0,61,165,0.3), rgba(212,175,55,0.5), rgba(0,61,165,0.2));
-    }
-    .about-pillar-card:hover::after { top: -30%; right: -30%; }
-    .about-pillar-icon {
-      width: 60px; height: 60px; border-radius: 1rem; margin: 0 auto 1rem;
-      display: flex; align-items: center; justify-content: center;
-      background: linear-gradient(135deg, #001845, #003DA5);
-      color: white; position: relative; z-index: 1;
-      box-shadow: 0 6px 20px rgba(0,61,165,0.25);
-      transition: all 400ms cubic-bezier(0.34,1.56,0.64,1);
-    }
-    .about-pillar-card:hover .about-pillar-icon {
-      transform: scale(1.1) rotate(-5deg);
-      background: linear-gradient(135deg, #D4AF37, #C9A84C);
-      box-shadow: 0 8px 25px rgba(212,175,55,0.35);
-    }
-    .about-pillar-card h4 { color: #001233; font-size: 1rem; font-weight: 700; margin-bottom: 0.4rem; font-family: 'Playfair Display', serif; position: relative; z-index: 1; }
-    .about-pillar-card p { color: #5A6577; font-size: 0.85rem; line-height: 1.6; margin: 0; position: relative; z-index: 1; }
-    .about-highlight-bar {
-      background: linear-gradient(135deg, #001233, #001845); border-radius: 1rem;
-      padding: 1.5rem 2.5rem; text-align: center;
-      box-shadow: 0 8px 30px rgba(0,18,51,0.2);
-    }
-    .about-highlight-bar p {
-      color: white; font-weight: 600; font-size: 1.2rem; margin: 0;
-      font-family: 'Playfair Display', serif;
-    }
-    .about-highlight-bar p span { color: #D4AF37; }
-
-    /* ==================== Responsive Grids ==================== */
-    .emotion-grid {
-      display: grid; grid-template-columns: 1fr 1fr; gap: 3rem;
-      align-items: center; max-width: 1000px; margin: 0 auto;
-    }
-    .sat-grid {
-      display: grid; grid-template-columns: 1fr 1.2fr; gap: 2rem; align-items: center;
-    }
-    .sat-video-col { position: relative; }
-    .sat-video-wrapper {
-      border-radius: 1.25rem; overflow: hidden; aspect-ratio: 3/4; max-height: 400px;
-      box-shadow: 0 20px 50px rgba(0,0,0,0.3);
-      border: 2px solid rgba(212,175,55,0.2);
-    }
-    .sat-text-col {}
-    .sat-badge-row { display: flex; align-items: center; gap: 0.75rem; }
-    .sat-cta-group {
-      display: flex; flex-direction: row; align-items: center; gap: 1.25rem; margin-top: 1.75rem; flex-wrap: wrap;
-    }
-    .sat-cta-btn {
-      padding: 0.95rem 2.25rem !important; font-size: 1.05rem !important; border-radius: 2rem !important;
-      font-weight: 700 !important; letter-spacing: 0.01em;
-      box-shadow: 0 8px 25px rgba(212,175,55,0.35) !important;
-      transition: all 400ms cubic-bezier(0.34,1.56,0.64,1) !important;
-    }
-    .sat-cta-btn:hover {
-      transform: translateY(-3px) !important; box-shadow: 0 14px 35px rgba(212,175,55,0.45) !important;
-    }
-    .sat-ppr-badge {
-      display: inline-flex; align-items: center; gap: 0.5rem;
-      background: linear-gradient(135deg, rgba(34,197,94,0.15), rgba(34,197,94,0.06));
-      border: 1.5px solid rgba(34,197,94,0.5); border-radius: 2rem;
-      padding: 0.6rem 1.35rem; color: #22c55e; font-weight: 700; font-size: 0.88rem;
-      box-shadow: 0 4px 15px rgba(34,197,94,0.15);
-      transition: all 300ms ease;
-    }
-    .sat-ppr-badge:hover {
-      background: linear-gradient(135deg, rgba(34,197,94,0.22), rgba(34,197,94,0.1));
-      box-shadow: 0 6px 20px rgba(34,197,94,0.25);
-    }
-
-    /* ==================== Contact Form ==================== */
-    .landing-contact-form-container {
-      max-width: 650px; margin: 0 auto; background: white; padding: 2rem;
-      border-radius: 1.25rem; box-shadow: 0 20px 50px rgba(0,18,51,0.12);
-      border: none; position: relative; overflow: hidden;
-      opacity: 0; transform: translateY(28px) scale(0.98); filter: blur(3px);
-      transition: opacity 0.55s cubic-bezier(0.25,0.46,0.45,0.94), transform 0.55s cubic-bezier(0.25,0.46,0.45,0.94), filter 0.55s cubic-bezier(0.25,0.46,0.45,0.94);
-    }
-    .landing-contact-form-container.revealed { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
-    .landing-contact-form-container::before {
-      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 5px;
-      background: linear-gradient(90deg, #001845, #003DA5, #D4AF37);
-    }
-    .landing-contact-form-container h2 { text-align: center; color: #001233; margin-bottom: 1rem; font-size: clamp(1.75rem, 3vw, 2.25rem); font-family: 'Playfair Display', serif; }
-    .form-subcopy { text-align: center; color: #4B5563; font-size: 0.9rem; margin-bottom: 1rem; }
-    .landing-form-group { display: flex; flex-direction: column; margin-bottom: 0.75rem; }
-    .landing-form-group label { font-weight: 600; color: #2D3436; margin-bottom: 0.25rem; font-size: 0.85rem; }
-    .landing-form-group input, .landing-form-group select, .landing-form-group textarea {
-      padding: 0.6rem 0.85rem; border: 1.5px solid #E5E7EB; border-radius: 0.6rem;
-      font-size: 0.9rem; font-family: 'Inter', sans-serif; transition: all 300ms;
-    }
-    .landing-form-group input:focus, .landing-form-group select:focus, .landing-form-group textarea:focus {
-      outline: none; border-color: #003DA5; box-shadow: 0 0 0 3px rgba(0,61,165,0.1);
-    }
-    .landing-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
-    .landing-form-submit {
-      width: 100%; padding: 1.1rem 2rem; background: linear-gradient(145deg, #001845, #003DA5);
-      color: white; border: none; border-radius: 2rem; font-weight: 700; font-size: 1.05rem;
-      cursor: pointer; transition: all 400ms cubic-bezier(0.4,0,0.2,1);
-      box-shadow: 0 10px 30px rgba(0,24,69,0.25); letter-spacing: 0.01em;
-    }
-    .landing-form-submit:hover { transform: translateY(-3px); box-shadow: 0 20px 40px rgba(0,24,69,0.3); }
-    .landing-form-submit:disabled { opacity: 0.6; cursor: not-allowed; }
-    .landing-form-success-message { background: #D1FAE5; border: 1.5px solid #10B981; color: #047857; padding: 1.25rem; border-radius: 0.75rem; margin-bottom: 1.5rem; text-align: center; font-weight: 500; }
-    .landing-form-error-message { background: #FEE2E2; border: 1.5px solid #EF4444; color: #DC2626; padding: 1.25rem; border-radius: 0.75rem; margin-bottom: 1.5rem; text-align: center; font-weight: 500; }
-    .landing-form-field-error { display: block; color: #DC2626; font-size: 0.8rem; margin-top: 0.25rem; font-weight: 500; }
-
-    /* ==================== Closing / CTA ==================== */
-    .landing-cta-section {
-      max-width: 1200px; margin: 0 auto;
-      background: linear-gradient(160deg, #001233, #001845, #002B75, #003DA5); background-size: 400% 400%;
-      animation: gradientShift 10s ease infinite;
-      color: white; text-align: center; padding: 5rem 3rem; border-radius: 2rem;
-      position: relative; overflow: hidden;
-      box-shadow: 0 30px 60px rgba(0,18,51,0.5);
-    }
-    .landing-cta-section::before {
-      content: ''; position: absolute; top: -40%; right: -10%; width: 600px; height: 600px;
-      background: radial-gradient(circle, rgba(212,175,55,0.2) 0%, transparent 55%); border-radius: 50%;
-      animation: ctaOrbit1 12s ease-in-out infinite;
-    }
-    .landing-cta-section::after {
-      content: ''; position: absolute; bottom: -30%; left: -10%; width: 500px; height: 500px;
-      background: radial-gradient(circle, rgba(0,103,197,0.2) 0%, transparent 55%); border-radius: 50%;
-      animation: ctaOrbit2 15s ease-in-out infinite;
-    }
-    @keyframes ctaOrbit1 { 0% { transform: translate(0,0) scale(1); } 33% { transform: translate(30px,-40px) scale(1.1); } 66% { transform: translate(-20px, 20px) scale(0.95); } 100% { transform: translate(0,0) scale(1); } }
-    @keyframes ctaOrbit2 { 0% { transform: translate(0,0) scale(1); } 33% { transform: translate(-25px,30px) scale(1.05); } 66% { transform: translate(30px,-15px) scale(0.9); } 100% { transform: translate(0,0) scale(1); } }
-
-    /* Floating particles */
-    .cta-particles { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
-    .cta-particle {
-      position: absolute; width: 3px; height: 3px; background: rgba(212,175,55,0.5);
-      border-radius: 50%; animation: particleRise linear infinite;
-    }
-    @keyframes particleRise {
-      0% { transform: translateY(100%) scale(0); opacity: 0; }
-      10% { opacity: 1; }
-      90% { opacity: 1; }
-      100% { transform: translateY(-100vh) scale(1.5); opacity: 0; }
-    }
-
-    .landing-cta-content { position: relative; z-index: 1; }
-
-    /* Header = "Imagina un retiro..." (the blue subtext becomes the big header) */
-    .cta-main-headline {
-      font-size: clamp(2rem, 5vw, 3.25rem); font-weight: 700;
-      font-family: 'Playfair Display', serif; color: white;
-      margin-bottom: 1rem; line-height: 1.15;
-      animation: ctaHeadlineIn 1s ease-out both;
-    }
-    @keyframes ctaHeadlineIn { from { opacity: 0; transform: translateY(30px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
-
-    /* Subheader = "Retírate joven..." (gold shimmer) */
-    .cta-sub-headline {
-      font-size: clamp(1.1rem, 2.5vw, 1.6rem); font-weight: 600;
-      margin-bottom: 2rem;
-      background: linear-gradient(90deg, #D4AF37, #F0D060, #E8C84A, #D4AF37); background-size: 300%;
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-      animation: shimmer 4s ease infinite, ctaSubIn 1s 0.3s ease-out both;
-      letter-spacing: 0.02em;
-    }
-    @keyframes ctaSubIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-
-    .cta-body-text {
-      color: rgba(255,255,255,0.9); font-size: 1.05rem; margin-bottom: 1.5rem;
-      max-width: 620px; margin-left: auto; margin-right: auto; line-height: 1.7;
-      animation: ctaBodyIn 1s 0.5s ease-out both;
-    }
-    @keyframes ctaBodyIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
-
-    /* Divider line */
-    .cta-divider {
-      width: 80px; height: 3px; margin: 0 auto 2rem;
-      background: linear-gradient(90deg, transparent, #D4AF37, transparent);
-      animation: ctaDividerIn 1s 0.6s ease-out both;
-    }
-    @keyframes ctaDividerIn { from { width: 0; opacity: 0; } to { width: 80px; opacity: 1; } }
-
-    .brand-tagline {
-      text-align: center; margin-top: 1.5rem; margin-bottom: 1.5rem;
-      animation: ctaBrandIn 1s 0.7s ease-out both;
-    }
-    @keyframes ctaBrandIn { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
-    .brand-tagline p { color: rgba(255,255,255,0.6); font-size: 0.9rem; }
-    .brand-tagline strong { color: white; font-size: 1.3rem; display: block; margin-bottom: 0.25rem; }
-
-    /* CTA button */
-    .cta-btn-pulse {
-      animation: ctaPulse 3s ease-in-out infinite, ctaBtnIn 1s 0.9s ease-out both;
-      position: relative; overflow: hidden;
-    }
-    .cta-btn-pulse::before {
-      content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%;
-      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
-      animation: btnSweep 3s ease-in-out infinite;
-    }
-    .cta-btn-pulse::after {
-      content: ''; position: absolute; inset: -6px; border-radius: inherit;
-      background: linear-gradient(135deg, rgba(212,175,55,0.5), transparent, rgba(212,175,55,0.5));
-      z-index: -1; filter: blur(12px); opacity: 0; animation: ctaGlow 3s ease-in-out infinite;
-    }
-    @keyframes ctaPulse { 0%,100% { transform: scale(1); box-shadow: 0 8px 24px rgba(212,175,55,0.3); } 50% { transform: scale(1.05); box-shadow: 0 16px 40px rgba(212,175,55,0.5); } }
-    @keyframes ctaGlow { 0%,100% { opacity: 0; } 50% { opacity: 1; } }
-    @keyframes ctaBtnIn { from { opacity: 0; transform: translateY(20px) scale(0.9); } to { opacity: 1; transform: translateY(0) scale(1); } }
-    @keyframes btnSweep { 0% { left: -100%; } 50%,100% { left: 200%; } }
-
-    /* ==================== FAQ ==================== */
-    .landing-faq-container { max-width: 800px; margin: 0 auto; display: flex; flex-direction: column; gap: 0.75rem; }
-    .landing-faq-item {
-      border: none; border-radius: 1rem; overflow: hidden;
-      background: white; box-shadow: 0 2px 12px rgba(0,18,51,0.04);
-      border-left: 4px solid transparent;
-      transition: all 400ms cubic-bezier(0.4,0,0.2,1);
-      opacity: 0; transform: translateY(20px);
-      animation: faqReveal 500ms ease forwards;
-    }
-    .landing-faq-item:nth-child(1) { animation-delay: 0ms; }
-    .landing-faq-item:nth-child(2) { animation-delay: 80ms; }
-    .landing-faq-item:nth-child(3) { animation-delay: 160ms; }
-    .landing-faq-item:nth-child(4) { animation-delay: 240ms; }
-    .landing-faq-item:nth-child(5) { animation-delay: 320ms; }
-    .landing-faq-item:nth-child(6) { animation-delay: 400ms; }
-    @keyframes faqReveal { to { opacity: 1; transform: translateY(0); } }
-    .landing-faq-item:hover { box-shadow: 0 8px 28px rgba(0,18,51,0.1); transform: translateY(-2px); }
-    .landing-faq-item.open { border-left-color: #003DA5; box-shadow: 0 12px 32px rgba(0,18,51,0.1); }
-    .landing-faq-question {
-      padding: 1.1rem 1.5rem; background: white; cursor: pointer;
-      display: flex; justify-content: space-between; align-items: center;
-      font-weight: 600; color: #001233; font-size: 0.95rem; user-select: none;
-      gap: 1rem; transition: background 200ms;
-    }
-    .landing-faq-question:hover { background: rgba(0,61,165,0.03); }
-    .landing-faq-toggle {
-      width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
-      display: flex; align-items: center; justify-content: center;
-      background: rgba(0,61,165,0.08); color: #003DA5; font-size: 0.75rem;
-      transition: all 400ms cubic-bezier(0.34,1.56,0.64,1);
-    }
-    .landing-faq-item.open .landing-faq-toggle {
-      transform: rotate(180deg); background: linear-gradient(135deg, #003DA5, #0052D4); color: white;
-    }
-    .landing-faq-answer {
-      padding: 0 1.5rem; background: white; color: #4B5563; line-height: 1.8;
-      max-height: 0; overflow: hidden; transition: max-height 400ms cubic-bezier(0.4,0,0.2,1), padding 400ms; font-size: 0.95rem;
-    }
-    .landing-faq-item.open .landing-faq-answer { max-height: 500px; padding: 0 1.5rem 1.25rem; }
-
-    /* ==================== Footer ==================== */
-    .landing-footer { background: linear-gradient(180deg, #001233, #000D1F); color: white; padding: 3rem 1.5rem 1.5rem; }
-    .landing-footer-content { max-width: 1200px; margin: 0 auto; display: grid; grid-template-columns: repeat(3, 1fr); gap: 2rem; margin-bottom: 1.5rem; }
-    .landing-footer-column h3 { color: white; margin-bottom: 1.5rem; font-size: 1rem; font-weight: 700; }
-    .landing-footer-column p { color: rgba(255,255,255,0.8); margin-bottom: 1rem; line-height: 1.6; font-size: 0.95rem; }
-    .landing-footer-column a { color: rgba(255,255,255,0.8); text-decoration: none; display: block; margin-bottom: 1rem; transition: color 300ms; font-size: 0.95rem; }
-    .landing-footer-column a:hover { color: #C9A84C; }
-    .landing-social-links { display: flex; gap: 1rem; margin-top: 1rem; }
-    .landing-social-links a {
-      width: 40px; height: 40px; border-radius: 50%; background: rgba(201,168,76,0.15);
-      display: flex; align-items: center; justify-content: center; color: #C9A84C;
-      transition: all 300ms; margin-bottom: 0;
-    }
-    .landing-social-links a:hover { background: #C9A84C; color: #003DA5; transform: translateY(-3px); }
-    .landing-footer-bottom { text-align: center; padding-top: 2rem; border-top: 1px solid rgba(255,255,255,0.1); color: rgba(255,255,255,0.7); font-size: 0.9rem; }
-
-    /* ==================== WhatsApp ==================== */
-    .landing-whatsapp-button {
-      position: fixed; bottom: 30px; right: 30px; width: 64px; height: 64px;
-      background: linear-gradient(145deg, #25D366, #20BD5A); border-radius: 50%; display: flex; align-items: center;
-      justify-content: center; box-shadow: 0 8px 32px rgba(37,211,102,0.35);
-      cursor: pointer; transition: all 400ms cubic-bezier(0.4,0,0.2,1); z-index: 1030; color: white;
-      font-size: 1.5rem; text-decoration: none;
-    }
-    .landing-whatsapp-button:hover { transform: scale(1.12) translateY(-4px); box-shadow: 0 16px 40px rgba(37,211,102,0.5); }
-
-    .landing-sound-toggle {
-      position: fixed; bottom: 30px; left: 30px; width: 48px; height: 48px;
-      background: rgba(0,18,51,0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-      border: 1px solid rgba(255,255,255,0.15); border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
-      cursor: pointer; z-index: 1030; color: white; transition: all 300ms ease;
-    }
-    .landing-sound-toggle:hover { background: rgba(0,61,165,0.9); transform: scale(1.1); }
-
-    /* ==================== Animations ==================== */
-    @keyframes slideInUp { from { opacity: 0; transform: translate3d(0,24px,0); filter: blur(2px); } to { opacity: 1; transform: translate3d(0,0,0); filter: blur(0); } }
-    .slide-up { animation: slideInUp 0.5s cubic-bezier(0.25,0.46,0.45,0.94); }
-
-    /* ==================== Responsive — Tablet (≤1024px) ==================== */
-    @media (max-width: 1024px) {
-      .landing-hero-content { gap: 2rem; }
-      .landing-problems-grid, .landing-services-grid { grid-template-columns: repeat(2, 1fr); gap: 1.5rem; }
-      .about-pillars { grid-template-columns: repeat(3, 1fr); gap: 1rem; }
-      .landing-cta-section { padding: 4rem 2rem; }
-      .tax-calc-grid { gap: 1rem; }
-    }
-
-    /* ==================== Responsive — Mobile (≤768px) ==================== */
-    @media (max-width: 768px) {
-      /* — Navbar — */
-      .landing-navbar-menu {
-        display: none; position: absolute; top: 56px; left: 0; right: 0;
-        flex-direction: column; gap: 0; background: rgba(255,255,255,0.98);
-        backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-        padding: 1rem 1.5rem; box-shadow: 0 16px 32px rgba(0,18,51,0.12);
-        border-radius: 0 0 1rem 1rem; z-index: 1040;
-      }
-      .landing-navbar-menu.active { display: flex; }
-      .landing-navbar-menu li { border-bottom: 1px solid rgba(0,18,51,0.06); padding: 0.85rem 0; }
-      .landing-navbar-menu li:last-child { border-bottom: none; }
-      .landing-navbar-menu a { font-size: 1rem; }
-      .landing-hamburger { display: flex; }
-      .landing-navbar-cta { display: none; }
-
-      /* — Sections base — */
-      .landing-section-padding { padding: 2.5rem 1rem; min-height: auto; }
-      .landing-section-compact { padding: 2rem 1rem; }
-      .landing-section-header { margin-bottom: 2rem; }
-      .landing-section-header h2 { font-size: clamp(1.5rem, 5vw, 2rem); }
-      .landing-section-header p { font-size: 0.95rem; }
-
-      /* — Hero — */
-      .landing-hero { padding-top: 56px; min-height: auto; padding-bottom: 2rem; }
-      .landing-hero-content { grid-template-columns: 1fr; gap: 1.5rem; padding: 1.5rem 1rem; }
-      .landing-hero-text { text-align: center; }
-      .landing-hero-text h1 { font-size: clamp(1.6rem, 6vw, 2.2rem); }
-      .landing-hero-text p { font-size: 0.95rem; text-align: center !important; }
-      .landing-hero-cta { justify-content: center; }
-      .landing-hero-cta .landing-btn { padding: 0.75rem 1.5rem; font-size: 0.9rem; min-height: 44px; }
-      .hero-carousel { min-height: 280px; border-radius: 1rem; }
-      .hero-carousel-video { border-radius: 1rem; }
-      .hero-carousel-overlay { border-radius: 1rem; }
-      .hero-slide-content { padding: 1.25rem; }
-      .hero-slide-title { font-size: 1.1rem; }
-      .hero-slide-subtitle { font-size: 0.8rem; }
-      .hero-slide-stat { padding: 0.5rem 1rem; }
-      .hero-slide-stat-value { font-size: 1.2rem; }
-      .hero-slide-stat-label { font-size: 0.7rem; }
-      .landing-hero::before { width: 350px; height: 350px; top: -10%; right: -20%; }
-      .landing-hero::after { width: 300px; height: 300px; bottom: -20%; left: -20%; }
-
-      /* — Brand section — */
-      .brand-grid { grid-template-columns: 1fr; gap: 1.5rem; }
-      .brand-left { display: flex; justify-content: center !important; align-items: center; }
-      .brand-img-card { max-height: 340px !important; max-width: 80% !important; margin: 0 auto; border-radius: 1rem !important; }
-      .brand-video-wrapper { max-height: 280px; aspect-ratio: 16/9; }
-      .brand-name-highlight { font-size: 1.15rem; padding: 0.5rem 1.25rem; }
-      .brand-quote { padding: 1.25rem; font-size: 0.95rem; }
-      .brand-text { font-size: 0.95rem; text-align: center !important; }
-      .brand-right { text-align: center; }
-
-      /* — Emotion section — */
-      .emotion-grid { grid-template-columns: 1fr; gap: 2rem; }
-      .emotion-list li { font-size: 0.95rem; }
-      .emotion-combo { gap: 0.5rem; }
-      .emotion-combo-item { padding: 0.65rem 1.25rem; font-size: 0.85rem; }
-      .emotion-badge { font-size: 0.75rem; padding: 0.35rem 0.8rem; }
-      .emotion-cta { font-size: 1rem; padding: 0.9rem 1.75rem; border-radius: 0.75rem; }
-      .emotion-mini { font-size: 1rem; }
-
-      /* — Problem cards — */
-      .landing-problems-grid { grid-template-columns: 1fr; gap: 1.5rem; }
-      .landing-problem-card { padding: 2rem 1.5rem; }
-      .problem-number { font-size: 4.5rem; }
-
-      /* — Solution cards — */
-      .landing-services-grid { grid-template-columns: 1fr; gap: 1.5rem; }
-      .landing-services-grid::before { display: none; }
-      .landing-service-card { padding: 2rem 1.5rem; }
-
-      /* — SAT / PPR section — */
-      .sat-grid { grid-template-columns: 1fr; gap: 2rem; }
-      .sat-video-wrapper { max-height: 320px; aspect-ratio: 3/4; margin: 0 auto; max-width: 280px; }
-      .sat-badge-row { flex-wrap: wrap; justify-content: center; }
-      .sat-ppr-badge { font-size: 0.8rem; }
-      .sat-cta-group { flex-direction: column; align-items: center; }
-      .sat-cta-btn { width: 100%; max-width: 320px; text-align: center; font-size: 0.95rem !important; padding: 0.85rem 1.75rem !important; }
-
-      /* — Tax Calculator — */
-      .tax-calc-container { padding: 1rem; }
-      .tax-calc-container.story-mode { padding: 1.25rem 1rem; }
-      .tax-calc-grid { grid-template-columns: 1fr; }
-      .tax-results { padding: 1rem; margin-top: 1rem; }
-      .tax-results h3 { font-size: 0.9rem; }
-      .tax-stat-card { padding: 0.5rem; }
-      .tax-stat-card .stat-value { font-size: 1.25rem; }
-      .tax-stat-card .stat-label { font-size: 0.55rem; }
-      .tax-hero-card { padding: 0.65rem; }
-      .tax-result-highlight { padding: 0.75rem; }
-      .tax-result-highlight .tax-result-value { font-size: 1.4rem; }
-      .tax-result-row { padding: 0.3rem 0; }
-      .tax-result-label { font-size: 0.7rem; }
-      .tax-result-value { font-size: 0.9rem; }
-      .tax-scenarios { grid-template-columns: 1fr; gap: 0.75rem; }
-      .tax-toggle-advanced { font-size: 0.85rem; }
-      .tax-input-group label { font-size: 0.75rem; }
-      .tax-input-group input, .tax-input-group select { font-size: 0.8rem; padding: 0.4rem 0.6rem; }
-      /* — Storytelling mobile — */
-      .tax-calc-container.story-mode { padding: 1.5rem 1.15rem 1.25rem; }
-      .story-step-title { font-size: 1.05rem; }
-      .story-step-number { width: 36px; height: 36px; font-size: 0.85rem; }
-      .story-input-wrapper { padding: 1rem; }
-      .story-input-big { font-size: 1.15rem; padding: 0.85rem; }
-      .story-input-big::placeholder { font-size: 0.95rem; }
-      .story-isr-reveal { padding: 1.5rem 1rem; }
-      .story-isr-amount { font-size: 2.25rem; }
-      .story-comparison { flex-direction: column; gap: 0; }
-      .story-comparison-arrow {
-        width: 100%; height: 36px;
-        border-radius: 0;
-      }
-      .story-comp-orange { border-radius: 1rem 1rem 0 0; border-right: 1px solid rgba(232,160,48,0.15); border-bottom: none; }
-      .story-comp-green { border-radius: 0 0 1rem 1rem; border-left: 1px solid rgba(52,211,153,0.15); border-top: none; }
-      .story-final-summary { flex-direction: column; }
-      .story-final-box { padding: 1.5rem 1.15rem; }
-      .story-final-stat-value { font-size: 1.25rem; }
-      .story-alert-ojo { padding: 0.7rem 0.85rem; font-size: 0.78rem; }
-      .story-alert-tope { font-size: 1.05rem; }
-      .story-deduction-name { font-size: 0.78rem; }
-      .story-deduction-limit { font-size: 0.65rem; padding: 0.15rem 0.45rem; }
-      .story-deduction-icon { width: 24px; height: 24px; font-size: 0.85rem; }
-      .story-deduction-row { padding: 0.3rem 0.4rem; gap: 0.5rem; }
-      .story-ppr-input { padding: 1rem; }
-      .story-step-divider { height: 32px; }
-
-      /* — Para Quién + Trust — */
-      .paraquien-grid { grid-template-columns: 1fr; gap: 2rem; }
-      .pq-card { padding: 0.75rem 1rem; font-size: 0.9rem; gap: 0.65rem; }
-      .paraquien-stats-col { grid-template-columns: repeat(2, 1fr); gap: 0.65rem; }
-      .trust-stat-card { padding: 1.25rem 1rem; }
-      .trust-stat-number { font-size: 1.85rem; }
-      .trust-stat-label { font-size: 0.75rem; }
-      .pq-cta-text { font-size: 0.85rem; }
-
-      /* — Live Banner — */
-      .live-banner { padding: 0.65rem 1.25rem; gap: 0.5rem; }
-      .live-text { font-size: 0.82rem; }
-      .live-count { font-size: 0.95rem; }
-
-      /* — About / Pillars — */
-      .about-full { padding: 0 0.25rem; }
-      .about-pillars { grid-template-columns: repeat(2, 1fr); gap: 0.85rem; }
-      .about-pillar-card { padding: 1.5rem 1rem; }
-      .about-pillar-icon { width: 50px; height: 50px; }
-      .about-pillar-card h4 { font-size: 0.9rem; }
-      .about-pillar-card p { font-size: 0.8rem; }
-      .about-highlight-bar { padding: 1.25rem 1.25rem; border-radius: 0.75rem; }
-      .about-highlight-bar p { font-size: 1rem; }
-
-      /* — FAQ — */
-      .landing-faq-container { gap: 0.5rem; }
-      .landing-faq-question { padding: 0.9rem 1rem; font-size: 0.9rem; gap: 0.75rem; }
-      .landing-faq-answer { font-size: 0.9rem; }
-      .landing-faq-item.open .landing-faq-answer { padding: 0 1rem 1rem; }
-
-      /* — Contact Form — */
-      .landing-contact-form-container { padding: 1.5rem 1rem; }
-      .landing-contact-form-container h2 { font-size: clamp(1.3rem, 4.5vw, 1.75rem); }
-      .form-subcopy { font-size: 0.85rem; }
-      .landing-form-row { grid-template-columns: 1fr; gap: 0.5rem; }
-      .landing-form-group { margin-bottom: 0.5rem; }
-      .landing-form-submit { font-size: 0.95rem; padding: 0.95rem 1.5rem; }
-
-      /* — CTA Section — */
-      .landing-cta-section { padding: 3rem 1.5rem; border-radius: 1.25rem; margin: 0 0.25rem; }
-      .landing-cta-section::before { width: 300px; height: 300px; top: -20%; right: -15%; }
-      .landing-cta-section::after { width: 250px; height: 250px; bottom: -20%; left: -15%; }
-      .cta-main-headline { font-size: clamp(1.5rem, 5vw, 2rem); }
-      .cta-sub-headline { font-size: clamp(0.95rem, 3vw, 1.3rem); margin-bottom: 1.25rem; }
-      .cta-body-text { font-size: 0.9rem; line-height: 1.6; margin-bottom: 1rem; }
-      .cta-divider { margin-bottom: 1.25rem; }
-      .cta-particles { display: none; }
-      .cta-btn-pulse { font-size: 0.95rem !important; padding: 1rem 1.75rem !important; }
-      .brand-tagline p { font-size: 0.8rem; }
-
-      /* — Footer — */
-      .landing-footer { padding: 2.5rem 1rem 1.25rem; }
-      .landing-footer-content { grid-template-columns: 1fr; gap: 1.5rem; text-align: center; }
-      .landing-footer-column { display: flex; flex-direction: column; align-items: center; }
-      .landing-footer-column h3 { margin-bottom: 0.75rem; }
-      .landing-footer-column p { font-size: 0.9rem; }
-      .landing-footer-column a { font-size: 0.9rem; margin-bottom: 0.65rem; }
-      .landing-social-links { justify-content: center; }
-      .landing-footer-bottom { font-size: 0.8rem; padding-top: 1.25rem; }
-
-      /* — Fixed buttons — */
-      .landing-whatsapp-button { bottom: 20px; right: 16px; width: 52px; height: 52px; }
-      .landing-sound-toggle { bottom: 20px; left: 16px; width: 42px; height: 42px; }
-    }
-
-    /* ==================== Responsive — Small Mobile (≤480px) ==================== */
-    @media (max-width: 480px) {
-      .landing-hero-text h1 { font-size: clamp(1.35rem, 5.5vw, 1.8rem); }
-      .landing-hero-cta { flex-direction: column; align-items: stretch; }
-      .landing-hero-cta .landing-btn { text-align: center; }
-      .hero-carousel { min-height: 220px; }
-      .hero-slide-stat { flex-direction: column; gap: 0.25rem; text-align: center; }
-
-      .landing-problem-card { padding: 1.5rem 1.25rem; }
-      .problem-number { font-size: 3.5rem; }
-
-      .about-pillars { grid-template-columns: 1fr; gap: 0.75rem; }
-      .about-pillar-card { flex-direction: row; text-align: left; padding: 1.25rem; gap: 1rem; }
-      .about-pillar-icon { margin: 0; width: 48px; height: 48px; flex-shrink: 0; }
-      .about-pillar-card h4 { font-size: 0.85rem; margin-bottom: 0.2rem; }
-      .about-pillar-card p { font-size: 0.8rem; }
-
-      .paraquien-stats-col { grid-template-columns: 1fr; }
-      .trust-stat-card { display: flex; align-items: center; gap: 1rem; text-align: left; padding: 1rem 1.25rem; }
-      .trust-stat-number { font-size: 1.5rem; margin-bottom: 0; }
-      .trust-stat-bg-icon { display: none; }
-
-      .brand-img-card { max-height: 300px !important; max-width: 70% !important; border-radius: 0.75rem !important; }
-
-      .landing-cta-section { padding: 2.5rem 1rem; border-radius: 1rem; }
-      .cta-btn-pulse { font-size: 0.85rem !important; padding: 0.9rem 1.25rem !important; letter-spacing: 0 !important; }
-
-      .tax-stat-card .stat-value { font-size: 1.1rem; }
-      .tax-result-highlight .tax-result-value { font-size: 1.2rem; }
-
-      .landing-contact-form-container h2 { font-size: 1.25rem; }
-      .landing-form-submit { font-size: 0.9rem; }
-
-      .sat-video-wrapper { max-width: 220px; max-height: 280px; }
-
-      .brand-video-wrapper { max-height: 220px; }
-      .brand-name-highlight { font-size: 1rem; }
-    }
-  `;
+  const goto = (id) => { setNavOpen(false); document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' }); };
 
   return (
-    <>
-      <style>{styles}</style>
+    <div className="fsc">
+      <style>{CSS}</style>
 
-      {/* ==================== 0. NAVBAR ==================== */}
-      <nav className={`landing-navbar ${isNavScrolled ? 'scrolled' : ''}`}>
-        <div className="landing-navbar-content">
-          <a href="#" className="landing-navbar-logo"><Logo height={38} variant="dark" /></a>
-          <button
-            className={`landing-hamburger ${isMobileMenuOpen ? 'active' : ''}`}
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            aria-label="Toggle menu"
-          >
-            <span></span><span></span><span></span>
-          </button>
-          <ul className={`landing-navbar-menu ${isMobileMenuOpen ? 'active' : ''}`}>
-            <li><a href="#problema" onClick={() => scrollToSection('problema')}>Problema</a></li>
-            <li><a href="#solucion" onClick={() => scrollToSection('solucion')}>Solución</a></li>
-            <li><a href="#simulador" onClick={() => scrollToSection('simulador')}>Simulador</a></li>
-            <li><a href="#faq" onClick={() => scrollToSection('faq')}>FAQ</a></li>
-            <li><a href="#contacto" onClick={() => scrollToSection('contacto')}>Contacto</a></li>
-          </ul>
-          <div className="landing-navbar-cta">
-            <button className="landing-btn landing-btn-primary" onClick={() => scrollToSection('simulador')}>
-              Haz tu simulación
-            </button>
+      {/* ───────── NAV ───────── */}
+      <nav className={`fsc-nav ${scrolled ? 'on' : ''}`}>
+        <div className="fsc-wrap fsc-nav-in">
+          <a className="fsc-brand" href="#top" onClick={(e) => { e.preventDefault(); goto('top'); }}><Logo height={30} layout="inline" /></a>
+          <div className="fsc-nav-links">
+            <a onClick={() => goto('beneficios')}>Beneficios</a>
+            <a onClick={() => goto('proceso')}>Cómo funciona</a>
+            <a onClick={() => goto('simulador')}>Calculadora</a>
+            <a onClick={() => goto('casos')}>Casos de éxito</a>
+          </div>
+          <div className="fsc-nav-r">
+            <button className="fsc-btn fsc-btn-ghost fsc-sm" onClick={() => navigate('/login')}>Entrar</button>
+            <button className="fsc-btn fsc-btn-gold fsc-sm" onClick={() => goto('contacto')}>Agenda gratis</button>
+            <button className="fsc-burger" onClick={() => setNavOpen((o) => !o)} aria-label="Menú">{navOpen ? <X size={22} /> : <Menu size={22} />}</button>
           </div>
         </div>
+        {navOpen && (
+          <div className="fsc-nav-mobile">
+            <a onClick={() => goto('beneficios')}>Beneficios</a>
+            <a onClick={() => goto('proceso')}>Cómo funciona</a>
+            <a onClick={() => goto('simulador')}>Calculadora</a>
+            <a onClick={() => goto('casos')}>Casos de éxito</a>
+            <button className="fsc-btn fsc-btn-gold" onClick={() => goto('contacto')}>Agenda gratis</button>
+          </div>
+        )}
       </nav>
 
-      {/* ==================== 1. HERO PRINCIPAL ==================== */}
-      <section className="landing-hero" ref={heroSectionRef}>
-        <div className="landing-hero-content">
-          <div className="landing-hero-text">
-            <h1>Tu dinero, tu retiro y tus impuestos <span className="gold">pueden sentirse menos complicados</span></h1>
-            <p style={{ textAlign: 'justify' }}>
-              En <span style={{ display: 'inline-block', verticalAlign: 'middle', margin: '0 0.2rem' }}><Logo height={28} variant="light" layout="inline" animated /></span> hacemos algo muy simple: convertimos lo que antes sonaba pesado
-              —números, SAT, ahorro, retiro y estrategia fiscal— en algo fácil de entender,
-              útil y hasta emocionante de usar a tu favor.
-            </p>
-            <div className="landing-hero-cta">
-              <button className="landing-btn landing-btn-gold" onClick={() => scrollToSection('simulador')}>
-                Quiero ver cuánto puedo aprovechar
-              </button>
-              <button className="landing-btn landing-btn-outline-hero" onClick={() => scrollToSection('simulador')} style={{ padding: '0.85rem 2rem', fontSize: '1rem', minHeight: '48px' }}>
-                Ver simulador <ChevronDown size={18} style={{ marginLeft: '8px' }} />
-              </button>
+      {/* ───────── HERO ───────── */}
+      <header className="fsc-hero" id="top">
+        <span className="fsc-blob b1" /><span className="fsc-blob b2" /><span className="fsc-blob b3" />
+        <div className="fsc-wrap fsc-hero-grid">
+          <div>
+            <span className="fsc-eyebrow fsc-rv"><Star size={13} fill="currentColor" stroke="none" /> 4.9/5 · +900 familias ya optimizan sus finanzas</span>
+            <h1 className="fsc-rv">Paga menos impuestos y construye el <span className="fsc-hl">retiro</span> que mereces.</h1>
+            <p className="fsc-lede fsc-rv">Diseñamos tu estrategia fiscal y de retiro con un PPR deducible. Recupera parte de tu ISR cada año y haz que tu dinero trabaje para ti — con el respaldo de Prudential.</p>
+            <div className="fsc-hero-cta fsc-rv">
+              <button className="fsc-btn fsc-btn-gold fsc-lg" onClick={() => goto('simulador')}>Calcular mi ahorro <ArrowRight size={18} /></button>
+              <button className="fsc-btn fsc-btn-ghost fsc-lg" onClick={() => goto('proceso')}>Cómo funciona</button>
+            </div>
+            <div className="fsc-rating fsc-rv">
+              <div className="fsc-avs"><span>👨‍⚕️</span><span>👩‍💼</span><span>🧑‍💻</span><span>👨‍🔧</span></div>
+              <div>
+                <div className="fsc-stars">{STARS()}</div>
+                <div className="fsc-rt"><b>Asesoría certificada</b> · respaldo de Prudential</div>
+              </div>
             </div>
           </div>
-          <div className="hero-carousel">
-            {heroSlides.map((slide, idx) => (
-              <video key={idx} ref={(el) => (heroVideoRefs.current[idx] = el)} className={`hero-carousel-video ${heroSlide === idx ? 'active' : ''}`} autoPlay loop globalMuted={isMuted} playsInline>
-                <source src={slide.video} type="video/mp4" />
-              </video>
+
+          {/* Mockup: tarjeta de estrategia */}
+          <div className="fsc-rv">
+            <div className="fsc-stage">
+              <div className="fsc-rbg rbg1" /><div className="fsc-rbg rbg2" />
+              <div className="fsc-card3d">
+                <div className="fsc-c-head">
+                  <div className="fsc-c-ava">TU</div>
+                  <div><div className="fsc-c-name">Tu estrategia 2026</div><div className="fsc-c-role">Plan fiscal + retiro</div></div>
+                  <div className="fsc-c-score"><b>Óptima</b><span>PLAN</span></div>
+                </div>
+                <div className="fsc-c-lbl">ISR ANUAL</div>
+                <div className="fsc-c-row"><span>Sin estrategia</span><b className="muted">{fmt(isrActual)}</b></div>
+                <div className="fsc-bar"><i style={{ width: '100%' }} /></div>
+                <div className="fsc-c-row"><span>Con tu PPR</span><b className="gold">{fmt(isrOptimizado)}</b></div>
+                <div className="fsc-bar gold"><i style={{ width: `${Math.max(12, 100 - pctAhorro)}%` }} /></div>
+                <div className="fsc-c-lbl">INCLUYE</div>
+                <div className="fsc-c-chips"><span>Deducible</span><span>Rendimiento</span><span>Protegido</span></div>
+              </div>
+              <div className="fsc-float f1"><div className="ic"><Check size={15} /></div>Deducible de ISR</div>
+              <div className="fsc-float f2"><div className="ic">🎯</div><div>Ahorro<small>-{pctAhorro}% impuestos</small></div></div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* ───────── STATS ───────── */}
+      <div className="fsc-strip">
+        <div className="fsc-wrap fsc-strip-grid">
+          <div className="fsc-stat" ref={r1}><div className="n">+{Math.round(c1)}</div><div className="k">familias asesoradas</div></div>
+          <div className="fsc-stat" ref={r2}><div className="n">{Math.round(c2)}%</div><div className="k">ahorro fiscal promedio</div></div>
+          <div className="fsc-stat"><div className="n">4.9<span>/5</span></div><div className="k">satisfacción</div></div>
+          <div className="fsc-stat" ref={r3}><div className="n">{Math.round(c3)}+</div><div className="k">años de experiencia</div></div>
+        </div>
+      </div>
+
+      {/* ───────── BENEFICIOS ───────── */}
+      <section id="beneficios" className="fsc-sec">
+        <div className="fsc-wrap">
+          <div className="fsc-sec-head fsc-rv">
+            <span className="fsc-eyebrow">Tres palancas, bien hechas</span>
+            <h2>No es un seguro más.<br />Es tu dinero <span className="fsc-g">trabajando para ti</span>.</h2>
+            <p>Combinamos lo que de verdad mueve la aguja: pagar menos impuestos, construir tu retiro y proteger a tu familia — en una sola estrategia.</p>
+          </div>
+          <div className="fsc-feat">
+            {[
+              { ic: <Landmark size={26} />, tint: 'navy', h: 'Paga menos ISR', p: 'Un PPR deducible baja tu base gravable: aportas, deduces y recuperas parte de lo que hoy pagas de impuestos.', li: ['Deduce hasta el 10% de tu ingreso', 'Dentro de los topes legales (art. 151)', 'Devolución anual en tu declaración'] },
+              { ic: <PiggyBank size={26} />, tint: 'gold', h: 'Retiro que sí alcanza', p: 'Tu dinero crece con rendimiento real y aportaciones flexibles. Ves la proyección clara, sin letras chiquitas.', li: ['Rendimiento compuesto a tu favor', 'Aportas a tu ritmo', 'Proyección de tu retiro paso a paso'] },
+              { ic: <ShieldCheck size={26} />, tint: 'navy', h: 'Protección para tu familia', p: 'Si algo pasa, tu familia queda cubierta. Tranquilidad con el respaldo de una aseguradora global.', li: ['Cobertura para los tuyos', 'Respaldo de Prudential', 'Un solo plan, todo integrado'] },
+            ].map((f, i) => (
+              <div className="fsc-fcard fsc-rv" key={i}>
+                <div className={`fsc-fchip ${f.tint}`}>{f.ic}</div>
+                <h3>{f.h}</h3>
+                <p>{f.p}</p>
+                <ul>{f.li.map((l, j) => <li key={j}><Check size={17} /> {l}</li>)}</ul>
+              </div>
             ))}
-            <div className="hero-carousel-overlay" />
-            {heroSlides.map((slide, idx) => (
-              <div key={idx} className={`hero-slide-content ${heroSlide === idx ? 'active' : ''}`}>
-                <div className="hero-slide-title">{slide.title}</div>
-                <div className="hero-slide-subtitle">{slide.subtitle}</div>
-                <div className="hero-slide-stat">
-                  <div className="hero-slide-stat-value">{slide.stat}</div>
-                  <div className="hero-slide-stat-label">{slide.statLabel}</div>
-                </div>
-              </div>
-            ))}
-            <div className="hero-dots">
-              {heroSlides.map((_, idx) => (
-                <button key={idx} className={`hero-dot ${heroSlide === idx ? 'active' : ''}`} onClick={() => setHeroSlide(idx)} />
-              ))}
-            </div>
           </div>
         </div>
       </section>
 
-      {/* ==================== 2. IDENTIDAD DE MARCA ==================== */}
-      <section className="landing-section landing-section-light landing-section-padding" style={{ position: 'relative', overflow: 'hidden' }}>
-        <PremiumParticles color="gold" density={18} />
-        <div className="brand-block" ref={(el) => (observerRefs.current[0] = el)} data-section="brand" style={{ position: 'relative', zIndex: 1 }}>
-          <div className={`landing-section-header ${visibleSections.brand ? 'revealed' : ''}`}>
-            <span className="landing-section-subtitle">Nuestra Historia</span>
-            <h2>¿Por qué <span style={{ color: '#003DA5' }}>Finance</span> S C<span className="oo-infinity">oo</span>l?</h2>
-          </div>
-          <div className={`brand-grid ${visibleSections.brand ? 'revealed' : ''}`}>
-            <div className="brand-left" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <img className="brand-img-card" src="https://res.cloudinary.com/dihxi7zgv/image/upload/descarga_unbgiy" alt="Plan Personal de Retiro - Ahorra e Invierte a Largo Plazo" />
+      {/* ───────── PROCESO ───────── */}
+      <section id="proceso" className="fsc-sec fsc-pad0">
+        <div className="fsc-wrap">
+          <div className="fsc-block">
+            <div className="fsc-sec-head fsc-rv" style={{ marginBottom: 8 }}>
+              <span className="fsc-eyebrow">Cómo funciona</span>
+              <h2>Tres pasos. Cero relleno.</h2>
             </div>
-            <div className="brand-right">
-              <p className="brand-text" style={{ textAlign: 'justify' }}>
-                Mucha gente escucha nuestro nombre y cree que decimos <strong>Finance School</strong>,
-                como si fuéramos una escuela de finanzas. Y sí... suena parecido. Pero hay un juego de palabras que nos define:
-              </p>
-              <div style={{ margin: '1.5rem 0', display: 'flex', justifyContent: 'center' }}>
-                <Logo height={50} variant="dark" layout="inline" animated />
-              </div>
-              <p className="brand-text" style={{ textAlign: 'justify' }}>
-                Porque las finanzas, los impuestos, el ahorro y el retiro <strong>sí pueden
-                entenderse fácil, verse bien y sentirse c<span className="oo-infinity">oo</span>l.</strong>
-              </p>
-              <p className="brand-text" style={{ textAlign: 'justify' }}>
-                Nosotros lo hacemos distinto.
-                <strong> Te lo explicamos claro. Te lo aterrizamos a tu vida.</strong> Y te ayudamos a tomar decisiones inteligentes sin hablarte "en chino".
-              </p>
-              <div className="brand-quote">
-                Lo que antes daba flojera aprender, hoy por fin alguien te lo explica padrísimo.
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ==================== 3. CONEXION EMOCIONAL ==================== */}
-      <section className="landing-section landing-section-gray landing-section-padding" style={{ position: 'relative', overflow: 'hidden' }}>
-        <PremiumParticles color="blue" density={12} />
-        <div style={{ maxWidth: '1200px', margin: '0 auto', position: 'relative', zIndex: 1 }} ref={(el) => (observerRefs.current[1] = el)} data-section="emotion">
-          <div className={`landing-section-header ${visibleSections.emotion ? 'revealed' : ''}`}>
-            <h2>Si el SAT, el retiro o los números te dan dolor de cabeza... <span style={{ color: '#003DA5' }}>no eres tú.</span></h2>
-            <p>Es como te lo habían contado. La mayoría de las personas nunca recibió una guía real para entender:</p>
-          </div>
-          <div className={`emotion-grid ${visibleSections.emotion ? 'revealed' : ''}`}>
-            <div>
-              <ul className="emotion-list">
-                <li className={`reveal-left stagger-1 ${visibleSections.emotion ? 'revealed' : ''}`}><span className="emotion-check"><CheckCircle size={20} color="#C9A84C" /></span> Cómo los impuestos juegan a tu favor</li>
-                <li className={`reveal-left stagger-2 ${visibleSections.emotion ? 'revealed' : ''}`}><span className="emotion-check"><CheckCircle size={20} color="#C9A84C" /></span> Cómo construir patrimonio</li>
-                <li className={`reveal-left stagger-3 ${visibleSections.emotion ? 'revealed' : ''}`}><span className="emotion-check"><CheckCircle size={20} color="#C9A84C" /></span> Cómo preparar su retiro</li>
-                <li className={`reveal-left stagger-4 ${visibleSections.emotion ? 'revealed' : ''}`}><span className="emotion-check"><CheckCircle size={20} color="#C9A84C" /></span> Cómo escoger la herramienta financiera ideal</li>
-              </ul>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.6rem', marginTop: '1.2rem' }}>
-                <span className="emotion-badge">ingresos pasivos</span>
-                <span className="emotion-badge">deducción fiscal</span>
-                <span className="emotion-badge">retiro</span>
-              </div>
-            </div>
-            <LazyVideo src="https://res.cloudinary.com/dihxi7zgv/video/upload/Man_points_at_202603302047_ifuc9e.mp4" className="brand-video-wrapper" globalMuted={isMuted} />
-          </div>
-          <div className="emotion-cta-wrapper">
-            <p className="emotion-cta">Menos confusión. Más claridad. Más control sobre tu futuro.</p>
-          </div>
-        </div>
-      </section>
-
-      {/* ==================== 4. EL PROBLEMA ==================== */}
-      <section id="problema" className="landing-section landing-section-light landing-section-padding">
-        <div style={{ maxWidth: '1200px', margin: '0 auto' }} data-section="problema" ref={(el) => (sectionRefs.current.problema = el)}>
-          <div className={`landing-section-header ${visibleSections.problema ? 'revealed' : ''}`}>
-            <span className="landing-section-subtitle">El Problema</span>
-            <h2>¿Por qué <span style={{ color: '#D4AF37' }}>sí urge</span> actuar?</h2>
-            <p>Porque hay tres cosas que casi siempre pasan al mismo tiempo... y juntas pegan más de lo que parece.</p>
-          </div>
-          <div className="landing-problems-grid">
-            <div className={`landing-problem-card stagger-1 ${visibleSections.problema ? 'revealed' : ''}`}>
-              <span className="problem-number">01</span>
-              <div className="landing-problem-icon"><BarChart3 size={24} strokeWidth={2} /></div>
-              <h3>Tu AFORE NUNCA va a ser suficiente</h3>
-              <p>
-                Aunque si cuenta, para muchas personas no alcanza por sí sola para sostener el estilo
-                de vida que quisieran en retiro. Esperar a que "eso se resuelva solo" normalmente sale caro.
-              </p>
-            </div>
-            <div className={`landing-problem-card stagger-2 ${visibleSections.problema ? 'revealed' : ''}`}>
-              <span className="problem-number">02</span>
-              <div className="landing-problem-icon"><Wallet size={24} strokeWidth={2} /></div>
-              <h3>Pagas impuestos... pero no los estás usando a tu favor</h3>
-              <p>
-                Muchas personas hacen sus deducciones normales, pero no aprovechan herramientas orientadas
-                al retiro que podrían ayudarles a ordenar mejor su estrategia fiscal.
-              </p>
-            </div>
-            <div className={`landing-problem-card stagger-3 ${visibleSections.problema ? 'revealed' : ''}`}>
-              <span className="problem-number">03</span>
-              <div className="landing-problem-icon"><Clock size={24} strokeWidth={2} /></div>
-              <h3>El tiempo cuenta para construir patrimonio... y mucho.</h3>
-              <p>
-                Cada año que pasa sin planear retiro pesa. Porque después necesitas ahorrar más,
-                más rápido y con más presión para llegar al mismo objetivo.
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ==================== 5. SOLUCION ==================== */}
-      <section id="solucion" className="landing-section landing-section-gray landing-section-padding">
-        <div style={{ maxWidth: '1200px', margin: '0 auto' }} data-section="solucion" ref={(el) => (sectionRefs.current.solucion = el)}>
-          <div className={`landing-section-header ${visibleSections.solucion ? 'revealed' : ''}`}>
-            <span className="landing-section-subtitle">La Solución</span>
-            <h2>Aquí no solo hablas de retiro. Aquí armas una <span style={{ color: '#D4AF37' }}>estrategia inteligente.</span></h2>
-            <p>Tres piezas que juntas te ayudan a ver mejor tu dinero hoy y construir mejor tu futuro mañana.</p>
-          </div>
-          <div className="landing-services-grid">
-            <div className={`landing-service-card stagger-1 ${visibleSections.solucion ? 'revealed' : ''}`}>
-              <span className="service-step-number">1</span>
-              <div className="landing-service-icon"><Landmark size={30} strokeWidth={1.5} color="#003DA5" /></div>
-              <h3>Plan Personal de Retiro (PPR)</h3>
-              <p>Un vehículo pensado para ayudarte a construir retiro con visión de largo plazo.</p>
-              <span className="service-tag">Inversión</span>
-            </div>
-            <div className={`landing-service-card stagger-2 ${visibleSections.solucion ? 'revealed' : ''}`}>
-              <span className="service-step-number">2</span>
-              <div className="landing-service-icon"><TrendingUp size={30} strokeWidth={1.5} color="#003DA5" /></div>
-              <h3>Estrategia Fiscal C<span className="oo-infinity">oo</span>l</h3>
-              <p>Te ayudamos a entender cómo conectar ahorro, retiro y deducción de una forma clara, ordenada y aterrizada a tu caso.</p>
-              <span className="service-tag">Optimización</span>
-            </div>
-            <div className={`landing-service-card stagger-3 ${visibleSections.solucion ? 'revealed' : ''}`}>
-              <span className="service-step-number">3</span>
-              <div className="landing-service-icon"><GraduationCap size={30} strokeWidth={1.5} color="#003DA5" /></div>
-              <h3>Educación Financiera sin r<span className="oo-infinity">o</span>ll<span className="oo-infinity">o</span></h3>
-              <p>Porque antes de decidir, necesitas entender. Y entender bien cambia por completo la forma en la que usas tu dinero.</p>
-              <span className="service-tag">Educación</span>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ==================== 6. CONCEPTO VIRAL ==================== */}
-      <section className="landing-section landing-section-blue landing-section-padding" data-section="viral" ref={(el) => (sectionRefs.current.viral = el)} style={{ position: 'relative', overflow: 'hidden' }}>
-        <PremiumParticles color="gold" density={14} />
-        <div style={{ maxWidth: '1100px', margin: '0 auto', position: 'relative', zIndex: 1 }}>
-          <div className={`landing-section-header ${visibleSections.viral ? 'revealed' : ''}`} style={{ marginBottom: '1.5rem' }}>
-            <span className="landing-section-subtitle" style={{ background: 'rgba(212,175,55,0.15)', color: '#D4AF37' }}>SAT vs Tu Estrategia</span>
-            <h2 style={{ color: 'white' }}>Sí, el SAT puede sentirse como el villano... <span style={{ color: '#D4AF37' }}>pero no tienes que jugar sin estrategia</span></h2>
-          </div>
-          <div className="sat-grid">
-            <div className="sat-video-col">
-              <LazyVideo src="https://res.cloudinary.com/dihxi7zgv/video/upload/Hero_raises_shield_202603302047_cakk6l.mp4" className="sat-video-wrapper" globalMuted={isMuted} />
-            </div>
-            <div className="sat-text-col">
-              <p style={{ color: 'rgba(255,255,255,0.95)', fontSize: '1.1rem', lineHeight: '1.8', marginBottom: '1.25rem' }}>
-                La idea no es "pelearte" con el SAT. La idea es dejar de improvisar.
-              </p>
-              <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: '1rem', lineHeight: '1.8', marginBottom: '2rem' }}>
-                Si ya generas ingresos, si ya pagas impuestos y si además quieres construir algo para ti,
-                vale la pena revisar si estás usando bien las herramientas que existen.
-              </p>
-              <div className="sat-cta-group">
-                <button className="landing-btn landing-btn-gold sat-cta-btn" onClick={() => scrollToSection('simulador')}>
-                  Quiero revisar mi caso →
-                </button>
-                <div className="sat-ppr-badge">
-                  <Shield size={16} strokeWidth={2} />
-                  <span>Respaldado por tu PPR</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ==================== 7. CALCULADORA ISR 2026 — STORYTELLING ==================== */}
-      <section id="simulador" className="landing-section landing-section-light landing-section-padding" data-section="simulador" ref={(el) => (sectionRefs.current.simulador = el)}>
-        <div style={{ maxWidth: '1100px', margin: '0 auto', width: '100%' }}>
-          <div style={{ textAlign: 'center', marginBottom: '0.75rem' }}>
-            <span className="landing-section-subtitle" style={{ marginBottom: '0.25rem' }}>Simulador Fiscal 2026</span>
-            <h2 style={{ fontSize: 'clamp(1.25rem, 2.5vw, 1.75rem)', color: '#001233', fontFamily: "'Playfair Display', serif", fontWeight: 700, margin: 0 }}>¿Cuánto pagas de impuestos? Ponlo en números.</h2>
-          </div>
-          <div className={`tax-calc-container story-mode ${visibleSections.simulador ? 'revealed' : ''}`}>
-            <PremiumParticles color="gold" density={6} />
-
-            {/* ===== PASO 1 — Ingreso ===== */}
-            <div className="story-step story-step-visible">
-              <div className="story-step-header">
-                <span className="story-step-number">1</span>
-                <h3 className="story-step-title">¿Tienes ingresos por salario?</h3>
-              </div>
-              <p className="story-step-desc">Coloca aquí tu ingreso anual bruto para descubrir cuánto le entregas al SAT cada año.</p>
-              <div className="story-input-wrapper">
-                <label className="story-input-label">Ingreso Anual Bruto</label>
-                <input
-                  type="number"
-                  className="story-input-big"
-                  placeholder="Ej: 1,200,000"
-                  value={taxCalc.ingresoAnual || ''}
-                  onChange={(e) => {
-                    setTaxCalc({ ...taxCalc, ingresoAnual: Number(e.target.value) });
-                    if (storyStep > 1) setStoryStep(1);
-                  }}
-                />
-                {taxCalc.ingresoAnual > 0 && (
-                  <span className="story-input-preview">= {formatMXN(taxCalc.ingresoAnual)} al año</span>
-                )}
-              </div>
-              <button
-                className="landing-btn landing-btn-primary story-next-btn"
-                disabled={!taxCalc.ingresoAnual || taxCalc.ingresoAnual <= 0}
-                onClick={() => {
-                  setStoryStep(2);
-                  trackCalculadoraISR(taxCalc.ingresoAnual / 12, taxResults.devolucion);
-                }}
-              >
-                Ver mi impuesto →
-              </button>
-            </div>
-
-            {/* ===== PASO 2 — Lo que pagas ===== */}
-            {storyStep >= 2 && (
-              <div className="story-step story-step-enter" ref={(el) => (storyStepRefs.current[2] = el)}>
-                <div className="story-step-divider" />
-                <div className="story-step-header">
-                  <span className="story-step-number">2</span>
-                  <h3 className="story-step-title">Esto es lo que le pagas al SAT...</h3>
-                </div>
-                <div className="story-isr-reveal" style={{ position: 'relative', overflow: 'hidden' }}>
-                  <PremiumParticles color="blue" density={14} />
-                  <div className="story-isr-amount" style={{ position: 'relative', zIndex: 1 }}>{formatMXN(animatedISR)}</div>
-                  <div className="story-isr-label" style={{ position: 'relative', zIndex: 1 }}>al año en ISR</div>
-                </div>
-                <p className="story-step-desc" style={{ marginTop: '0.75rem' }}>
-                  Es lo que tu empresa retiene de tu nómina y le entrega al SAT cada año. Pero ojo: <strong style={{ color: '#003DA5' }}>una parte de ese dinero puede regresar a tu cartera.</strong>
-                </p>
-                <button
-                  className="landing-btn landing-btn-primary story-next-btn"
-                  onClick={() => setStoryStep(3)}
-                >
-                  ¿Y qué puedo hacer? →
-                </button>
-              </div>
-            )}
-
-            {/* ===== PASO 3 — Deducciones personales ===== */}
-            {storyStep >= 3 && (
-              <div className="story-step story-step-enter" ref={(el) => (storyStepRefs.current[3] = el)}>
-                <div className="story-step-divider" />
-                <div className="story-step-header">
-                  <span className="story-step-number">3</span>
-                  <h3 className="story-step-title">La ley te permite recuperar parte de ese dinero…</h3>
-                </div>
-                <p className="story-step-desc">Estas son las <strong>deducciones personales autorizadas</strong> que puedes aplicar:</p>
-
-                <div className="story-deductions-list">
-                  {[
-                    { name: 'Honorarios médicos y dentales', limit: 'Hasta 15% ingreso', icon: '🏥' },
-                    { name: 'Gastos funerarios', limit: 'Hasta $42,795', icon: '⚱️' },
-                    { name: 'Donativos', limit: 'Hasta 7% ingreso', icon: '🤝' },
-                    { name: 'Intereses créditos hipotecarios', limit: 'Hasta 750k UDIs', icon: '🏠' },
-                    { name: 'Seguro de GMM', limit: 'Sin tope específico', icon: '🛡️' },
-                    { name: 'Transporte escolar', limit: 'Sin tope específico', icon: '🚌' },
-                  ].map((d, i) => (
-                    <div key={i} className="story-deduction-row">
-                      <span className="story-deduction-icon">{d.icon}</span>
-                      <span className="story-deduction-name">{d.name}</span>
-                      <span className="story-deduction-limit">{d.limit}</span>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Alerta OJO */}
-                <div className="story-alert-ojo">
-                  <div className="story-alert-ojo-icon">⚠️</div>
-                  <div>
-                    <strong>Pero OJO</strong> — cada deducción tiene topes y montos máximos establecidos por ley que no siempre son tan favorecedores como parecen. El tope global para tu ingreso es:
-                    <div className="story-alert-tope">{formatMXN(taxResults.maxDeduciblePersonal)}</div>
-                  </div>
-                </div>
-
-                <button
-                  className="landing-btn landing-btn-primary story-next-btn"
-                  onClick={() => setStoryStep(4)}
-                >
-                  Hay más opciones →
-                </button>
-              </div>
-            )}
-
-            {/* ===== PASO 4 — Planes de retiro ===== */}
-            {storyStep >= 4 && (
-              <div className="story-step story-step-enter" ref={(el) => (storyStepRefs.current[4] = el)} style={{ position: 'relative', overflow: 'hidden' }}>
-                <PremiumParticles color="blue" density={10} />
-                <div className="story-step-divider" style={{ position: 'relative', zIndex: 1 }} />
-                <div className="story-step-header" style={{ position: 'relative', zIndex: 1 }}>
-                  <span className="story-step-number">4</span>
-                  <h3 className="story-step-title">Y además… la ley te permite hacer crecer ese retorno con Planes de Retiro</h3>
-                </div>
-                <p className="story-step-desc" style={{ position: 'relative', zIndex: 1 }}>
-                  Los Planes Personales de Retiro (PPR) son una deducción <strong>adicional e independiente</strong> a las personales. Están regulados bajo el Art. 151 y 185 de la LISR.
-                </p>
-
-                <div className="story-ppr-input" style={{ position: 'relative', zIndex: 1 }}>
-                  <label className="story-input-label">¿Cuánto aportarías a tu PPR al año?</label>
-                  <input
-                    type="number"
-                    className="story-input-big"
-                    placeholder="Ej: 100,000"
-                    value={taxCalc.ppr || ''}
-                    onChange={(e) => setTaxCalc({ ...taxCalc, ppr: Number(e.target.value) })}
-                  />
-                  <span className="story-ppr-cap">Tope deducible PPR para tu ingreso: {formatMXN(taxResults.capPPR)}</span>
-                </div>
-
-                <div className="story-comparison" style={{ position: 'relative', zIndex: 1 }}>
-                  <div className="story-comparison-item story-comp-orange">
-                    <div className="story-comp-label">ISR sin plan de retiro</div>
-                    <div className="story-comp-value">{formatMXN(taxResults.isrConDedSinRetiro)}</div>
-                  </div>
-                  <div className="story-comparison-arrow">→</div>
-                  <div className="story-comparison-item story-comp-green">
-                    <div className="story-comp-label">ISR con PPR</div>
-                    <div className="story-comp-value">{formatMXN(taxResults.isrConDedConRetiro)}</div>
-                  </div>
-                </div>
-                <div style={{ textAlign: 'center', position: 'relative', zIndex: 1 }}>
-                  <p className="story-comp-savings">
-                    Ahorro adicional por PPR: <strong style={{ color: '#34D399' }}>{formatMXN(taxResults.devolucion - taxResults.devolucionSinRetiro)}</strong>
-                  </p>
-                </div>
-
-                <button
-                  className="landing-btn landing-btn-gold story-next-btn"
-                  onClick={() => setStoryStep(5)}
-                  style={{ position: 'relative', zIndex: 1 }}
-                >
-                  Quiero saber exactamente cuánto puedo recuperar →
-                </button>
-              </div>
-            )}
-
-            {/* ===== PASO 5 — CTA Final ===== */}
-            {storyStep >= 5 && (
-              <div className="story-step story-step-enter" ref={(el) => (storyStepRefs.current[5] = el)}>
-                <div className="story-step-divider" />
-                <div className="story-step-header">
-                  <span className="story-step-number story-step-number-gold">5</span>
-                  <h3 className="story-step-title">Agenda tu consultoría</h3>
-                </div>
-
-                <div className="story-final-box" style={{ position: 'relative', overflow: 'hidden' }}>
-                  <PremiumParticles color="gold" density={14} />
-                  <p className="story-final-text">
-                    Obtendrás un cálculo personalizado de tu esquema de deducciones y cómo puedes incrementar ese retorno de dinero… <strong>recuerda que ese dinero es tuyo y puede regresar a tus manos.</strong>
-                  </p>
-
-                  <div className="story-final-summary">
-                    <div className="story-final-stat">
-                      <div className="story-final-stat-label">Sin estrategia pagas</div>
-                      <div className="story-final-stat-value" style={{ color: '#E05252' }}>{formatMXN(taxResults.isrSinDed)}</div>
-                    </div>
-                    <div className="story-final-stat">
-                      <div className="story-final-stat-label">Con estrategia pagarías</div>
-                      <div className="story-final-stat-value" style={{ color: '#34D399' }}>{formatMXN(taxResults.isrConDedConRetiro)}</div>
-                    </div>
-                    <div className="story-final-stat story-final-stat-highlight">
-                      <div className="story-final-stat-label">Devolución estimada</div>
-                      <div className="story-final-stat-value" style={{ color: '#D4AF37' }}>{formatMXN(taxResults.devolucion)}</div>
-                    </div>
-                  </div>
-
-                  <button
-                    className="landing-btn landing-btn-gold"
-                    onClick={() => {
-                      trackWhatsAppClick('calculadora');
-                      const ingreso = Math.round(taxCalc.ingresoAnual / 12);
-                      const ahorro = Math.round(taxResults.devolucion);
-                      const msg = encodeURIComponent(
-                        `Hola, usé la calculadora de Finance S Cool y con un ingreso de $${ingreso.toLocaleString('es-MX')}/mes podría recuperar $${ahorro.toLocaleString('es-MX')} al año. Me interesa una asesoría.`
-                      );
-                      window.open(`https://wa.me/5215583352096?text=${msg}`, '_blank');
-                    }}
-                    style={{ fontSize: '1rem', padding: '0.85rem 2.5rem', width: '100%', maxWidth: '400px' }}
-                  >
-                    Agendar mi consultoría
-                  </button>
-                  {taxCalc.ingresoAnual / 12 >= 35000 && (
-                    <p style={{ fontSize: '0.85rem', color: '#D4AF37', marginTop: '0.75rem', textAlign: 'center', fontWeight: 500 }}>
-                      Con tu nivel de ingreso, podrías recuperar {formatMXN(taxResults.devolucion)} al año con la estrategia correcta.
-                    </p>
-                  )}
-                  <button
-                    className="story-recalc-btn"
-                    onClick={() => { setStoryStep(1); setTaxCalc({ ...taxCalc, ingresoAnual: 0, ppr: 100000 }); }}
-                  >
-                    ↺ Recalcular con otro ingreso
-                  </button>
-                </div>
-              </div>
-            )}
-
-          </div>
-        </div>
-      </section>
-
-      {/* ==================== 8. PARA QUIEN + CONFIANZA ==================== */}
-      <section className="landing-section landing-trust-bar landing-section-padding" data-section="paraquien" ref={(el) => (sectionRefs.current.paraquien = el)}>
-        <div style={{ maxWidth: '1100px', margin: '0 auto' }}>
-          <div className={`landing-section-header ${visibleSections.paraquien ? 'revealed' : ''}`} style={{ marginBottom: '2rem' }}>
-            <span className="landing-section-subtitle" style={{ background: 'rgba(212,175,55,0.15)', color: '#D4AF37' }}>Te Identificas</span>
-            <h2 style={{ color: 'white', fontSize: 'clamp(1.5rem, 3vw, 2.25rem)' }}>Esto hace sentido si tú piensas algo así...</h2>
-          </div>
-
-          <div className="paraquien-grid">
-            <div className="paraquien-cards-col">
+            <div className="fsc-steps">
               {[
-                { icon: <Briefcase size={20} strokeWidth={2} />, text: '"Mi dinero no está construyendo futuro."' },
-                { icon: <FileText size={20} strokeWidth={2} />, text: '"Pago impuestos y no sé si lo hago de la mejor forma."' },
-                { icon: <Target size={20} strokeWidth={2} />, text: '"Quiero ahorrar con estrategia, no a ciegas."' },
-                { icon: <Clock size={20} strokeWidth={2} />, text: '"No quiero llegar a los 60 y empezar a preocuparme."' },
-                { icon: <Lightbulb size={20} strokeWidth={2} />, text: '"Que alguien me explique esto fácil."' },
-              ].map((item, i) => (
-                <div key={i} className={`pq-card reveal-left stagger-${i + 1} ${visibleSections.paraquien ? 'revealed' : ''}`}>
-                  <span className="pq-icon">{item.icon}</span>
-                  <span className="pq-text">{item.text}</span>
+                { h: 'Diagnóstico gratis', p: 'Platicamos 20 minutos. Revisamos tu ingreso, lo que pagas de impuestos y a dónde quieres llegar.' },
+                { h: 'Estrategia a tu medida', p: 'Te mostramos cuánto puedes ahorrar y cómo quedaría tu retiro. Tú decides, sin compromiso.' },
+                { h: 'Acompañamiento total', p: 'Activamos tu plan y te acompañamos cada año en tu declaración y tus metas. Del plan a los resultados.' },
+              ].map((s, i) => (
+                <div className="fsc-step fsc-rv" key={i}>
+                  <div className="no">{i + 1}</div>
+                  <h3>{s.h}</h3>
+                  <p>{s.p}</p>
                 </div>
               ))}
-              <p className="pq-cta-text">Si te sonó una sola, ya vale la pena revisarlo.</p>
-            </div>
-
-            <div className="paraquien-stats-col">
-              <div className="trust-stat-card" ref={trustRef1}>
-                <div className="trust-stat-number">{trustCount1}+</div>
-                <div className="trust-stat-label">Clientes asesorados</div>
-                <Users size={24} strokeWidth={1.5} className="trust-stat-bg-icon" />
-              </div>
-              <div className="trust-stat-card" ref={trustRef2}>
-                <div className="trust-stat-number">{trustCount2}%</div>
-                <div className="trust-stat-label">Enfoque regulado</div>
-                <CheckCircle size={24} strokeWidth={1.5} className="trust-stat-bg-icon" />
-              </div>
-              <div className="trust-stat-card" ref={trustRef3}>
-                <div className="trust-stat-number">{trustCount3}+</div>
-                <div className="trust-stat-label">Años de experiencia fiscal</div>
-                <Brain size={24} strokeWidth={1.5} className="trust-stat-bg-icon" />
-              </div>
-              <div className="trust-stat-card">
-                <div className="trust-stat-number">AAA</div>
-                <div className="trust-stat-label">Respaldo institucional</div>
-                <Shield size={24} strokeWidth={1.5} className="trust-stat-bg-icon" />
-              </div>
-            </div>
-          </div>
-          <div className="live-banner-wrapper">
-            <div className="live-banner">
-              <span className="live-dot"></span>
-              <span className="live-text">En este momento <strong className="live-count">{liveUsers} personas</strong> están solicitando la consultoría</span>
             </div>
           </div>
         </div>
       </section>
 
-      {/* ==================== 10. QUIENES SOMOS ==================== */}
-      <section className="landing-section landing-section-light landing-section-padding" data-section="about" ref={(el) => (sectionRefs.current.about = el)}>
-        <div className="about-full" ref={(el) => (observerRefs.current[9] = el)}>
-          <div className={`landing-section-header ${visibleSections.about ? 'revealed' : ''}`} style={{ marginBottom: '1.5rem' }}>
-            <span className="landing-section-subtitle">Quiénes Somos</span>
-            <h2>No somos la típica firma que te habla complicado <span style={{ color: '#D4AF37' }}>para sonar inteligente</span></h2>
-            <p>En Finance S C<span className="oo-infinity">oo</span>l creemos que la verdadera inteligencia está en hacer entendible lo importante. Por eso acompañamos a personas y familias a tomar mejores decisiones sobre:</p>
+      {/* ───────── CALCULADORA ISR ───────── */}
+      <section id="simulador" className="fsc-sec">
+        <div className="fsc-wrap">
+          <div className="fsc-sec-head fsc-rv">
+            <span className="fsc-eyebrow"><Calculator size={14} /> Calculadora ISR 2026</span>
+            <h2>¿Cuánto podrías <span className="fsc-g">recuperar</span> este año?</h2>
+            <p>Mueve tu ingreso y mira en tiempo real lo que podrías deducir con un PPR. Es una estimación — tu asesor afina el número contigo.</p>
           </div>
-
-          <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
-            <h3 style={{ fontSize: '1.5rem', color: '#003DA5', margin: 0 }}>Prioridades financieras</h3>
-          </div>
-          <div className="about-pillars">
-            <div className="about-pillar-card">
-              <div className="about-pillar-icon"><Shield size={28} strokeWidth={1.5} /></div>
-              <h4>Reservas para contingencias</h4>
-              <p>Protege lo que ya tienes ante lo inesperado.</p>
+          <div className="fsc-calc fsc-rv">
+            <div className="fsc-calc-controls">
+              <label>Tu ingreso mensual aproximado</label>
+              <div className="fsc-calc-amount">{fmt(ingresoMensual)} <small>/ mes</small></div>
+              <input type="range" min="15000" max="400000" step="5000" value={ingresoMensual} onChange={(e) => setIngresoMensual(+e.target.value)} />
+              <div className="fsc-calc-range"><span>$15k</span><span>$400k+</span></div>
             </div>
-            <div className="about-pillar-card">
-              <div className="about-pillar-icon"><Wallet size={28} strokeWidth={1.5} /></div>
-              <h4>Respaldo de gasto fijo</h4>
-              <p>Asegura que tu estilo de vida no dependa de un solo ingreso.</p>
+            <div className="fsc-calc-results">
+              <div className="fsc-calc-box">
+                <span className="k">Tu ISR anual hoy</span>
+                <span className="v muted">{fmt(isrActual)}</span>
+              </div>
+              <div className="fsc-calc-box hero">
+                <span className="k">Podrías recuperar ~</span>
+                <span className="v">{fmt(devolucion)}</span>
+                <span className="sub">aportando {fmt(aportacionPPR)} a tu PPR · hasta -{pctAhorro}% de tu ISR</span>
+              </div>
+              <button className="fsc-btn fsc-btn-gold fsc-lg fsc-w100" onClick={() => goto('contacto')}>Quiero esta estrategia <ArrowRight size={18} /></button>
             </div>
-            <div className="about-pillar-card">
-              <div className="about-pillar-icon"><TrendingUp size={28} strokeWidth={1.5} /></div>
-              <h4>Construcción de Ingresos Pasivos</h4>
-              <p>Haz que tu dinero trabaje por ti, no al revés.</p>
-            </div>
-            <div className="about-pillar-card">
-              <div className="about-pillar-icon"><HandCoins size={28} strokeWidth={1.5} /></div>
-              <h4>Incentivos Fiscales para personas físicas</h4>
-              <p>Aprovecha las herramientas legales que el SAT pone a tu disposición.</p>
-            </div>
-            <div className="about-pillar-card">
-              <div className="about-pillar-icon"><Heart size={28} strokeWidth={1.5} /></div>
-              <h4>Apoyar el sueño de alguien más</h4>
-              <p>Construye un legado que trascienda más allá de ti.</p>
-            </div>
-            <div className="about-pillar-card">
-              <div className="about-pillar-icon"><Landmark size={28} strokeWidth={1.5} /></div>
-              <h4>Jubilación / Retiro</h4>
-              <p>Planea hoy para que mañana tú pongas las reglas.</p>
-            </div>
-          </div>
-
-          <div className="about-highlight-bar">
-            <p>Si lo entiendes, lo puedes <span>decidir mejor.</span> Y si lo decides mejor, tu dinero <span>trabaja distinto.</span></p>
           </div>
         </div>
       </section>
 
-      {/* ==================== FAQ ==================== */}
-      <section id="faq" className="landing-section landing-section-gray landing-section-padding" data-section="faq" ref={(el) => (sectionRefs.current.faq = el)}>
-        <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-          <div className={`landing-section-header ${visibleSections.faq ? 'revealed' : ''}`}>
-            <span className="landing-section-subtitle">Dudas Comunes</span>
-            <h2>Preguntas Frecuentes</h2>
-          </div>
-          <div className="landing-faq-container">
-            {faqItems.map((item, idx) => (
-              <div key={idx} className={`landing-faq-item ${openFaqIndex === idx ? 'open' : ''}`}>
-                <div className="landing-faq-question" onClick={() => setOpenFaqIndex(openFaqIndex === idx ? null : idx)}>
-                  <span>{item.question}</span>
-                  <span className="landing-faq-toggle">&#9660;</span>
+      {/* ───────── CASOS DE ÉXITO ───────── */}
+      <section id="casos" className="fsc-sec fsc-pad0">
+        <div className="fsc-wrap">
+          <div className="fsc-caseblock">
+            <div className="fsc-sec-head fsc-rv">
+              <span className="fsc-eyebrow">Casos de éxito</span>
+              <h2 style={{ color: '#fff' }}>Historias reales de gente<br />que ya tomó el control.</h2>
+            </div>
+            <div className="fsc-cases">
+              {CASOS.map((c, i) => (
+                <div className="fsc-case fsc-rv" key={i}>
+                  <div className="fsc-stars gold">{STARS()}</div>
+                  <div className="fsc-case-stat"><b>{c.stat}</b><span>{c.statK}</span></div>
+                  <p>“{c.quote}”</p>
+                  <div className="fsc-case-who"><div className="fsc-case-ava">{c.ini}</div><div><b>{c.nombre}</b><span>{c.rol}</span></div></div>
                 </div>
-                <div className="landing-faq-answer">{item.answer}</div>
-              </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ───────── PARA QUIÉN ───────── */}
+      <section className="fsc-sec fsc-pad-t0">
+        <div className="fsc-wrap">
+          <div className="fsc-sec-head fsc-rv"><span className="fsc-eyebrow">Para quién es</span><h2>Si generas ingresos, esto es para ti.</h2></div>
+          <div className="fsc-who-grid">
+            {[
+              { ic: '👨‍⚕️', t: 'Médicos y profesionistas', s: 'Consulta privada u honorarios: deduce y ordena tu retiro.' },
+              { ic: '🏢', t: 'Empresarios y dueños', s: 'Separa tu patrimonio personal y optimiza lo que pagas al SAT.' },
+              { ic: '💻', t: 'Freelancers y PyME', s: 'Ingresos variables, estrategia flexible que se adapta a ti.' },
+              { ic: '📈', t: 'Empleados de alto ingreso', s: 'Recupera ISR vía declaración anual y construye tu futuro.' },
+            ].map((w, i) => (
+              <div className="fsc-who fsc-rv" key={i}><div className="ic">{w.ic}</div><div><b>{w.t}</b><p>{w.s}</p></div></div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ==================== 11. FORMULARIO DE CONVERSION ==================== */}
-      <section id="contacto" className="landing-section landing-section-light landing-section-padding" data-section="contacto" ref={(el) => (sectionRefs.current.contacto = el)}>
-        <div className={`landing-contact-form-container ${visibleSections.contacto ? 'revealed' : ''}`}>
-          <h2>Descubre si hoy puedes hacer más con tu dinero</h2>
-          <div style={{
-            display: 'inline-flex', alignItems: 'center', gap: '8px',
-            background: 'rgba(212,175,55,0.1)', border: '1px solid rgba(212,175,55,0.3)',
-            borderRadius: '20px', padding: '6px 16px', marginBottom: '1rem', fontSize: '0.85rem', color: '#D4AF37'
-          }}>
-            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#34D399', animation: 'pulse 2s infinite' }} />
-            {liveUsers} personas solicitando asesoría ahora
+      {/* ───────── FORMULARIO ───────── */}
+      <section id="contacto" className="fsc-sec">
+        <div className="fsc-wrap fsc-contact-grid">
+          <div className="fsc-rv">
+            <span className="fsc-eyebrow"><HeartHandshake size={14} /> Diagnóstico gratis</span>
+            <h2 style={{ marginTop: 14 }}>Agenda tu <span className="fsc-g">sesión sin costo</span>.</h2>
+            <p className="fsc-lede" style={{ maxWidth: '42ch' }}>Déjanos tus datos y un asesor te contacta para mostrarte, con tus números, cuánto puedes ahorrar y cómo quedaría tu retiro. Sin compromiso.</p>
+            <ul className="fsc-contact-perks">
+              <li><Check size={18} /> 20 minutos, por WhatsApp o videollamada</li>
+              <li><Check size={18} /> Con tus cifras reales, no promesas genéricas</li>
+              <li><Check size={18} /> Respaldo de Prudential</li>
+            </ul>
+            <div className="fsc-rating" style={{ marginTop: 20 }}>
+              <div className="fsc-stars">{STARS()}</div>
+              <div className="fsc-rt"><b>4.9/5</b> · +900 familias asesoradas</div>
+            </div>
           </div>
-          <p className="form-subcopy">
-            Déjanos tus datos y uno de nuestros consultores te ayuda a revisar si esta estrategia hace sentido para ti.
-          </p>
-          {formStatus === 'success' && <div className="landing-form-success-message">¡Gracias! Nos pondremos en contacto pronto.</div>}
-          {formStatus === 'error' && <div className="landing-form-error-message">Hubo un error. Intenta nuevamente.</div>}
-          <form onSubmit={handleFormSubmit}>
-            <div className="landing-form-group">
-              <label>Nombre</label>
-              <input type="text" placeholder="Tu nombre completo" maxLength={100} value={formData.name} onChange={(e) => { setFormData({ ...formData, name: e.target.value }); setFormErrors({ ...formErrors, name: '' }); }} required />
-              {formErrors.name && <span className="landing-form-field-error">{formErrors.name}</span>}
+
+          <form className="fsc-form fsc-rv" onSubmit={submit}>
+            <div className="fsc-field">
+              <input placeholder="Nombre completo" value={formData.name} onChange={(e) => setField('name', e.target.value)} />
+              {formErrors.name && <span className="fsc-err">{formErrors.name}</span>}
             </div>
-            <div className="landing-form-row">
-              <div className="landing-form-group">
-                <label>Teléfono</label>
-                <input type="tel" placeholder="+52 55 1234 5678" maxLength={20} value={formData.phone} onChange={(e) => { setFormData({ ...formData, phone: e.target.value.replace(/[^\d+\-() ]/g, '') }); setFormErrors({ ...formErrors, phone: '' }); }} required />
-                {formErrors.phone && <span className="landing-form-field-error">{formErrors.phone}</span>}
-              </div>
-              <div className="landing-form-group">
-                <label>Correo</label>
-                <input type="email" placeholder="tu@email.com" maxLength={100} value={formData.email} onChange={(e) => { setFormData({ ...formData, email: e.target.value }); setFormErrors({ ...formErrors, email: '' }); }} required />
-                {formErrors.email && <span className="landing-form-field-error">{formErrors.email}</span>}
-              </div>
+            <div className="fsc-field">
+              <input placeholder="WhatsApp (10 dígitos)" value={formData.phone} onChange={(e) => setField('phone', e.target.value)} inputMode="tel" />
+              {formErrors.phone && <span className="fsc-err">{formErrors.phone}</span>}
             </div>
-            <div className="landing-form-row">
-              <div className="landing-form-group">
-                <label>Tipo de ingreso</label>
-                <select value={formData.incomeType} onChange={(e) => { setFormData({ ...formData, incomeType: e.target.value }); setFormErrors({ ...formErrors, incomeType: '' }); }} required>
-                  <option value="">Selecciona...</option>
+            <div className="fsc-field">
+              <input placeholder="Correo electrónico" value={formData.email} onChange={(e) => setField('email', e.target.value)} inputMode="email" />
+              {formErrors.email && <span className="fsc-err">{formErrors.email}</span>}
+            </div>
+            <div className="fsc-field-row">
+              <div className="fsc-field">
+                <select value={formData.incomeType} onChange={(e) => setField('incomeType', e.target.value)}>
+                  <option value="">¿Cómo generas ingresos?</option>
                   <option value="empleado">Empleado</option>
-                  <option value="freelancer">Freelancer / Independiente</option>
-                  <option value="empresario">Empresario</option>
+                  <option value="freelancer">Freelancer / Honorarios</option>
+                  <option value="empresario">Empresario / Dueño</option>
                   <option value="mixto">Mixto</option>
                 </select>
-                {formErrors.incomeType && <span className="landing-form-field-error">{formErrors.incomeType}</span>}
+                {formErrors.incomeType && <span className="fsc-err">{formErrors.incomeType}</span>}
               </div>
-              <div className="landing-form-group">
-                <label>Ingreso aproximado mensual</label>
-                <select value={formData.approxIncome} onChange={(e) => { setFormData({ ...formData, approxIncome: e.target.value }); setFormErrors({ ...formErrors, approxIncome: '' }); }} required>
-                  <option value="">Selecciona...</option>
-                  <option value="20k-50k">$20,000 - $50,000</option>
-                  <option value="50k-100k">$50,000 - $100,000</option>
-                  <option value="100k-200k">$100,000 - $200,000</option>
-                  <option value="200k+">$200,000+</option>
+              <div className="fsc-field">
+                <select value={formData.approxIncome} onChange={(e) => setField('approxIncome', e.target.value)}>
+                  <option value="">Ingreso mensual</option>
+                  <option value="20k-50k">$20k – $50k</option>
+                  <option value="50k-100k">$50k – $100k</option>
+                  <option value="100k-200k">$100k – $200k</option>
+                  <option value="200k+">Más de $200k</option>
                 </select>
-                {formErrors.approxIncome && <span className="landing-form-field-error">{formErrors.approxIncome}</span>}
+                {formErrors.approxIncome && <span className="fsc-err">{formErrors.approxIncome}</span>}
               </div>
             </div>
-            <div className="landing-form-row">
-              <div className="landing-form-group">
-                <label>¿Haces declaración anual?</label>
-                <select value={formData.declaracion} onChange={(e) => setFormData({ ...formData, declaracion: e.target.value })}>
-                  <option value="">Selecciona...</option>
-                  <option value="si">Sí</option>
-                  <option value="no">No</option>
-                  <option value="no_se">No estoy seguro</option>
-                </select>
-              </div>
-              <div className="landing-form-group">
-                <label>¿Ya tienes algo para tu retiro?</label>
-                <select value={formData.retiroPlan} onChange={(e) => setFormData({ ...formData, retiroPlan: e.target.value })}>
-                  <option value="">Selecciona...</option>
-                  <option value="si_ppr">Sí, tengo PPR</option>
-                  <option value="si_otro">Sí, otro instrumento</option>
-                  <option value="no">No, nada aún</option>
-                  <option value="no_se">No sé</option>
-                </select>
-              </div>
-            </div>
-            <button type="submit" className="landing-form-submit" disabled={formStatus === 'loading'}>
-              {formStatus === 'loading' ? 'Enviando...' : 'Quiero mi diagnóstico personalizado'}
+            <button className="fsc-btn fsc-btn-gold fsc-lg fsc-w100" type="submit" disabled={formStatus === 'loading'}>
+              {formStatus === 'loading' ? 'Enviando…' : <>Agendar mi diagnóstico gratis <ArrowRight size={18} /></>}
             </button>
+            {formStatus === 'success' && <div className="fsc-form-msg ok"><Check size={16} /> ¡Listo! Un asesor te contactará muy pronto.</div>}
+            {formStatus === 'error' && <div className="fsc-form-msg bad">Hubo un error. Escríbenos por WhatsApp y te atendemos.</div>}
+            <p className="fsc-form-legal">🔒 Tus datos están seguros y no se comparten con terceros.</p>
           </form>
         </div>
       </section>
 
-      {/* ==================== 12. CIERRE FINAL ==================== */}
-      <section className="landing-section landing-section-light landing-section-padding" style={{ position: 'relative', overflow: 'hidden' }}>
-        <div className="landing-cta-section" style={{ position: 'relative', overflow: 'hidden' }}>
-          <PremiumParticles color="blue" density={10} />
-          {/* Floating particles */}
-          <div className="cta-particles">
-            {[...Array(12)].map((_, i) => (
-              <div key={i} className="cta-particle" style={{
-                left: `${8 + (i * 7.5)}%`,
-                animationDuration: `${4 + Math.random() * 6}s`,
-                animationDelay: `${Math.random() * 5}s`,
-                width: `${2 + Math.random() * 3}px`,
-                height: `${2 + Math.random() * 3}px`,
-                background: i % 3 === 0 ? 'rgba(212,175,55,0.6)' : 'rgba(255,255,255,0.15)',
-              }} />
-            ))}
-          </div>
-
-          <div className="landing-cta-content">
-            <h2 className="cta-main-headline">
-              Imagina un retiro donde tú pongas las reglas.
-            </h2>
-            <p className="cta-sub-headline">
-              Retírate joven, comienza ahora.
-            </p>
-            <div className="cta-divider"></div>
-            <p className="cta-body-text">
-              Cuando entiendes cómo conectar estrategia fiscal, ahorro y retiro, las decisiones cambian.
-              Y cuando alguien por fin te lo explica fácil, también cambia tu forma de verlo.
-            </p>
-            <div className="brand-tagline" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
-              <Logo height={40} variant="light" layout="inline" animated />
-              <p>Porque las finanzas también se pueden entender c<span className="oo-infinity">oo</span>l.</p>
-            </div>
-            <button className="landing-btn landing-btn-gold cta-btn-pulse" onClick={() => scrollToSection('contacto')} style={{ marginTop: '0.5rem', fontSize: '1.15rem', padding: '1.15rem 3rem', letterSpacing: '0.03em' }}>
-              Agenda tu consultoría fiscal y financiera AHORA
-            </button>
+      {/* ───────── CTA FINAL ───────── */}
+      <section className="fsc-sec fsc-pad-t0">
+        <div className="fsc-wrap">
+          <div className="fsc-final fsc-rv">
+            <span className="fsc-blob fb" />
+            <span className="fsc-eyebrow light">Tu yo del futuro te lo va a agradecer</span>
+            <h2>Deja de regalarle dinero al SAT.<br />Empieza tu estrategia hoy.</h2>
+            <button className="fsc-btn fsc-btn-white fsc-lg" onClick={() => goto('contacto')}>Agenda tu diagnóstico gratis <ArrowRight size={18} /></button>
           </div>
         </div>
       </section>
 
-      {/* ==================== FOOTER ==================== */}
-      <footer className="landing-footer">
-        <div className="landing-footer-content">
-          <div className="landing-footer-column">
-            <Logo height={55} variant="light" />
-            <p style={{ marginTop: '12px' }}>
-              Porque las finanzas también se pueden entender cool.
-              Estrategia fiscal + PPR + Educación financiera.
-            </p>
-          </div>
-          <div className="landing-footer-column">
-            <h3>Links</h3>
-            <a href="#problema">Problema</a>
-            <a href="#solucion">Solución</a>
-            <a href="#simulador">Simulador</a>
-            <a href="#faq">FAQ</a>
-            <a href="#contacto">Contacto</a>
-          </div>
-          <div className="landing-footer-column">
-            <h3>Síguenos</h3>
-            <div className="landing-social-links">
-              <a href="https://instagram.com" target="_blank" rel="noopener noreferrer" aria-label="Instagram"><Camera size={18} /></a>
-              <a href="https://linkedin.com" target="_blank" rel="noopener noreferrer" aria-label="LinkedIn"><Linkedin size={18} /></a>
-              <a href={getWhatsAppURL()} target="_blank" rel="noopener noreferrer" aria-label="WhatsApp" onClick={() => trackWhatsAppClick('footer')}><MessageCircle size={18} /></a>
+      {/* ───────── FOOTER ───────── */}
+      <footer className="fsc-footer">
+        <div className="fsc-wrap fsc-foot">
+          <div style={{ maxWidth: 300 }}>
+            <a className="fsc-brand light" href="#top" onClick={(e) => { e.preventDefault(); goto('top'); }}><Logo height={30} layout="inline" variant="light" /></a>
+            <p>Estrategia fiscal y de retiro con respaldo de Prudential. Pagas menos impuestos y construyes tu futuro.</p>
+            <div className="fsc-foot-social">
+              <a href={getWhatsAppURL()} target="_blank" rel="noopener noreferrer" onClick={() => trackWhatsAppClick('footer')} aria-label="WhatsApp"><MessageCircle size={18} /></a>
             </div>
           </div>
+          <div className="fsc-foot-cols">
+            <div><h4>Explora</h4><a onClick={() => goto('beneficios')}>Beneficios</a><a onClick={() => goto('proceso')}>Cómo funciona</a><a onClick={() => goto('simulador')}>Calculadora</a><a onClick={() => goto('casos')}>Casos de éxito</a></div>
+            <div><h4>Contacto</h4><a onClick={() => goto('contacto')}>Agenda gratis</a><a href={getWhatsAppURL()} target="_blank" rel="noopener noreferrer">WhatsApp</a><a onClick={() => navigate('/login')}>Entrar</a></div>
+          </div>
         </div>
-        <div className="landing-footer-bottom">
-          <p>&copy; 2026 Finance SCool. Todos los derechos reservados.</p>
-        </div>
+        <div className="fsc-wrap fsc-copy"><span>© 2026 Finance S-Cool · Hecho en México 🇲🇽</span><span>financescool.com.mx</span></div>
       </footer>
 
-      {/* WhatsApp Button */}
-      <button className="landing-sound-toggle" onClick={() => setIsMuted(!isMuted)} aria-label={isMuted ? 'Activar sonido' : 'Silenciar'}>
-        {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
-      </button>
-
-      <a
-        href={getWhatsAppURL()}
-        target="_blank" rel="noopener noreferrer"
-        className="landing-whatsapp-button" aria-label="WhatsApp"
-        onClick={() => trackWhatsAppClick('sticky')}
-      >
-        <MessageCircle size={28} />
-      </a>
-
-      {/* Chat Sofia — asesora digital 24/7 (califica y captura leads) */}
+      {/* Botón WhatsApp flotante + chat Sofia */}
+      <a href={getWhatsAppURL()} target="_blank" rel="noopener noreferrer" className="fsc-wa" aria-label="WhatsApp" onClick={() => trackWhatsAppClick('sticky')}><MessageCircle size={28} /></a>
       <ChatSofia />
-    </>
+    </div>
   );
 }
+
+const CSS = `
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800;900&family=Inter:wght@400;500;600;700;800&display=swap');
+.fsc{--bg:#fff;--soft:#F5F8FD;--tint:#EAF1FF;--ink:#0A1733;--muted:#5A6684;--faint:#9AA6C0;--line:#E4E9F2;
+  --navy:#003DA5;--navy-d:#002B73;--blue2:#0067C5;--gold:#C9A84C;--gold-d:#B99830;--gold-l:#EFE2BC;--amber:#F5B301;--green:#12B76A;
+  --r:20px;--r-lg:28px;--sh:0 18px 48px -18px rgba(10,23,51,.28);--sh-sm:0 8px 24px -10px rgba(10,23,51,.18);
+  font-family:'Inter',system-ui,sans-serif;color:var(--ink);background:var(--bg);line-height:1.55;font-size:17px;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+.fsc *{margin:0;padding:0;box-sizing:border-box}
+.fsc h1,.fsc h2,.fsc h3{font-family:'Playfair Display',serif;font-weight:800;line-height:1.1;letter-spacing:-.015em}
+.fsc a{color:inherit;text-decoration:none;cursor:pointer}
+.fsc-wrap{max-width:1160px;margin:0 auto;padding:0 26px}
+.fsc-g{color:var(--navy)}
+.fsc-hl{position:relative;color:var(--navy);white-space:nowrap}
+.fsc-hl::after{content:'';position:absolute;left:0;right:0;bottom:.06em;height:.34em;background:var(--gold-l);z-index:-1;border-radius:3px}
+.fsc-eyebrow{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:700;color:var(--navy);background:var(--tint);padding:7px 14px;border-radius:100px}
+.fsc-eyebrow.light{background:rgba(255,255,255,.16);color:#fff}
+
+.fsc-btn{display:inline-flex;align-items:center;justify-content:center;gap:9px;font-family:'Inter',sans-serif;font-weight:700;font-size:16px;padding:13px 22px;border-radius:13px;cursor:pointer;border:2px solid transparent;transition:transform .2s cubic-bezier(.2,.8,.2,1),box-shadow .2s,background .2s}
+.fsc-btn.fsc-sm{padding:9px 16px;font-size:14.5px}
+.fsc-btn.fsc-lg{padding:15px 26px;font-size:16.5px}
+.fsc-btn.fsc-w100{width:100%}
+.fsc-btn-gold{background:linear-gradient(135deg,var(--gold),var(--gold-d));color:#1a1403;box-shadow:0 12px 26px -10px rgba(201,168,76,.7)}
+.fsc-btn-gold:hover{transform:translateY(-3px);box-shadow:0 18px 34px -10px rgba(201,168,76,.8)}
+.fsc-btn-ghost{background:#fff;color:var(--ink);border-color:var(--line)}
+.fsc-btn-ghost:hover{border-color:var(--navy);color:var(--navy);transform:translateY(-3px)}
+.fsc-btn-white{background:#fff;color:var(--navy);box-shadow:var(--sh)}
+.fsc-btn-white:hover{transform:translateY(-3px)}
+
+/* nav */
+.fsc-nav{position:sticky;top:0;z-index:100;background:rgba(255,255,255,.82);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid transparent;transition:border .3s,box-shadow .3s}
+.fsc-nav.on{border-color:var(--line);box-shadow:0 6px 24px -16px rgba(10,23,51,.4)}
+.fsc-nav-in{display:flex;align-items:center;justify-content:space-between;height:70px}
+.fsc-brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:20px;letter-spacing:-.02em;font-family:'Playfair Display',serif}
+.fsc-brand.light{color:#fff}
+.fsc-nav-links{display:flex;gap:30px;font-weight:600;font-size:15px;color:var(--muted)}
+.fsc-nav-links a:hover{color:var(--navy)}
+.fsc-nav-r{display:flex;gap:10px;align-items:center}
+.fsc-burger{display:none;background:none;border:none;color:var(--ink);cursor:pointer}
+.fsc-nav-mobile{display:none;flex-direction:column;gap:4px;padding:14px 26px 20px;background:#fff;border-bottom:1px solid var(--line)}
+.fsc-nav-mobile a{padding:10px 0;font-weight:600;color:var(--ink)}
+.fsc-nav-mobile .fsc-btn{margin-top:8px}
+
+/* hero */
+.fsc-hero{position:relative;padding:68px 0 54px;overflow:hidden}
+.fsc-blob{position:absolute;border-radius:50%;filter:blur(72px);z-index:0;pointer-events:none}
+.fsc-blob.b1{width:440px;height:440px;background:rgba(0,61,165,.14);top:-130px;right:-70px}
+.fsc-blob.b2{width:360px;height:360px;background:rgba(201,168,76,.18);bottom:-130px;left:-120px}
+.fsc-blob.b3{width:240px;height:240px;background:rgba(0,103,197,.12);top:120px;right:300px}
+.fsc-hero-grid{position:relative;z-index:1;display:grid;grid-template-columns:1.03fr .97fr;gap:50px;align-items:center}
+.fsc-hero h1{font-size:clamp(34px,5vw,58px);margin-top:20px}
+.fsc-lede{font-size:clamp(16px,1.9vw,19px);color:var(--muted);max-width:38ch;margin:20px 0 28px}
+.fsc-hero-cta{display:flex;gap:12px;flex-wrap:wrap}
+.fsc-rating{display:flex;align-items:center;gap:13px;margin-top:26px}
+.fsc-avs{display:flex}.fsc-avs span{width:38px;height:38px;border-radius:50%;border:3px solid #fff;margin-left:-12px;display:grid;place-items:center;font-size:17px;background:var(--tint);box-shadow:var(--sh-sm)}
+.fsc-avs span:first-child{margin:0}
+.fsc-stars{display:flex;gap:1px;color:var(--amber)}
+.fsc-stars.gold{color:var(--gold)}
+.fsc-rt{font-size:14px;color:var(--muted)}.fsc-rt b{color:var(--ink)}
+
+/* mockup card */
+.fsc-stage{position:relative;padding:12px}
+.fsc-card3d{position:relative;z-index:3;background:#fff;border-radius:var(--r);box-shadow:var(--sh);padding:24px;border:1px solid var(--line)}
+.fsc-rbg{position:absolute;inset:12px;border-radius:var(--r);box-shadow:var(--sh-sm)}
+.fsc-rbg.rbg1{z-index:1;transform:rotate(-6deg) translate(-16px,10px);background:var(--tint)}
+.fsc-rbg.rbg2{z-index:2;transform:rotate(4deg) translate(20px,-6px);background:#FBF5E3}
+.fsc-c-head{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+.fsc-c-ava{width:46px;height:46px;border-radius:13px;background:linear-gradient(135deg,var(--navy),var(--blue2));display:grid;place-items:center;color:#fff;font-weight:800;font-size:15px;font-family:'Inter',sans-serif}
+.fsc-c-name{font-weight:800;font-size:15px}.fsc-c-role{font-size:12.5px;color:var(--muted)}
+.fsc-c-score{margin-left:auto;text-align:center;background:var(--gold-l);border-radius:11px;padding:6px 11px}
+.fsc-c-score b{color:var(--gold-d);font-weight:800;font-size:14px;display:block;line-height:1.1}
+.fsc-c-score span{font-size:9px;color:var(--gold-d);font-weight:800;letter-spacing:.08em}
+.fsc-c-lbl{font-size:10px;font-weight:800;letter-spacing:.12em;color:var(--faint);margin:16px 0 9px}
+.fsc-c-row{display:flex;justify-content:space-between;font-size:13.5px;font-weight:600}
+.fsc-c-row b.muted{color:var(--muted)}.fsc-c-row b.gold{color:var(--gold-d)}
+.fsc-bar{height:8px;border-radius:6px;background:var(--line);margin:6px 0 2px;overflow:hidden}
+.fsc-bar i{display:block;height:100%;border-radius:6px;background:var(--navy)}
+.fsc-bar.gold i{background:linear-gradient(90deg,var(--gold),var(--gold-d))}
+.fsc-c-chips{display:flex;gap:6px;flex-wrap:wrap}
+.fsc-c-chips span{font-size:11px;font-weight:700;padding:5px 10px;border-radius:8px;background:var(--tint);color:var(--navy)}
+.fsc-c-chips span:nth-child(2){background:var(--gold-l);color:var(--gold-d)}
+.fsc-c-chips span:nth-child(3){background:#E7F7EF;color:#0A9D63}
+.fsc-float{position:absolute;z-index:4;background:#fff;border-radius:13px;box-shadow:var(--sh);padding:10px 14px;display:flex;align-items:center;gap:9px;font-weight:700;font-size:13px;border:1px solid var(--line)}
+.fsc-float .ic{width:28px;height:28px;border-radius:9px;display:grid;place-items:center;flex:none}
+.fsc-float.f1{top:0;left:-16px;animation:fscBob 3.6s ease-in-out infinite}.fsc-float.f1 .ic{background:#E7F7EF;color:var(--green)}
+.fsc-float.f2{bottom:8px;right:-18px;animation:fscBob 3.6s ease-in-out infinite .7s}.fsc-float.f2 .ic{background:var(--gold-l)}
+.fsc-float.f2 small{display:block;color:var(--muted);font-weight:600;font-size:11px}
+@keyframes fscBob{50%{transform:translateY(-9px)}}
+
+/* strip */
+.fsc-strip{border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--soft)}
+.fsc-strip-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:20px;padding:28px 26px}
+.fsc-stat .n{font-size:30px;font-weight:800;letter-spacing:-.02em;color:var(--navy);font-family:'Playfair Display',serif}
+.fsc-stat .n span{color:var(--faint);font-size:18px}
+.fsc-stat .k{font-size:13px;color:var(--muted);margin-top:2px}
+
+/* sections */
+.fsc-sec{padding:84px 0}
+.fsc-sec.fsc-pad0{padding:84px 0}
+.fsc-sec.fsc-pad-t0{padding-top:0}
+.fsc-sec-head{max-width:650px;margin:0 auto 48px;text-align:center}
+.fsc-sec-head h2{font-size:clamp(28px,3.8vw,46px);margin-top:14px}
+.fsc-sec-head p{color:var(--muted);margin-top:14px;font-size:17px}
+
+/* features */
+.fsc-feat{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
+.fsc-fcard{border:1px solid var(--line);border-radius:var(--r-lg);padding:32px;background:#fff;box-shadow:var(--sh-sm);transition:transform .3s,box-shadow .3s}
+.fsc-fcard:hover{transform:translateY(-6px);box-shadow:var(--sh)}
+.fsc-fchip{width:56px;height:56px;border-radius:16px;display:grid;place-items:center;margin-bottom:18px;color:#fff}
+.fsc-fchip.navy{background:linear-gradient(135deg,var(--navy),var(--blue2))}
+.fsc-fchip.gold{background:linear-gradient(135deg,var(--gold),var(--gold-d));color:#1a1403}
+.fsc-fcard h3{font-size:22px;margin-bottom:9px}
+.fsc-fcard p{color:var(--muted);font-size:15px}
+.fsc-fcard ul{list-style:none;margin-top:16px;display:flex;flex-direction:column;gap:10px}
+.fsc-fcard li{display:flex;gap:9px;font-size:14.5px;align-items:flex-start}
+.fsc-fcard li svg{color:var(--green);flex:none;margin-top:1px}
+
+/* proceso block */
+.fsc-block{background:linear-gradient(160deg,var(--soft),var(--tint));border-radius:var(--r-lg);padding:64px 40px}
+.fsc-steps{display:grid;grid-template-columns:repeat(3,1fr);gap:22px;margin-top:10px}
+.fsc-step{background:#fff;border-radius:var(--r);padding:28px;box-shadow:var(--sh-sm)}
+.fsc-step .no{width:46px;height:46px;border-radius:14px;background:var(--navy);color:#fff;font-weight:800;display:grid;place-items:center;font-size:19px;font-family:'Playfair Display',serif}
+.fsc-step:nth-child(2) .no{background:var(--gold-d)}.fsc-step:nth-child(3) .no{background:var(--blue2)}
+.fsc-step h3{font-size:19px;margin:16px 0 8px}.fsc-step p{color:var(--muted);font-size:14.5px}
+
+/* calculadora */
+.fsc-calc{display:grid;grid-template-columns:1fr 1fr;gap:28px;background:#fff;border:1px solid var(--line);border-radius:var(--r-lg);padding:36px;box-shadow:var(--sh);max-width:900px;margin:0 auto}
+.fsc-calc-controls label{font-size:13px;font-weight:700;color:var(--muted)}
+.fsc-calc-amount{font-size:40px;font-weight:800;color:var(--navy);font-family:'Playfair Display',serif;margin:6px 0 20px}
+.fsc-calc-amount small{font-size:16px;color:var(--faint);font-weight:600}
+.fsc-calc-controls input[type=range]{width:100%;accent-color:var(--navy);height:6px}
+.fsc-calc-range{display:flex;justify-content:space-between;font-size:12px;color:var(--faint);margin-top:8px}
+.fsc-calc-results{display:flex;flex-direction:column;gap:12px}
+.fsc-calc-box{background:var(--soft);border-radius:14px;padding:16px 18px;display:flex;flex-direction:column;gap:2px}
+.fsc-calc-box .k{font-size:13px;color:var(--muted);font-weight:600}
+.fsc-calc-box .v{font-size:26px;font-weight:800;font-family:'Playfair Display',serif}
+.fsc-calc-box .v.muted{color:var(--muted)}
+.fsc-calc-box.hero{background:linear-gradient(135deg,var(--navy),var(--navy-d));color:#fff}
+.fsc-calc-box.hero .k{color:rgba(255,255,255,.8)}
+.fsc-calc-box.hero .v{color:var(--gold-l);font-size:34px}
+.fsc-calc-box.hero .sub{font-size:12.5px;color:rgba(255,255,255,.75);margin-top:4px}
+
+/* casos de éxito */
+.fsc-caseblock{background:linear-gradient(160deg,var(--navy),var(--navy-d));border-radius:var(--r-lg);padding:64px 40px}
+.fsc-cases{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
+.fsc-case{background:#fff;border-radius:var(--r);padding:26px;box-shadow:var(--sh)}
+.fsc-case>.fsc-stars{margin-bottom:14px}
+.fsc-case-stat{display:flex;align-items:baseline;gap:8px;margin-bottom:12px}
+.fsc-case-stat b{font-size:30px;font-weight:800;color:var(--navy);font-family:'Playfair Display',serif}
+.fsc-case-stat span{font-size:13px;color:var(--muted);font-weight:600}
+.fsc-case p{font-size:15px;color:var(--ink);line-height:1.5;min-height:92px}
+.fsc-case-who{display:flex;align-items:center;gap:11px;margin-top:16px;padding-top:16px;border-top:1px solid var(--line)}
+.fsc-case-ava{width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,var(--gold),var(--gold-d));color:#1a1403;font-weight:800;display:grid;place-items:center;font-size:14px}
+.fsc-case-who b{display:block;font-size:14.5px}.fsc-case-who span{font-size:12.5px;color:var(--muted)}
+
+/* para quien */
+.fsc-who-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px;max-width:900px;margin:0 auto}
+.fsc-who{display:flex;gap:14px;align-items:flex-start;background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:22px;box-shadow:var(--sh-sm)}
+.fsc-who .ic{font-size:30px;flex:none}
+.fsc-who b{font-size:16px}.fsc-who p{color:var(--muted);font-size:14px;margin-top:3px}
+
+/* formulario */
+.fsc-contact-grid{display:grid;grid-template-columns:1fr 1fr;gap:50px;align-items:center}
+.fsc-contact-perks{list-style:none;margin:22px 0 0;display:flex;flex-direction:column;gap:11px}
+.fsc-contact-perks li{display:flex;gap:9px;font-size:15px;align-items:center}
+.fsc-contact-perks svg{color:var(--green);flex:none}
+.fsc-form{background:#fff;border:1px solid var(--line);border-radius:var(--r-lg);padding:30px;box-shadow:var(--sh);display:flex;flex-direction:column;gap:13px}
+.fsc-field{display:flex;flex-direction:column;gap:5px}
+.fsc-field-row{display:grid;grid-template-columns:1fr 1fr;gap:13px}
+.fsc-form input,.fsc-form select{width:100%;padding:13px 15px;border:1.5px solid var(--line);border-radius:12px;font-size:15px;font-family:'Inter',sans-serif;color:var(--ink);outline:none;transition:border .18s;background:#fff}
+.fsc-form input:focus,.fsc-form select:focus{border-color:var(--navy)}
+.fsc-err{font-size:12px;color:#E5484D;font-weight:600}
+.fsc-form-msg{display:flex;align-items:center;gap:7px;font-size:14px;font-weight:600;padding:11px 14px;border-radius:11px}
+.fsc-form-msg.ok{background:#E7F7EF;color:#0A7D4F}
+.fsc-form-msg.bad{background:#FDECEC;color:#C5353A}
+.fsc-form-legal{font-size:12px;color:var(--faint);text-align:center;margin-top:2px}
+
+/* final */
+.fsc-final{position:relative;text-align:center;background:linear-gradient(150deg,var(--navy),var(--navy-d));color:#fff;border-radius:var(--r-lg);padding:74px 24px;overflow:hidden}
+.fsc-final .fb{width:380px;height:380px;background:rgba(201,168,76,.25);top:-150px;right:-50px;filter:blur(70px)}
+.fsc-final h2{color:#fff;font-size:clamp(30px,4.6vw,52px);max-width:17ch;margin:14px auto 0;position:relative;z-index:1}
+.fsc-final .fsc-btn{margin-top:30px;position:relative;z-index:1}
+
+/* footer */
+.fsc-footer{border-top:1px solid var(--line);padding:56px 0 40px;margin-top:40px;background:var(--soft)}
+.fsc-foot{display:flex;justify-content:space-between;gap:36px;flex-wrap:wrap}
+.fsc-foot>div p{color:var(--muted);font-size:14.5px;margin-top:12px}
+.fsc-foot-social{display:flex;gap:10px;margin-top:14px}
+.fsc-foot-social a{width:40px;height:40px;border-radius:11px;background:var(--navy);color:#fff;display:grid;place-items:center;transition:transform .2s}
+.fsc-foot-social a:hover{transform:translateY(-3px);background:var(--navy-d)}
+.fsc-foot-cols{display:flex;gap:56px;flex-wrap:wrap}
+.fsc-foot-cols h4{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);margin-bottom:12px;font-weight:800}
+.fsc-foot-cols a{display:block;color:var(--muted);font-size:14.5px;padding:5px 0}.fsc-foot-cols a:hover{color:var(--navy)}
+.fsc-copy{margin-top:40px;font-size:13px;color:var(--faint);display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
+
+/* whatsapp sticky */
+.fsc-wa{position:fixed;bottom:30px;right:30px;width:62px;height:62px;background:linear-gradient(145deg,#25D366,#20BD5A);border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 10px 30px rgba(37,211,102,.4);color:#fff;z-index:1030;transition:transform .35s}
+.fsc-wa:hover{transform:scale(1.1) translateY(-3px)}
+
+/* reveal */
+.fsc-rv{opacity:0;transform:translateY(22px);transition:opacity .7s,transform .7s cubic-bezier(.2,.8,.2,1)}
+.fsc-rv.in{opacity:1;transform:none}
+
+/* responsive */
+@media(max-width:920px){
+  .fsc-hero-grid{grid-template-columns:1fr;gap:42px}
+  .fsc-feat,.fsc-steps,.fsc-cases{grid-template-columns:1fr}
+  .fsc-calc,.fsc-contact-grid{grid-template-columns:1fr;gap:24px}
+  .fsc-who-grid{grid-template-columns:1fr}
+}
+@media(max-width:760px){
+  .fsc-nav-links{display:none}
+  .fsc-burger{display:grid;place-items:center}
+  .fsc-nav-r .fsc-btn-ghost{display:none}
+  .fsc-nav-mobile{display:flex}
+  .fsc-strip-grid{grid-template-columns:1fr 1fr;gap:22px}
+  .fsc-block,.fsc-caseblock{padding:48px 22px}
+  .fsc-sec{padding:62px 0}
+  .fsc-field-row{grid-template-columns:1fr}
+  .fsc-wa{bottom:20px;right:16px;width:54px;height:54px}
+}
+`;
