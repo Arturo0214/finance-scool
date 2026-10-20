@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronDown, Menu, X, MessageCircle, BarChart3, Lightbulb, Target, Wallet, Clock, Landmark, TrendingUp, GraduationCap, Briefcase, FileText, Shield, Brain, Users, CheckCircle, Camera, Linkedin, Volume2, VolumeX, Heart, PiggyBank, HandCoins } from 'lucide-react';
 import Logo from '../components/Logo';
+import ChatSofia from '../components/ChatSofia';
 import {
   getWhatsAppURL, trackWhatsAppClick, trackCalculadoraISR,
   trackMetaViewContent, initScrollTracking, detectLeadSource,
@@ -3013,6 +3014,9 @@ export default function Landing() {
       >
         <MessageCircle size={28} />
       </a>
+
+      {/* Chat Sofia — asesora digital 24/7 (califica y captura leads) */}
+      <ChatSofia />
     </>
   );
 }

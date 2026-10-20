@@ -19,7 +19,8 @@ function alertaTelegramLead(l) {
     const primer = (l.name || '').trim().split(/\s+/)[0] || 'hola';
     const saludo = encodeURIComponent(`Hola ${primer}, soy de Finance S-Cool 👋 Vi que dejaste tus datos sobre tu estrategia fiscal y de retiro. ¿Tienes 2 minutos para platicar?`);
     const perfil = [ING[l.income_type], RANGO[l.approx_income]].filter(Boolean).join(' · ');
-    const txt = `🔥 <b>NUEVO LEAD</b> — ${esc(l.name)}\n📞 ${esc(l.phone)}${l.email ? `\n✉️ ${esc(l.email)}` : ''}${perfil ? `\n💼 ${esc(perfil)}` : ''}\n📋 ${esc(l.service || 'PPR')}${l.declaracion ? ` · declara: ${esc(l.declaracion)}` : ''}\n\n<b>¡Contáctalo YA!</b> La velocidad de respuesta es el #1 factor de cierre.`;
+    const titulo = l.source === 'chat_web' ? '💬 <b>LEAD DESDE CHAT (Sofia web)</b>' : '🔥 <b>NUEVO LEAD</b>';
+    const txt = `${titulo} — ${esc(l.name)}\n📞 ${esc(l.phone)}${l.email ? `\n✉️ ${esc(l.email)}` : ''}${perfil ? `\n💼 ${esc(perfil)}` : ''}\n📋 ${esc(l.service || 'PPR')}${l.declaracion ? ` · declara: ${esc(l.declaracion)}` : ''}${l.message ? `\n🎯 ${esc(l.message)}` : ''}\n\n<b>¡Contáctalo YA!</b> La velocidad de respuesta es el #1 factor de cierre.`;
     const botones = [[{ text: '📱 Abrir WhatsApp', url: `https://wa.me/${wa}?text=${saludo}` }]];
     if (l.email) botones.push([{ text: '✉️ Enviar correo', url: `mailto:${l.email}` }]);
     fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
@@ -31,7 +32,7 @@ function alertaTelegramLead(l) {
 
 router.post('/', async (req, res) => {
   try {
-    const { name, email, phone, service, message, incomeType, approxIncome, declaracion, retiroPlan } = req.body;
+    const { name, email, phone, service, message, incomeType, approxIncome, declaracion, retiroPlan, source } = req.body;
     if (!name || !phone) return res.status(400).json({ error: 'Nombre y teléfono requeridos' });
     const cleanName = String(name).replace(/[<>"'&]/g, '').trim().slice(0, 100);
     const cleanPhone = String(phone).replace(/[^\d+\-() ]/g, '').slice(0, 20);
@@ -57,20 +58,23 @@ router.post('/', async (req, res) => {
     const cleanApproxIncome = allowedIncomeRanges.includes(approxIncome) ? approxIncome : null;
     const cleanDeclaracion = allowedDeclaracion.includes(declaracion) ? declaracion : null;
     const cleanRetiroPlan = allowedRetiro.includes(retiroPlan) ? retiroPlan : null;
+    const allowedSources = ['cta_landing', 'chat_web'];
+    const cleanSource = allowedSources.includes(source) ? source : 'cta_landing';
     const r = await runQuery(
       'INSERT INTO leads (name,email,phone,service,message,source,income_type,approx_income,declaracion,retiro_plan) VALUES (?,?,?,?,?,?,?,?,?,?)',
-      [cleanName, cleanEmail, cleanPhone, cleanService, cleanMessage, 'cta_landing', cleanIncomeType, cleanApproxIncome, cleanDeclaracion, cleanRetiroPlan]
+      [cleanName, cleanEmail, cleanPhone, cleanService, cleanMessage, cleanSource, cleanIncomeType, cleanApproxIncome, cleanDeclaracion, cleanRetiroPlan]
     );
     createNotification({
       type: 'lead',
-      message: `🆕 Nuevo lead desde landing: ${cleanName}`,
-      data: { name: cleanName, phone: cleanPhone, source: 'cta_landing' },
+      message: cleanSource === 'chat_web' ? `💬 Nuevo lead desde el chat Sofia: ${cleanName}` : `🆕 Nuevo lead desde landing: ${cleanName}`,
+      data: { name: cleanName, phone: cleanPhone, source: cleanSource },
       link: '/admin/leads',
     });
     // Alerta instantánea a Telegram con botón WhatsApp (no bloquea la respuesta)
     alertaTelegramLead({
       name: cleanName, phone: cleanPhone, email: cleanEmail, service: cleanService,
       income_type: cleanIncomeType, approx_income: cleanApproxIncome, declaracion: cleanDeclaracion,
+      message: cleanMessage, source: cleanSource,
     });
     res.json({ success: true, id: r.lastInsertRowid });
   } catch (err) {
