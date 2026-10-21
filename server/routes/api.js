@@ -1,5 +1,5 @@
 const express = require('express');
-const { queryAll, queryOne, runQuery } = require('../models/database');
+const { queryAll, queryOne, runQuery, getDB } = require('../models/database');
 const { verifyToken } = require('../middleware/auth');
 const router = express.Router();
 
@@ -453,28 +453,35 @@ router.post('/users/:id/reset-password', verifyToken, async (req, res) => {
 
 // Visit analytics
 router.get('/visits/stats', verifyToken, async (req, res) => {
+  // Agregación en JS vía Supabase (el traductor SQL no soporta COUNT/GROUP BY).
+  const vacio = { totalVisits: 0, todayVisits: 0, uniqueVisitors: 0, bounceRate: 0, avgSessionDuration: '0:00', pageViews: [], sourceData: [], dailyVisits: [] };
   try {
-    // Try to get visit data; table may not exist yet
-    const totalVisits = await queryOne('SELECT COUNT(*) as c FROM visits').catch(() => ({ c: 0 }));
-    const todayVisits = await queryOne("SELECT COUNT(*) as c FROM visits WHERE DATE(created_at) = DATE('now')").catch(() => ({ c: 0 }));
-    const uniqueVisitors = await queryOne('SELECT COUNT(DISTINCT ip) as c FROM visits').catch(() => ({ c: 0 }));
-    const pageViews = await queryAll('SELECT page, COUNT(*) as views FROM visits GROUP BY page ORDER BY views DESC LIMIT 10').catch(() => []);
-    const sourceData = await queryAll('SELECT source, COUNT(*) as count FROM visits GROUP BY source ORDER BY count DESC').catch(() => []);
-    const dailyVisits = await queryAll("SELECT DATE(created_at) as date, COUNT(*) as count FROM visits GROUP BY DATE(created_at) ORDER BY date DESC LIMIT 30").catch(() => []);
-
-    res.json({
-      totalVisits: totalVisits?.c || 0,
-      todayVisits: todayVisits?.c || 0,
-      uniqueVisitors: uniqueVisitors?.c || 0,
-      bounceRate: 0,
-      avgSessionDuration: '0:00',
-      pageViews: pageViews || [],
-      sourceData: sourceData || [],
-      dailyVisits: dailyVisits || [],
-    });
+    const db = getDB();
+    // Total exacto (sin traer filas)
+    const { count: total } = await db.from('visits').select('*', { count: 'exact', head: true });
+    // Filas recientes para desglose (de dónde vienen, por página, por día)
+    const { data: rows, error } = await db.from('visits')
+      .select('page,source,referrer,ip,created_at')
+      .order('created_at', { ascending: false })
+      .limit(5000);
+    if (error) return res.json(vacio);
+    const list = rows || [];
+    const hoy = new Date().toISOString().slice(0, 10);
+    const todayVisits = list.filter(r => String(r.created_at || '').slice(0, 10) === hoy).length;
+    const uniqueVisitors = new Set(list.map(r => r.ip).filter(Boolean)).size;
+    const byPage = {}, bySource = {}, byDay = {};
+    for (const r of list) {
+      const p = r.page || '/'; byPage[p] = (byPage[p] || 0) + 1;
+      const s = r.source || 'direct'; bySource[s] = (bySource[s] || 0) + 1;
+      const d = String(r.created_at || '').slice(0, 10); if (d) byDay[d] = (byDay[d] || 0) + 1;
+    }
+    const pageViews = Object.entries(byPage).map(([page, views]) => ({ page, views })).sort((a, b) => b.views - a.views).slice(0, 10);
+    const sourceData = Object.entries(bySource).map(([source, count]) => ({ source, count })).sort((a, b) => b.count - a.count);
+    const dailyVisits = Object.entries(byDay).map(([date, count]) => ({ date, count })).sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 30);
+    res.json({ totalVisits: total || list.length, todayVisits, uniqueVisitors, bounceRate: 0, avgSessionDuration: '0:00', pageViews, sourceData, dailyVisits });
   } catch (err) {
     console.error('Visit stats error:', err);
-    res.json({ totalVisits: 0, todayVisits: 0, uniqueVisitors: 0, bounceRate: 0, avgSessionDuration: '0:00', pageViews: [], sourceData: [], dailyVisits: [] });
+    res.json(vacio);
   }
 });
 

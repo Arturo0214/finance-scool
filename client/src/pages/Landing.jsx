@@ -80,7 +80,18 @@ export default function Landing() {
   const [scrolled, setScrolled] = useState(false);
   useReveal();
 
-  useEffect(() => { try { initScrollTracking(); trackMetaViewContent({ seccion: 'Landing_Home' }); } catch { /* best-effort */ } }, []);
+  useEffect(() => {
+    try { initScrollTracking(); trackMetaViewContent({ seccion: 'Landing_Home' }); } catch { /* best-effort */ }
+    // Registra la visita (de dónde viene) para la sección Visitas del admin
+    try {
+      const p = new URLSearchParams(window.location.search);
+      const ref = document.referrer || '';
+      let source = p.get('utm_source') || '';
+      if (!source && ref) { try { source = new URL(ref).hostname.replace(/^www\./, ''); } catch { /* ref no-url */ } }
+      if (!source) source = 'direct';
+      fetch(`${API_URL}/visits/track`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ page: window.location.pathname, source, referrer: ref }) }).catch(() => {});
+    } catch { /* tracking best-effort */ }
+  }, []);
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
     window.addEventListener('scroll', onScroll, { passive: true });

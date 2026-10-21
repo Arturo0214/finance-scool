@@ -146,6 +146,10 @@ export default function AdminPanel() {
     { id: 'crm-prospectos',   label: 'Prospectos',                    icon: Handshake  },
     { id: 'crm-calendarios',  label: 'Calendarios',                   icon: CalendarDays },
     { id: 'crm-correos',      label: 'Correos',                       icon: Mail       },
+    { id: 'divider-mkt',      label: '── Marketing & Web ──',         icon: null       },
+    { id: 'visitas',          label: 'Visitas',                       icon: Eye        },
+    { id: 'leads',            label: 'Leads Web',                     icon: Users      },
+    { id: 'campaigns',        label: 'Campañas Ads',                  icon: Megaphone  },
     { id: 'divider-2',        label: '── Administración ──',          icon: null       },
     { id: 'team',             label: SPANISH_LABELS.team,             icon: Settings   },
     { id: 'health',           label: 'Salud del sistema',             icon: Activity   },
@@ -156,6 +160,8 @@ export default function AdminPanel() {
     if (item.id === 'crm-prospectos') return esSocioProspectos;
     if (item.id === 'crm-calendarios') return esSocioProspectos;
     if (item.id === 'crm-correos') return esAdminCorreos;
+    // Marketing & Web (Visitas, Leads, Campañas Ads): SOLO administración
+    if (['divider-mkt', 'visitas', 'leads', 'campaigns'].includes(item.id)) return canManageTeam;
     return (item.id !== 'team' && item.id !== 'divider-2') || canManageTeam;
   });
 
@@ -332,11 +338,11 @@ export default function AdminPanel() {
                 <FunnelView />}
               {!loading && activeView === 'sources' &&
                 <SourcesView stats={agencyStats || stats} leads={leads} />}
-              {!loading && activeView === 'campaigns' &&
+              {!loading && activeView === 'campaigns' && canManageTeam &&
                 <CampaignsView />}
               {!loading && activeView === 'dashboard' &&
                 <DashboardView stats={stats} leads={leads} events={todayEvents} />}
-              {!loading && activeView === 'leads' &&
+              {!loading && activeView === 'leads' && canManageTeam &&
                 <LeadsView
                   leads={filteredLeads}
                   searchTerm={searchTerm} setSearchTerm={setSearchTerm}
@@ -355,7 +361,7 @@ export default function AdminPanel() {
                 />}
               {!loading && activeView === 'chat' &&
                 <ChatView messages={messages} onSendMessage={handleSendMessage} messageInputRef={messageInputRef} />}
-              {!loading && activeView === 'visitas' &&
+              {!loading && activeView === 'visitas' && canManageTeam &&
                 <VisitasView />}
               {activeView === 'whatsapp' &&
                 <WhatsAppView onOpenMenu={() => setMobileMenuOpen(o => !o)} />}
