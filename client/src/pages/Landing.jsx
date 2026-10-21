@@ -379,9 +379,11 @@ export default function Landing() {
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700;12..96,800&family=Hanken+Grotesk:wght@400;500;600;700&display=swap');
 .fx{
-  --bg:#FFFFFF;--paper:#F1F7F2;--mint:#E3F6EA;--mint2:#D2F0DC;
-  --ink:#0A1F16;--ink2:#46564E;--faint:#86998F;--line:#E6EDE8;
-  --green:#00B368;--green-d:#059356;--green-ink:#053D2A;--forest:#0B2018;
+  --bg:#FFFFFF;--paper:#F4F7FD;--mint:#E9F0FC;--mint2:#D7E6FA;
+  --ink:#0A1B3D;--ink2:#4C597A;--faint:#93A0BE;--line:#E5EAF4;
+  /* --green = acento primario azul · --green-ink/--forest = navy oscuro */
+  --green:#0E54D6;--green-d:#0A3FA8;--green-ink:#07235C;--forest:#06112E;
+  --gold:#C9A24B;--gold-d:#A9842C;--gold-l:#EAD28A;--amber:#E8B23C;
   --r:16px;--r-lg:26px;--r-pill:100px;
   font-family:'Hanken Grotesk',system-ui,sans-serif;color:var(--ink);background:var(--bg);
   font-size:17px;line-height:1.6;-webkit-font-smoothing:antialiased;overflow-x:hidden}
@@ -396,8 +398,10 @@ const CSS = `
 .fx-btn.fx-sm{padding:9px 18px;font-size:14.5px}
 .fx-btn.fx-lg{padding:15px 28px;font-size:16.5px}
 .fx-btn.fx-w100{width:100%}
-.fx-btn-green{background:var(--green);color:#fff;box-shadow:0 12px 26px -12px rgba(0,179,104,.7)}
-.fx-btn-green:hover{background:var(--green-d);transform:translateY(-3px);box-shadow:0 18px 34px -12px rgba(0,179,104,.8)}
+.fx-btn-green{position:relative;background:linear-gradient(120deg,var(--green-d),var(--green) 60%,#2E6DF0);color:#fff;box-shadow:0 14px 30px -12px rgba(14,84,214,.65);overflow:hidden}
+.fx-btn-green::after{content:'';position:absolute;inset:0;background:linear-gradient(120deg,transparent,rgba(255,255,255,.45),transparent);transform:translateX(-120%);transition:transform .7s}
+.fx-btn-green:hover{transform:translateY(-3px);box-shadow:0 20px 40px -12px rgba(14,84,214,.8)}
+.fx-btn-green:hover::after{transform:translateX(120%)}
 .fx-btn-soft{background:var(--mint);color:var(--green-ink);border-color:transparent}
 .fx-btn-soft:hover{background:var(--mint2);transform:translateY(-3px)}
 .fx-link{background:none;border:none;color:var(--ink2);font-family:'Hanken Grotesk';font-weight:600;font-size:14.5px;cursor:pointer}
@@ -418,7 +422,8 @@ const CSS = `
 
 /* hero */
 .fx-hero{position:relative;padding:72px 0 80px;overflow:hidden;background:
-  radial-gradient(60% 80% at 92% 0%, var(--mint) 0%, transparent 60%),var(--bg)}
+  radial-gradient(55% 75% at 95% -5%, var(--mint) 0%, transparent 58%),
+  radial-gradient(42% 60% at 2% 108%, rgba(201,162,75,.16) 0%, transparent 60%),var(--bg)}
 .fx-hero-grid{display:grid;grid-template-columns:1.08fr .92fr;gap:54px;align-items:center}
 .fx-pill{display:inline-flex;align-items:center;gap:9px;font-size:13.5px;font-weight:700;color:var(--green-ink);background:var(--mint);padding:8px 16px;border-radius:var(--r-pill)}
 .fx-pulse{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 0 0 rgba(0,179,104,.5);animation:fxPulse 2s infinite}
@@ -439,14 +444,14 @@ const CSS = `
 .fx-pc-dot{width:10px;height:10px;border-radius:50%;background:var(--green)}
 .fx-pc-main{padding:18px 0}
 .fx-pc-k{font-size:13px;color:var(--ink2);font-weight:600}
-.fx-pc-big{font-family:'Bricolage Grotesque';font-size:46px;font-weight:800;color:var(--green);letter-spacing:-.03em;line-height:1.05;margin:4px 0 14px}
+.fx-pc-big{font-family:'Bricolage Grotesque';font-size:46px;font-weight:800;color:var(--gold-d);letter-spacing:-.03em;line-height:1.05;margin:4px 0 14px}
 .fx-pc-bar{position:relative;height:12px;border-radius:7px;background:var(--paper);overflow:hidden;display:flex;align-items:center}
-.fx-pc-bar i{display:block;height:100%;border-radius:7px;background:linear-gradient(90deg,var(--green),#3DDc8f);transition:width .4s}
+.fx-pc-bar i{display:block;height:100%;border-radius:7px;background:linear-gradient(90deg,var(--green),var(--gold));transition:width .4s}
 .fx-pc-bar em{position:absolute;right:10px;font-style:normal;font-size:11px;font-weight:800;color:var(--green-ink)}
 .fx-pc-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:16px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
 .fx-pc-row span{display:block;font-size:12px;color:var(--faint);margin-bottom:3px}
 .fx-pc-row b{font-family:'Bricolage Grotesque';font-size:20px;font-weight:700;color:var(--ink)}
-.fx-pc-row b.g{color:var(--green)}
+.fx-pc-row b.g{color:var(--gold-d)}
 .fx-pc-foot{display:flex;align-items:center;gap:7px;margin-top:14px;font-size:12.5px;font-weight:600;color:var(--green-ink)}
 .fx-pc-foot svg{color:var(--green)}
 .fx-fchip{position:absolute;z-index:3;background:#fff;border:1px solid var(--line);border-radius:12px;padding:9px 14px;font-size:13px;font-weight:700;color:var(--ink);box-shadow:0 14px 30px -12px rgba(10,31,22,.25)}
@@ -465,8 +470,8 @@ const CSS = `
 .fx-head{max-width:640px;margin:0 auto 54px;text-align:center}
 .fx-head h2{font-size:clamp(30px,4.4vw,50px);margin-top:14px;font-weight:800;letter-spacing:-.03em}
 .fx-head p{color:var(--ink2);margin-top:14px;font-size:17.5px}
-.fx-eyebrow{display:inline-block;font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--green)}
-.fx-eyebrow.light{color:var(--green)}
+.fx-eyebrow{display:inline-block;font-size:13px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--gold-d)}
+.fx-eyebrow.light{color:var(--gold-l)}
 
 /* beneficios */
 .fx-benes{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
@@ -491,8 +496,8 @@ const CSS = `
 .fx-calc-mini span{display:block;font-size:12px;color:var(--faint);margin-bottom:4px}
 .fx-calc-mini b{font-family:'Bricolage Grotesque';font-size:21px;font-weight:700;color:var(--ink)}
 .fx-calc-r{padding:38px;background:linear-gradient(160deg,var(--green-ink),#0a5236);color:#fff;display:flex;flex-direction:column;justify-content:center}
-.fx-calc-rk{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#9EEFC4}
-.fx-calc-rbig{font-family:'Bricolage Grotesque';font-size:clamp(44px,6vw,60px);font-weight:800;line-height:1;margin:8px 0;letter-spacing:-.03em}
+.fx-calc-rk{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gold-l)}
+.fx-calc-rbig{font-family:'Bricolage Grotesque';font-size:clamp(44px,6vw,60px);font-weight:800;line-height:1;margin:8px 0;letter-spacing:-.03em;color:var(--gold-l)}
 .fx-calc-rsub{font-size:14px;color:rgba(255,255,255,.82);margin-bottom:22px}
 .fx-calc-rsub b{color:#fff}
 .fx-calc-r .fx-btn-green{background:#fff;color:var(--green-ink)}
@@ -502,9 +507,9 @@ const CSS = `
 .fx-cases{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
 .fx-case{background:#fff;border:1px solid var(--line);border-radius:var(--r-lg);padding:28px;box-shadow:0 20px 50px -30px rgba(10,31,22,.25);transition:transform .3s,box-shadow .3s}
 .fx-case:hover{transform:translateY(-6px);box-shadow:0 30px 60px -28px rgba(10,31,22,.32)}
-.fx-stars{color:#FFB020;font-size:15px;letter-spacing:1px;margin-bottom:14px}
+.fx-stars{color:var(--amber);font-size:15px;letter-spacing:1px;margin-bottom:14px}
 .fx-case-stat{margin-bottom:12px}
-.fx-case-stat b{display:block;font-family:'Bricolage Grotesque';font-size:36px;font-weight:800;color:var(--green);line-height:1;letter-spacing:-.03em}
+.fx-case-stat b{display:block;font-family:'Bricolage Grotesque';font-size:36px;font-weight:800;color:var(--gold-d);line-height:1;letter-spacing:-.03em}
 .fx-case-stat span{font-size:12.5px;color:var(--ink2);font-weight:600}
 .fx-case blockquote{font-size:15px;color:var(--ink2);line-height:1.55;min-height:90px}
 .fx-case figcaption{display:flex;align-items:center;gap:11px;margin-top:16px;padding-top:16px;border-top:1px solid var(--line)}
@@ -516,7 +521,7 @@ const CSS = `
 .fx-band{background:var(--forest);color:#fff;padding:64px 0}
 .fx-band-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:24px;text-align:center}
 .fx-bstat b{display:block;font-family:'Bricolage Grotesque';font-size:clamp(34px,4.6vw,52px);font-weight:800;color:#fff;line-height:1;letter-spacing:-.03em}
-.fx-bstat b i{font-style:normal;color:#9EEFC4;font-size:.5em}
+.fx-bstat b i{font-style:normal;color:var(--gold-l);font-size:.5em}
 .fx-bstat span{display:block;font-size:13.5px;color:rgba(255,255,255,.66);margin-top:8px}
 
 /* para quien */
@@ -530,12 +535,12 @@ const CSS = `
 /* cta + form */
 .fx-cta{display:grid;grid-template-columns:1fr 1fr;gap:0;background:linear-gradient(155deg,var(--green-ink),#0a5236);border-radius:32px;overflow:hidden;color:#fff}
 .fx-cta-l{padding:50px 46px}
-.fx-cta-l .fx-eyebrow{color:#9EEFC4}
+.fx-cta-l .fx-eyebrow{color:var(--gold-l)}
 .fx-cta-l h2{color:#fff;font-size:clamp(30px,3.8vw,46px);margin:14px 0 14px;font-weight:800;letter-spacing:-.03em}
 .fx-cta-l p{color:rgba(255,255,255,.8);font-size:16px;max-width:42ch}
 .fx-perks{list-style:none;margin-top:24px;display:flex;flex-direction:column;gap:12px}
 .fx-perks li{display:flex;align-items:center;gap:10px;font-size:15px;color:rgba(255,255,255,.9)}
-.fx-perks svg{color:#9EEFC4;flex:none}
+.fx-perks svg{color:var(--gold-l);flex:none}
 .fx-form{background:#fff;padding:40px;display:flex;flex-direction:column;gap:13px}
 .fx-f{display:flex;flex-direction:column;gap:5px}
 .fx-f-row{display:grid;grid-template-columns:1fr 1fr;gap:13px}
@@ -552,9 +557,9 @@ const CSS = `
 .fx-footer .fx-brand{filter:none}
 .fx-foot{display:flex;justify-content:space-between;gap:40px;flex-wrap:wrap}
 .fx-foot>div p{color:rgba(255,255,255,.6);font-size:14.5px;margin-top:14px;max-width:320px}
-.fx-foot-wa{display:inline-flex;align-items:center;gap:8px;margin-top:16px;color:#9EEFC4;font-weight:600;font-size:14px}
+.fx-foot-wa{display:inline-flex;align-items:center;gap:8px;margin-top:16px;color:var(--gold-l);font-weight:600;font-size:14px}
 .fx-foot-cols{display:flex;gap:60px;flex-wrap:wrap}
-.fx-foot-cols h4{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:#9EEFC4;margin-bottom:14px;font-weight:800}
+.fx-foot-cols h4{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--gold-l);margin-bottom:14px;font-weight:800}
 .fx-foot-cols a{display:block;color:rgba(255,255,255,.7);font-size:14.5px;padding:6px 0}.fx-foot-cols a:hover{color:#fff}
 .fx-copy{margin-top:44px;padding-top:24px;border-top:1px solid rgba(255,255,255,.12);font-size:12.5px;color:rgba(255,255,255,.5);display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
 
