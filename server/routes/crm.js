@@ -3663,6 +3663,22 @@ function cobranzaProyectarRecibos(primaAnual, forma, fechaAncla, desde, hasta) {
   return recibos;
 }
 
+/* Vencimiento REAL de un recibo pendiente. fecha_renovacion apunta al PRÓXIMO
+   aniversario (futuro, a veces 2027 si el de este año ya pasó), pero un
+   pendiente_pago es del ciclo vigente/vencido → se retrocede por la periodicidad
+   hasta el vencimiento en-o-antes de hoy. Evita mostrar "vence sep 2027". */
+function cobranzaVencPendiente(fechaRenov, fechaPago, forma, hoy) {
+  const base = cobranzaParseFecha(fechaRenov || fechaPago);
+  if (!base) return null;
+  const periods = COBRANZA_PERIODS[String(forma || 'anual').toLowerCase()] || 1;
+  const stepMeses = 12 / periods;
+  // El recibo pendiente es el aniversario del CICLO VIGENTE = el más cercano a hoy
+  // (puede estar unos días adelante o atrás). fecha_renovacion suele ser el próximo;
+  // el ciclo anterior (base - 1 periodo) gana cuando el próximo queda muy lejos.
+  const prev = new Date(base); prev.setMonth(prev.getMonth() - stepMeses);
+  return Math.abs(base - hoy) <= Math.abs(prev - hoy) ? base : prev;
+}
+
 /* GET /api/crm/cobranza — datos de la sección (admin ve todo; asesor ve lo suyo) */
 router.get('/cobranza', async (req, res) => {
   const scope = await resolveScope(req, res);
@@ -3713,7 +3729,7 @@ router.get('/cobranza', async (req, res) => {
 
       // Cobro pendiente = póliza con recibo por pagar
       if (p.estatus === 'pendiente_pago') {
-        const venc = cobranzaParseFecha(p.fecha_renovacion || p.fecha_pago);
+        const venc = cobranzaVencPendiente(p.fecha_renovacion, p.fecha_pago, p.forma_pago, hoy);
         const dias = venc ? Math.floor((hoy - venc) / 86400000) : null; // >0 = vencido
         pendientes.push({
           poliza: p.poliza, cliente: (p.crm_clients && p.crm_clients.nombre) || '—',
@@ -3791,6 +3807,9 @@ function cobranzaFormatMensaje(ag, items, diasVentana) {
     'Contacta a tus clientes con anticipación para asegurar la renovación y conservar tu cartera.',
     '',
     'Finance S-Cool · Incubadora S-COOL',
+    '',
+    '— — — — —',
+    'Nota: este correo fue generado automáticamente por la plataforma de Finance S-Cool (asistido por IA) para facilitar tu labor de cobranza. Si ya realizaste estos cobros, infórmanos y haz caso omiso de este mensaje.',
   ].join('\n');
   return { subject: `Tus cobranzas próximas a vencer — ${items.length} recibos · ${cobranzaFmtMoney(total)}`, text, total, count: items.length };
 }
