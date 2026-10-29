@@ -8,7 +8,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { api } from '../../../../utils/api';
 import { C } from '../../constants';
 import { getCrmCSS, fmtDate } from './crmShared';
-import { Receipt, TrendingUp, AlertTriangle, Users, Mail, Send, Loader2, CheckCircle2 } from 'lucide-react';
+import { Receipt, TrendingUp, AlertTriangle, Users, Mail, Send, Loader2, CheckCircle2, X } from 'lucide-react';
 
 const money = (n) => `$${(Math.round(Number(n) || 0)).toLocaleString('es-MX')}`;
 
@@ -46,6 +46,7 @@ export default function CrmCobranzaView() {
   const [filtroConsultor, setFiltroConsultor] = useState('');
   const [sending, setSending] = useState(null);   // clave | 'ALL'
   const [sendMsg, setSendMsg] = useState(null);
+  const [preview, setPreview] = useState(null);   // { clave, loading, data, error }
 
   const load = async () => {
     setLoading(true); setErr(null);
@@ -62,14 +63,26 @@ export default function CrmCobranzaView() {
 
   const flujoMax = useMemo(() => Math.max(1, ...(data?.flujo || []).map(f => f.total)), [data]);
 
-  const notificar = async (clave) => {
-    const quien = clave ? (data.consultores.find(c => c.clave === clave)?.nombre || clave) : 'todos los consultores con correo';
-    if (!window.confirm(`¿Enviar correo de cobranza a ${quien}?`)) return;
+  // Abre el modal con el cuerpo del correo que se enviaría (sin mandarlo).
+  const abrirPreview = async (clave) => {
+    setPreview({ clave, loading: true });
+    try {
+      const d = await api.crmCobranzaPreview(clave);
+      setPreview({ clave, data: d });
+    } catch (e) {
+      setPreview({ clave, error: e.message || 'No se pudo cargar la vista previa' });
+    }
+  };
+
+  // Envía (desde el modal, o "a todos" con clave=null). Modal = confirmación.
+  const enviar = async (clave) => {
+    if (!clave && !window.confirm('¿Enviar la cobranza por correo a TODOS los consultores con correo?')) return;
     setSending(clave || 'ALL'); setSendMsg(null);
     try {
       const r = await api.crmCobranzaNotificar(clave || null);
       const n = (r.enviados || []).length, f = (r.fallidos || []).length;
-      setSendMsg({ ok: true, text: `Enviados: ${n}${f ? ` · fallidos: ${f}` : ''}${(r.sinItemsOCorreo || []).length ? ` · sin correo/cobranzas: ${r.sinItemsOCorreo.length}` : ''}` });
+      setSendMsg({ ok: n > 0 || f === 0, text: `Enviados: ${n}${f ? ` · fallidos: ${f}` : ''}${(r.sinItemsOCorreo || []).length ? ` · sin correo/cobranzas: ${r.sinItemsOCorreo.length}` : ''}` });
+      setPreview(null);
     } catch (e) {
       setSendMsg({ ok: false, text: e.message || 'No se pudo enviar' });
     } finally { setSending(null); }
@@ -96,7 +109,7 @@ export default function CrmCobranzaView() {
           <p className="view-subtitle">Cobros pendientes y flujo de caja anticipado · correos de cobranza por consultor</p>
         </div>
         <div className="crm-toolbar-right">
-          <button className="crm-btn crm-btn-primary" disabled={sending} onClick={() => notificar(null)}>
+          <button className="crm-btn crm-btn-primary" disabled={sending} onClick={() => enviar(null)}>
             {sending === 'ALL' ? <Loader2 size={15} className="spin" /> : <Send size={15} />} Enviar a todos
           </button>
         </div>
@@ -179,7 +192,8 @@ export default function CrmCobranzaView() {
       {tab === 'consultores' && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 14 }}>
           {(data.consultores || []).map((c) => (
-            <div className="crm-card" key={c.clave} style={{ padding: 16 }}>
+            <div className="crm-card" key={c.clave} style={{ padding: 16, cursor: 'pointer' }}
+                 onClick={() => abrirPreview(c.clave)} title="Ver el correo que se enviará">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
                 <div style={{ minWidth: 0 }}>
                   <p style={{ fontWeight: 700, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.nombre}</p>
@@ -194,11 +208,51 @@ export default function CrmCobranzaView() {
                 <div><p style={{ fontSize: 11, color: C.textMuted, margin: 0 }}>Prima anual</p><p style={{ fontWeight: 700, margin: 0 }}>{money(c.primaAnual)}</p><p style={{ fontSize: 11, color: C.textLight, margin: 0 }}>{c.polizas} pólizas</p></div>
                 <div><p style={{ fontSize: 11, color: C.textMuted, margin: 0 }}>Próxima</p><p style={{ fontWeight: 600, margin: 0, fontSize: 13 }}>{c.proxima ? fmtDate(c.proxima) : '—'}</p></div>
               </div>
-              <button className="crm-btn" disabled={!c.email || sending} onClick={() => notificar(c.clave)} style={{ width: '100%', justifyContent: 'center', opacity: c.email ? 1 : 0.5 }}>
-                {sending === c.clave ? <Loader2 size={14} className="spin" /> : <Send size={14} />} Enviar su cobranza
+              <button className="crm-btn" onClick={(e) => { e.stopPropagation(); abrirPreview(c.clave); }} style={{ width: '100%', justifyContent: 'center' }}>
+                <Mail size={14} /> Ver correo
               </button>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* ── Modal: vista previa del correo ── */}
+      {preview && (
+        <div onClick={() => setPreview(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(5,22,54,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 620, maxHeight: '88vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(5,22,54,.3)' }}>
+            <div style={{ padding: '16px 20px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}><Mail size={18} /> Correo de cobranza</h3>
+              <button className="crm-btn" onClick={() => setPreview(null)} style={{ padding: '4px 10px' }}><X size={16} /></button>
+            </div>
+
+            <div style={{ padding: 20, overflow: 'auto' }}>
+              {preview.loading && <div style={{ textAlign: 'center', padding: 30, color: C.textMuted }}><Loader2 size={22} className="spin" /><p>Generando vista previa...</p></div>}
+              {preview.error && <p style={{ color: C.red }}>⚠️ {preview.error}</p>}
+              {preview.data && preview.data.sinCobranzas && <p style={{ color: C.textMuted, textAlign: 'center', padding: 20 }}>Este consultor no tiene cobranzas próximas a vencer.</p>}
+              {preview.data && !preview.data.sinCobranzas && (
+                <>
+                  <div style={{ display: 'grid', gridTemplateColumns: '90px 1fr', rowGap: 8, columnGap: 10, fontSize: 13, marginBottom: 16 }}>
+                    <span style={{ color: C.textMuted }}>Para:</span>
+                    <span style={{ fontWeight: 600, color: preview.data.sinCorreo ? C.red : C.text }}>{preview.data.nombre} {preview.data.email ? `<${preview.data.email}>` : '· SIN CORREO (no se puede enviar)'}</span>
+                    <span style={{ color: C.textMuted }}>Asunto:</span>
+                    <span style={{ fontWeight: 600 }}>{preview.data.subject}</span>
+                  </div>
+                  <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: 16, fontSize: 13, lineHeight: 1.55, whiteSpace: 'pre-wrap', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', color: C.text, maxHeight: '42vh', overflow: 'auto' }}>
+                    {preview.data.body}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {preview.data && !preview.data.sinCobranzas && (
+              <div style={{ padding: '14px 20px', borderTop: `1px solid ${C.border}`, display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                <button className="crm-btn" onClick={() => setPreview(null)}>Cerrar</button>
+                <button className="crm-btn crm-btn-primary" disabled={preview.data.sinCorreo || sending} onClick={() => enviar(preview.clave)} title={preview.data.sinCorreo ? 'Este consultor no tiene correo' : ''}>
+                  {sending === preview.clave ? <Loader2 size={15} className="spin" /> : <Send size={15} />} Enviar este correo
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

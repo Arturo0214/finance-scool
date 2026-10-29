@@ -3742,61 +3742,94 @@ router.get('/cobranza', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+/* Agrupa las pólizas por consultor con sus recibos en la ventana [hoy, hoy+dias].
+   soloClave: limita a un consultor. conCorreo: exige email (para enviar). */
+async function cobranzaBuildBuckets({ soloClave = null, diasVentana = 45, conCorreo = false }) {
+  const db = getDB();
+  const data = await fetchAllRows(() => db.from('crm_policies')
+    .select('poliza, prima, forma_pago, fecha_renovacion, fecha_pago, estatus, pago_manual_at, crm_clients(nombre), crm_agents(clave, nombre, email)')
+    .in('estatus', ['pagada', 'pendiente_pago', 'en_tramite']));
+  const rows = decryptRows(data, 'crm_policies');
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+  const hasta = new Date(hoy.getTime() + diasVentana * 86400000);
+  const porClave = new Map();
+  for (const p of rows) {
+    const ag = p.crm_agents || {};
+    if (!ag.clave) continue;
+    if (conCorreo && !ag.email) continue;
+    if (soloClave && ag.clave !== soloClave) continue;
+    const recibos = cobranzaProyectarRecibos(Number(p.prima) || 0, p.forma_pago, p.fecha_renovacion, hoy, hasta);
+    const pendienteYa = p.estatus === 'pendiente_pago';
+    if (!recibos.length && !pendienteYa) continue;
+    if (!porClave.has(ag.clave)) porClave.set(ag.clave, { ag, items: [] });
+    const bucket = porClave.get(ag.clave);
+    const montoRecibo = (Number(p.prima) || 0) / (COBRANZA_PERIODS[String(p.forma_pago || 'anual').toLowerCase()] || 1);
+    if (pendienteYa) {
+      const venc = cobranzaParseFecha(p.fecha_renovacion || p.fecha_pago);
+      bucket.items.push({ poliza: p.poliza, cliente: (p.crm_clients && p.crm_clients.nombre) || '—', fecha: venc, monto: montoRecibo, vencido: true });
+    }
+    for (const r of recibos) bucket.items.push({ poliza: p.poliza, cliente: (p.crm_clients && p.crm_clients.nombre) || '—', fecha: r.fecha, monto: r.monto, vencido: false });
+  }
+  return porClave;
+}
+
+/* Arma el correo (asunto + cuerpo) para un consultor a partir de sus items. */
+function cobranzaFormatMensaje(ag, items, diasVentana) {
+  items.sort((a, b) => (a.fecha ? a.fecha.getTime() : 0) - (b.fecha ? b.fecha.getTime() : 0));
+  const total = items.reduce((s, i) => s + i.monto, 0);
+  const fmtF = (d) => d ? d.toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }) : 'sin fecha';
+  const text = [
+    `Hola ${String(ag.nombre || '').split(' ')[0]},`,
+    '',
+    `Estas son tus cobranzas próximas a vencer (siguientes ${diasVentana} días):`,
+    '',
+    ...items.map(i => `• ${fmtF(i.fecha)} — ${i.cliente} (Póliza ${i.poliza}): ${cobranzaFmtMoney(i.monto)}${i.vencido ? '  ⚠️ PENDIENTE DE PAGO' : ''}`),
+    '',
+    `Total por cobrar en la ventana: ${cobranzaFmtMoney(total)} (${items.length} recibos).`,
+    '',
+    'Contacta a tus clientes con anticipación para asegurar la renovación y conservar tu cartera.',
+    '',
+    'Finance S-Cool · Incubadora S-COOL',
+  ].join('\n');
+  return { subject: `Tus cobranzas próximas a vencer — ${items.length} recibos · ${cobranzaFmtMoney(total)}`, text, total, count: items.length };
+}
+
+/* GET /api/crm/cobranza/preview?clave=X — devuelve el correo que se enviaría
+   (destinatario + asunto + cuerpo) SIN mandarlo. Para el modal de confirmación. */
+router.get('/cobranza/preview', async (req, res) => {
+  if (!isAgency(req.user.role)) return res.status(403).json({ error: 'Solo administración' });
+  try {
+    const clave = req.query.clave ? String(req.query.clave) : null;
+    if (!clave) return res.status(400).json({ error: 'Falta clave del consultor' });
+    const diasVentana = Math.min(120, Math.max(7, parseInt(req.query.dias, 10) || 45));
+    const buckets = await cobranzaBuildBuckets({ soloClave: clave, diasVentana });
+    const b = buckets.get(clave);
+    if (!b || !b.items.length) return res.json({ clave, sinCobranzas: true, items: [] });
+    const msg = cobranzaFormatMensaje(b.ag, b.items, diasVentana);
+    res.json({
+      clave, nombre: b.ag.nombre, email: b.ag.email || null, sinCorreo: !b.ag.email,
+      subject: msg.subject, body: msg.text, total: msg.total, count: msg.count, diasVentana,
+      items: b.items.map(i => ({ poliza: i.poliza, cliente: i.cliente, fecha: i.fecha ? i.fecha.toISOString().slice(0, 10) : null, monto: i.monto, vencido: i.vencido })),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 /* POST /api/crm/cobranza/notificar — manda a cada consultor (o uno, {clave})
    su lista de cobranzas próximas a vencer. El admin lo dispara manualmente. */
 router.post('/cobranza/notificar', async (req, res) => {
   if (!isAgency(req.user.role)) return res.status(403).json({ error: 'Solo administración puede enviar la cobranza' });
-  const db = getDB();
   try {
     const { sendMail } = require('../utils/crmMailer');
     const soloClave = req.body && req.body.clave ? String(req.body.clave) : null;
     const diasVentana = Math.min(120, Math.max(7, parseInt(req.body && req.body.dias, 10) || 45));
-
-    const data = await fetchAllRows(() => db.from('crm_policies')
-      .select('poliza, prima, forma_pago, fecha_renovacion, fecha_pago, estatus, pago_manual_at, crm_clients(nombre), crm_agents(clave, nombre, email)')
-      .in('estatus', ['pagada', 'pendiente_pago', 'en_tramite']));
-    const rows = decryptRows(data, 'crm_policies');
-
-    const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
-    const hasta = new Date(hoy.getTime() + diasVentana * 86400000);
-    const porClave = new Map();
-    for (const p of rows) {
-      const ag = p.crm_agents || {};
-      if (!ag.clave || !ag.email) continue;
-      if (soloClave && ag.clave !== soloClave) continue;
-      const recibos = cobranzaProyectarRecibos(Number(p.prima) || 0, p.forma_pago, p.fecha_renovacion, hoy, hasta);
-      const pendienteYa = p.estatus === 'pendiente_pago';
-      if (!recibos.length && !pendienteYa) continue;
-      if (!porClave.has(ag.clave)) porClave.set(ag.clave, { ag, items: [] });
-      const bucket = porClave.get(ag.clave);
-      if (pendienteYa) {
-        const venc = cobranzaParseFecha(p.fecha_renovacion || p.fecha_pago);
-        bucket.items.push({ poliza: p.poliza, cliente: (p.crm_clients && p.crm_clients.nombre) || '—', fecha: venc, monto: (Number(p.prima) || 0) / (COBRANZA_PERIODS[String(p.forma_pago || 'anual').toLowerCase()] || 1), vencido: true });
-      }
-      for (const r of recibos) bucket.items.push({ poliza: p.poliza, cliente: (p.crm_clients && p.crm_clients.nombre) || '—', fecha: r.fecha, monto: r.monto, vencido: false });
-    }
+    const buckets = await cobranzaBuildBuckets({ soloClave, diasVentana, conCorreo: true });
 
     const enviados = [], sinItems = [], fallidos = [];
-    for (const { ag, items } of porClave.values()) {
+    for (const { ag, items } of buckets.values()) {
       if (!items.length) { sinItems.push(ag.clave); continue; }
-      items.sort((a, b) => (a.fecha?.getTime() || 0) - (b.fecha?.getTime() || 0));
-      const total = items.reduce((s, i) => s + i.monto, 0);
-      const fmtF = (d) => d ? d.toLocaleDateString('es-MX', { day: '2-digit', month: 'short' }) : 'sin fecha';
-      const lineas = [
-        `Hola ${String(ag.nombre || '').split(' ')[0]},`,
-        '',
-        `Estas son tus cobranzas próximas a vencer (siguientes ${diasVentana} días):`,
-        '',
-        ...items.map(i => `• ${fmtF(i.fecha)} — ${i.cliente} (Póliza ${i.poliza}): ${cobranzaFmtMoney(i.monto)}${i.vencido ? '  ⚠️ PENDIENTE DE PAGO' : ''}`),
-        '',
-        `Total por cobrar en la ventana: ${cobranzaFmtMoney(total)} (${items.length} recibos).`,
-        '',
-        'Contacta a tus clientes con anticipación para asegurar la renovación y conservar tu cartera.',
-        '',
-        'Finance S-Cool · Incubadora S-COOL',
-      ];
+      const msg = cobranzaFormatMensaje(ag, items, diasVentana);
       try {
-        await sendMail({ to: ag.email, subject: `Tus cobranzas próximas a vencer — ${items.length} recibos · ${cobranzaFmtMoney(total)}`, text: lineas.join('\n') });
+        await sendMail({ to: ag.email, subject: msg.subject, text: msg.text });
         enviados.push(ag.clave);
       } catch (e) { fallidos.push(`${ag.clave}: ${e.message}`); }
     }
