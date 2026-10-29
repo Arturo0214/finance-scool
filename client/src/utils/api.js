@@ -219,6 +219,8 @@ export const api = {
   // ── Cobranza: cobros pendientes + flujo de caja + notificación por consultor ──
   crmGetCobranza: () => request('/crm/cobranza'),
   crmCobranzaPreview: (clave, dias) => request(`/crm/cobranza/preview?clave=${encodeURIComponent(clave)}${dias ? `&dias=${dias}` : ''}`),
+  crmCobranzaPreviewTodos: (dias) => request(`/crm/cobranza/preview-todos${dias ? `?dias=${dias}` : ''}`),
+  crmCobranzaNotificarClaves: (claves) => request('/crm/cobranza/notificar', { method: 'POST', body: JSON.stringify({ claves }) }),
   crmCobranzaNotificar: (clave, dias) => request('/crm/cobranza/notificar', { method: 'POST', body: JSON.stringify({ ...(clave ? { clave } : {}), ...(dias ? { dias } : {}) }) }),
   crmLastImport: () => request('/crm/polizas/last-import'),
   /* Marcar póliza pagada: comprobante (imagen/PDF) OBLIGATORIO */

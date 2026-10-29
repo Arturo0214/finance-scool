@@ -47,6 +47,8 @@ export default function CrmCobranzaView() {
   const [sending, setSending] = useState(null);   // clave | 'ALL'
   const [sendMsg, setSendMsg] = useState(null);
   const [preview, setPreview] = useState(null);   // { clave, loading, data, error }
+  const [bulk, setBulk]       = useState(null);    // { loading, list, error }
+  const [selected, setSelected] = useState(() => new Set());
 
   const load = async () => {
     setLoading(true); setErr(null);
@@ -74,18 +76,43 @@ export default function CrmCobranzaView() {
     }
   };
 
-  // Envía (desde el modal, o "a todos" con clave=null). Modal = confirmación.
+  // Envía un consultor (desde su modal de preview). El modal es la confirmación.
   const enviar = async (clave) => {
-    if (!clave && !window.confirm('¿Enviar la cobranza por correo a TODOS los consultores con correo?')) return;
-    setSending(clave || 'ALL'); setSendMsg(null);
+    setSending(clave); setSendMsg(null);
     try {
-      const r = await api.crmCobranzaNotificar(clave || null);
+      const r = await api.crmCobranzaNotificar(clave);
       const n = (r.enviados || []).length, f = (r.fallidos || []).length;
-      setSendMsg({ ok: n > 0 || f === 0, text: `Enviados: ${n}${f ? ` · fallidos: ${f}` : ''}${(r.sinItemsOCorreo || []).length ? ` · sin correo/cobranzas: ${r.sinItemsOCorreo.length}` : ''}` });
+      setSendMsg({ ok: n > 0 || f === 0, text: `Enviados: ${n}${f ? ` · fallidos: ${f}` : ''}` });
       setPreview(null);
     } catch (e) {
       setSendMsg({ ok: false, text: e.message || 'No se pudo enviar' });
     } finally { setSending(null); }
+  };
+
+  // Abre el modal de envío masivo con selección (quién sí, quién no).
+  const openBulk = async () => {
+    setBulk({ loading: true }); setSendMsg(null);
+    try {
+      const d = await api.crmCobranzaPreviewTodos();
+      const list = d.consultores || [];
+      setBulk({ list });
+      setSelected(new Set(list.filter(c => !c.sinCorreo).map(c => c.clave)));
+    } catch (e) { setBulk({ error: e.message || 'No se pudo cargar la lista' }); }
+  };
+  const toggleSel = (clave) => setSelected(prev => { const n = new Set(prev); n.has(clave) ? n.delete(clave) : n.add(clave); return n; });
+
+  // Envía a los seleccionados en el modal masivo.
+  const enviarSeleccionados = async () => {
+    const claves = [...selected];
+    if (!claves.length) return;
+    setSending('ALL'); setSendMsg(null);
+    try {
+      const r = await api.crmCobranzaNotificarClaves(claves);
+      const n = (r.enviados || []).length, f = (r.fallidos || []).length;
+      setSendMsg({ ok: n > 0 || f === 0, text: `Enviados: ${n}${f ? ` · fallidos: ${f}` : ''}` });
+      setBulk(null);
+    } catch (e) { setSendMsg({ ok: false, text: e.message || 'No se pudo enviar' }); }
+    finally { setSending(null); }
   };
 
   if (loading) return <><style>{getCrmCSS() + COBRANZA_CSS}</style><div className="loading-wrap"><div className="spinner" /><p>Cargando cobranza...</p></div></>;
@@ -109,8 +136,8 @@ export default function CrmCobranzaView() {
           <p className="view-subtitle">Cobros pendientes y flujo de caja anticipado · correos de cobranza por consultor</p>
         </div>
         <div className="crm-toolbar-right">
-          <button className="crm-btn crm-btn-primary" disabled={sending} onClick={() => enviar(null)}>
-            {sending === 'ALL' ? <Loader2 size={15} className="spin" /> : <Send size={15} />} Enviar a todos
+          <button className="crm-btn crm-btn-primary" disabled={sending || (bulk && bulk.loading)} onClick={openBulk}>
+            {bulk && bulk.loading ? <Loader2 size={15} className="spin" /> : <Send size={15} />} Enviar a todos
           </button>
         </div>
       </div>
@@ -218,7 +245,7 @@ export default function CrmCobranzaView() {
 
       {/* ── Modal: vista previa del correo ── */}
       {preview && (
-        <div onClick={() => setPreview(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(5,22,54,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}>
+        <div onClick={() => setPreview(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(5,22,54,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100, padding: 16 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 620, maxHeight: '88vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(5,22,54,.3)' }}>
             <div style={{ padding: '16px 20px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}><Mail size={18} /> Correo de cobranza</h3>
@@ -251,6 +278,51 @@ export default function CrmCobranzaView() {
                   {sending === preview.clave ? <Loader2 size={15} className="spin" /> : <Send size={15} />} Enviar este correo
                 </button>
               </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: envío masivo con selección ── */}
+      {bulk && !bulk.loading && (
+        <div onClick={() => setBulk(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(5,22,54,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 640, maxHeight: '88vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(5,22,54,.3)' }}>
+            <div style={{ padding: '16px 20px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}><Send size={18} /> Enviar cobranza — elige a quién</h3>
+              <button className="crm-btn" onClick={() => setBulk(null)} style={{ padding: '4px 10px' }}><X size={16} /></button>
+            </div>
+
+            {bulk.error && <p style={{ color: C.red, padding: 20 }}>⚠️ {bulk.error}</p>}
+            {bulk.list && (
+              <>
+                <div style={{ padding: '10px 20px', borderBottom: `1px solid ${C.border}`, display: 'flex', gap: 10, alignItems: 'center', fontSize: 13 }}>
+                  <button className="crm-btn" style={{ padding: '4px 10px' }} onClick={() => setSelected(new Set(bulk.list.filter(c => !c.sinCorreo).map(c => c.clave)))}>Todos</button>
+                  <button className="crm-btn" style={{ padding: '4px 10px' }} onClick={() => setSelected(new Set())}>Ninguno</button>
+                  <span style={{ marginLeft: 'auto', color: C.textMuted }}>{selected.size} de {bulk.list.filter(c => !c.sinCorreo).length} con correo</span>
+                </div>
+                <div style={{ overflow: 'auto', padding: '6px 0' }}>
+                  {bulk.list.map((c) => (
+                    <label key={c.clave} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '9px 20px', cursor: c.sinCorreo ? 'not-allowed' : 'pointer', opacity: c.sinCorreo ? 0.5 : 1, borderBottom: `1px solid ${C.bg}` }}>
+                      <input type="checkbox" disabled={c.sinCorreo} checked={selected.has(c.clave)} onChange={() => toggleSel(c.clave)} style={{ width: 17, height: 17, accentColor: C.primary }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ margin: 0, fontWeight: 600, fontSize: 14 }}>{c.nombre} <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); abrirPreview(c.clave); }} style={{ marginLeft: 6, fontSize: 11, color: C.primary, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>ver correo</button></p>
+                        <p style={{ margin: 0, fontSize: 12, color: c.sinCorreo ? C.red : C.textMuted }}>{c.email || 'sin correo'}</p>
+                      </div>
+                      <div style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        <p style={{ margin: 0, fontWeight: 700, fontSize: 14 }}>{money(c.total)}</p>
+                        <p style={{ margin: 0, fontSize: 11, color: C.textLight }}>{c.count} recibos</p>
+                      </div>
+                    </label>
+                  ))}
+                  {!bulk.list.length && <p style={{ textAlign: 'center', color: C.textMuted, padding: 24 }}>No hay cobranzas próximas a vencer.</p>}
+                </div>
+                <div style={{ padding: '14px 20px', borderTop: `1px solid ${C.border}`, display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                  <button className="crm-btn" onClick={() => setBulk(null)}>Cancelar</button>
+                  <button className="crm-btn crm-btn-primary" disabled={!selected.size || sending} onClick={enviarSeleccionados}>
+                    {sending === 'ALL' ? <Loader2 size={15} className="spin" /> : <Send size={15} />} Enviar a {selected.size} seleccionado{selected.size === 1 ? '' : 's'}
+                  </button>
+                </div>
+              </>
             )}
           </div>
         </div>

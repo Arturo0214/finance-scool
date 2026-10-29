@@ -3744,7 +3744,7 @@ router.get('/cobranza', async (req, res) => {
 
 /* Agrupa las pólizas por consultor con sus recibos en la ventana [hoy, hoy+dias].
    soloClave: limita a un consultor. conCorreo: exige email (para enviar). */
-async function cobranzaBuildBuckets({ soloClave = null, diasVentana = 45, conCorreo = false }) {
+async function cobranzaBuildBuckets({ soloClave = null, clavesSet = null, diasVentana = 45, conCorreo = false }) {
   const db = getDB();
   const data = await fetchAllRows(() => db.from('crm_policies')
     .select('poliza, prima, forma_pago, fecha_renovacion, fecha_pago, estatus, pago_manual_at, crm_clients(nombre), crm_agents(clave, nombre, email)')
@@ -3758,6 +3758,7 @@ async function cobranzaBuildBuckets({ soloClave = null, diasVentana = 45, conCor
     if (!ag.clave) continue;
     if (conCorreo && !ag.email) continue;
     if (soloClave && ag.clave !== soloClave) continue;
+    if (clavesSet && !clavesSet.has(ag.clave)) continue;
     const recibos = cobranzaProyectarRecibos(Number(p.prima) || 0, p.forma_pago, p.fecha_renovacion, hoy, hasta);
     const pendienteYa = p.estatus === 'pendiente_pago';
     if (!recibos.length && !pendienteYa) continue;
@@ -3814,15 +3815,33 @@ router.get('/cobranza/preview', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-/* POST /api/crm/cobranza/notificar — manda a cada consultor (o uno, {clave})
-   su lista de cobranzas próximas a vencer. El admin lo dispara manualmente. */
+/* GET /api/crm/cobranza/preview-todos — resumen por consultor (quién recibiría,
+   cuántos recibos y cuánto) para el modal de envío masivo con selección. */
+router.get('/cobranza/preview-todos', async (req, res) => {
+  if (!isAgency(req.user.role)) return res.status(403).json({ error: 'Solo administración' });
+  try {
+    const diasVentana = Math.min(120, Math.max(7, parseInt(req.query.dias, 10) || 45));
+    const buckets = await cobranzaBuildBuckets({ diasVentana });
+    const consultores = [...buckets.values()].map(({ ag, items }) => {
+      const msg = cobranzaFormatMensaje(ag, items, diasVentana);
+      return { clave: ag.clave, nombre: ag.nombre, email: ag.email || null, sinCorreo: !ag.email, count: msg.count, total: msg.total };
+    }).sort((a, b) => b.total - a.total);
+    res.json({ consultores, diasVentana });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* POST /api/crm/cobranza/notificar — manda la cobranza por correo. Acepta:
+   {clave} (uno), {claves:[...]} (subconjunto seleccionado), o nada (todos con
+   correo). El admin lo dispara manualmente. */
 router.post('/cobranza/notificar', async (req, res) => {
   if (!isAgency(req.user.role)) return res.status(403).json({ error: 'Solo administración puede enviar la cobranza' });
   try {
     const { sendMail } = require('../utils/crmMailer');
     const soloClave = req.body && req.body.clave ? String(req.body.clave) : null;
+    const claves = Array.isArray(req.body && req.body.claves) ? req.body.claves.map(String) : null;
+    const clavesSet = claves && claves.length ? new Set(claves) : null;
     const diasVentana = Math.min(120, Math.max(7, parseInt(req.body && req.body.dias, 10) || 45));
-    const buckets = await cobranzaBuildBuckets({ soloClave, diasVentana, conCorreo: true });
+    const buckets = await cobranzaBuildBuckets({ soloClave, clavesSet, diasVentana, conCorreo: true });
 
     const enviados = [], sinItems = [], fallidos = [];
     for (const { ag, items } of buckets.values()) {
