@@ -3786,7 +3786,7 @@ async function cobranzaBuildBuckets({ soloClave = null, clavesSet = null, diasVe
     const bucket = porClave.get(ag.clave);
     const montoRecibo = (Number(p.prima) || 0) / (COBRANZA_PERIODS[String(p.forma_pago || 'anual').toLowerCase()] || 1);
     if (pendienteYa) {
-      const venc = cobranzaParseFecha(p.fecha_renovacion || p.fecha_pago);
+      const venc = cobranzaVencPendiente(p.fecha_renovacion, p.fecha_pago, p.forma_pago, hoy);
       bucket.items.push({ poliza: p.poliza, cliente: (p.crm_clients && p.crm_clients.nombre) || '—', fecha: venc, monto: montoRecibo, vencido: true });
     }
     for (const r of recibos) bucket.items.push({ poliza: p.poliza, cliente: (p.crm_clients && p.crm_clients.nombre) || '—', fecha: r.fecha, monto: r.monto, vencido: false });
