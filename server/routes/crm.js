@@ -3626,4 +3626,184 @@ router.get('/polizas-dashboard', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+/* ──────────────────────────────────────────────────────────────────────────
+   COBRANZA — cobros pendientes + flujo de caja anticipado + mailing por consultor.
+   Fuente: crm_policies (prima ya en MXN, forma_pago, fecha_renovacion, estatus).
+   El flujo modela el fraccionamiento: prima ANUAL / {anual:1, semestral:2,
+   trimestral:4, mensual:12} = monto del recibo, proyectado en su calendario.
+   ────────────────────────────────────────────────────────────────────────── */
+const COBRANZA_PERIODS = { anual: 1, semestral: 2, trimestral: 4, mensual: 12 };
+
+function cobranzaFmtMoney(n) {
+  return `$${(Math.round(Number(n) || 0)).toLocaleString('es-MX')}`;
+}
+function cobranzaParseFecha(f) {
+  if (!f) return null;
+  const d = new Date(`${String(f).slice(0, 10)}T12:00:00`);
+  return isNaN(d.getTime()) ? null : d;
+}
+/* Proyecta los recibos de una póliza dentro de [desde, hasta] a partir de su
+   aniversario (fecha_renovacion). Para fraccionadas reparte el monto del recibo
+   en su periodicidad. */
+function cobranzaProyectarRecibos(primaAnual, forma, fechaAncla, desde, hasta) {
+  const periods = COBRANZA_PERIODS[String(forma || 'anual').toLowerCase()] || 1;
+  const monto = (Number(primaAnual) || 0) / periods;
+  const stepMeses = 12 / periods;
+  const ancla = cobranzaParseFecha(fechaAncla);
+  if (!ancla || monto <= 0) return [];
+  const d = new Date(ancla);
+  let guard = 0;
+  while (d > desde && guard++ < 40) d.setMonth(d.getMonth() - stepMeses);
+  const recibos = [];
+  for (let i = 0; i < 40; i++) {
+    if (d >= desde && d <= hasta) recibos.push({ fecha: new Date(d), monto });
+    if (d > hasta) break;
+    d.setMonth(d.getMonth() + stepMeses);
+  }
+  return recibos;
+}
+
+/* GET /api/crm/cobranza — datos de la sección (admin ve todo; asesor ve lo suyo) */
+router.get('/cobranza', async (req, res) => {
+  const scope = await resolveScope(req, res);
+  if (!scope) return;
+  const db = getDB();
+  try {
+    const data = await fetchAllRows(() => {
+      let q = db.from('crm_policies')
+        .select('poliza, prima, forma_pago, fecha_renovacion, fecha_pago, estatus, moneda, pago_manual_at, crm_clients(nombre), crm_agents(clave, nombre, email)')
+        .in('estatus', ['pagada', 'pendiente_pago', 'en_tramite']);
+      if (scope.restricted) q = q.eq('agent_id', scope.agentId);
+      else if (req.query.agent_id) q = q.eq('agent_id', req.query.agent_id);
+      return q;
+    });
+    const rows = decryptRows(data, 'crm_policies');
+
+    const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+    const hasta = new Date(hoy); hasta.setFullYear(hasta.getFullYear() + 1);
+    const MES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+
+    // Flujo de caja por mes (12 meses) + acumulados por consultor
+    const flujoMap = new Map();               // 'YYYY-MM' -> { total, count }
+    const porConsultor = new Map();           // clave -> agregado
+    const pendientes = [];
+
+    for (const p of rows) {
+      const ag = p.crm_agents || {};
+      const clave = ag.clave || 'SIN-CLAVE';
+      const primaAnual = Number(p.prima) || 0;
+      const periods = COBRANZA_PERIODS[String(p.forma_pago || 'anual').toLowerCase()] || 1;
+      const montoRecibo = primaAnual / periods;
+
+      if (!porConsultor.has(clave)) {
+        porConsultor.set(clave, { clave, nombre: ag.nombre || 'Sin asignar', email: ag.email || null, polizas: 0, primaAnual: 0, pendientesCount: 0, pendienteMonto: 0, proxima: null });
+      }
+      const c = porConsultor.get(clave);
+      c.polizas++; c.primaAnual += primaAnual;
+
+      // Recibos proyectados → flujo mensual
+      const recibos = cobranzaProyectarRecibos(primaAnual, p.forma_pago, p.fecha_renovacion, hoy, hasta);
+      for (const r of recibos) {
+        const ym = `${r.fecha.getFullYear()}-${String(r.fecha.getMonth() + 1).padStart(2, '0')}`;
+        const f = flujoMap.get(ym) || { ym, label: `${MES[r.fecha.getMonth()]} ${r.fecha.getFullYear()}`, total: 0, count: 0 };
+        f.total += r.monto; f.count++;
+        flujoMap.set(ym, f);
+        if (!c.proxima || r.fecha < new Date(c.proxima)) c.proxima = r.fecha.toISOString().slice(0, 10);
+      }
+
+      // Cobro pendiente = póliza con recibo por pagar
+      if (p.estatus === 'pendiente_pago') {
+        const venc = cobranzaParseFecha(p.fecha_renovacion || p.fecha_pago);
+        const dias = venc ? Math.floor((hoy - venc) / 86400000) : null; // >0 = vencido
+        pendientes.push({
+          poliza: p.poliza, cliente: (p.crm_clients && p.crm_clients.nombre) || '—',
+          consultor: ag.nombre || 'Sin asignar', clave,
+          forma_pago: p.forma_pago || 'anual', monto: montoRecibo,
+          vencimiento: venc ? venc.toISOString().slice(0, 10) : null,
+          diasVencido: dias, pagoManual: !!p.pago_manual_at,
+        });
+        c.pendientesCount++; c.pendienteMonto += montoRecibo;
+      }
+    }
+
+    const flujo = [...flujoMap.values()].sort((a, b) => a.ym.localeCompare(b.ym));
+    pendientes.sort((a, b) => (b.diasVencido ?? -9999) - (a.diasVencido ?? -9999));
+    const consultores = [...porConsultor.values()].sort((a, b) => b.pendienteMonto - a.pendienteMonto);
+
+    const totales = {
+      pendientesCount: pendientes.length,
+      pendienteMonto: pendientes.reduce((s, p) => s + p.monto, 0),
+      primaAnualTotal: consultores.reduce((s, c) => s + c.primaAnual, 0),
+      flujo30: flujo.filter(f => f.ym <= new Date(hoy.getTime() + 30 * 86400000).toISOString().slice(0, 7)).reduce((s, f) => s + f.total, 0),
+      polizasActivas: rows.length,
+    };
+
+    res.json({ pendientes, flujo, consultores, totales });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* POST /api/crm/cobranza/notificar — manda a cada consultor (o uno, {clave})
+   su lista de cobranzas próximas a vencer. El admin lo dispara manualmente. */
+router.post('/cobranza/notificar', async (req, res) => {
+  if (!isAgency(req.user.role)) return res.status(403).json({ error: 'Solo administración puede enviar la cobranza' });
+  const db = getDB();
+  try {
+    const { sendMail } = require('../utils/crmMailer');
+    const soloClave = req.body && req.body.clave ? String(req.body.clave) : null;
+    const diasVentana = Math.min(120, Math.max(7, parseInt(req.body && req.body.dias, 10) || 45));
+
+    const data = await fetchAllRows(() => db.from('crm_policies')
+      .select('poliza, prima, forma_pago, fecha_renovacion, fecha_pago, estatus, pago_manual_at, crm_clients(nombre), crm_agents(clave, nombre, email)')
+      .in('estatus', ['pagada', 'pendiente_pago', 'en_tramite']));
+    const rows = decryptRows(data, 'crm_policies');
+
+    const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+    const hasta = new Date(hoy.getTime() + diasVentana * 86400000);
+    const porClave = new Map();
+    for (const p of rows) {
+      const ag = p.crm_agents || {};
+      if (!ag.clave || !ag.email) continue;
+      if (soloClave && ag.clave !== soloClave) continue;
+      const recibos = cobranzaProyectarRecibos(Number(p.prima) || 0, p.forma_pago, p.fecha_renovacion, hoy, hasta);
+      const pendienteYa = p.estatus === 'pendiente_pago';
+      if (!recibos.length && !pendienteYa) continue;
+      if (!porClave.has(ag.clave)) porClave.set(ag.clave, { ag, items: [] });
+      const bucket = porClave.get(ag.clave);
+      if (pendienteYa) {
+        const venc = cobranzaParseFecha(p.fecha_renovacion || p.fecha_pago);
+        bucket.items.push({ poliza: p.poliza, cliente: (p.crm_clients && p.crm_clients.nombre) || '—', fecha: venc, monto: (Number(p.prima) || 0) / (COBRANZA_PERIODS[String(p.forma_pago || 'anual').toLowerCase()] || 1), vencido: true });
+      }
+      for (const r of recibos) bucket.items.push({ poliza: p.poliza, cliente: (p.crm_clients && p.crm_clients.nombre) || '—', fecha: r.fecha, monto: r.monto, vencido: false });
+    }
+
+    const enviados = [], sinItems = [], fallidos = [];
+    for (const { ag, items } of porClave.values()) {
+      if (!items.length) { sinItems.push(ag.clave); continue; }
+      items.sort((a, b) => (a.fecha?.getTime() || 0) - (b.fecha?.getTime() || 0));
+      const total = items.reduce((s, i) => s + i.monto, 0);
+      const fmtF = (d) => d ? d.toLocaleDateString('es-MX', { day: '2-digit', month: 'short' }) : 'sin fecha';
+      const lineas = [
+        `Hola ${String(ag.nombre || '').split(' ')[0]},`,
+        '',
+        `Estas son tus cobranzas próximas a vencer (siguientes ${diasVentana} días):`,
+        '',
+        ...items.map(i => `• ${fmtF(i.fecha)} — ${i.cliente} (Póliza ${i.poliza}): ${cobranzaFmtMoney(i.monto)}${i.vencido ? '  ⚠️ PENDIENTE DE PAGO' : ''}`),
+        '',
+        `Total por cobrar en la ventana: ${cobranzaFmtMoney(total)} (${items.length} recibos).`,
+        '',
+        'Contacta a tus clientes con anticipación para asegurar la renovación y conservar tu cartera.',
+        '',
+        'Finance S-Cool · Incubadora S-COOL',
+      ];
+      try {
+        await sendMail({ to: ag.email, subject: `Tus cobranzas próximas a vencer — ${items.length} recibos · ${cobranzaFmtMoney(total)}`, text: lineas.join('\n') });
+        enviados.push(ag.clave);
+      } catch (e) { fallidos.push(`${ag.clave}: ${e.message}`); }
+    }
+
+    logActivity(req, 'enviar', 'cobranza-notificar', soloClave, `${enviados.length} enviados`);
+    res.json({ ok: true, enviados, sinItemsOCorreo: sinItems, fallidos });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 module.exports = router;

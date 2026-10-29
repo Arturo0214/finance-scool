@@ -216,6 +216,9 @@ export const api = {
   // ── Cartera, carga diaria del reporte y export ──
   crmCarteraResumen: () => request('/crm/cartera/resumen'),
   crmCobranzaMailing: (clave) => request('/crm/cobranza-mailing', { method: 'POST', body: JSON.stringify(clave ? { clave } : {}) }),
+  // ── Cobranza: cobros pendientes + flujo de caja + notificación por consultor ──
+  crmGetCobranza: () => request('/crm/cobranza'),
+  crmCobranzaNotificar: (clave, dias) => request('/crm/cobranza/notificar', { method: 'POST', body: JSON.stringify({ ...(clave ? { clave } : {}), ...(dias ? { dias } : {}) }) }),
   crmLastImport: () => request('/crm/polizas/last-import'),
   /* Marcar póliza pagada: comprobante (imagen/PDF) OBLIGATORIO */
   crmMarcarPagada: async (policyId, file) => {

@@ -16,7 +16,7 @@ import {
   MessageCircle, Link as LinkIcon, Zap, Eye, Settings,
   Activity, Filter, PieChart, Megaphone, Briefcase,
   UserCheck, Bot, LayoutDashboard, Contact, FileText, Target, Bell,
-  KanbanSquare, HandCoins, ChevronsLeft, ChevronsRight, Sparkles, Mic, GraduationCap, Plane, Sprout, Gem, Handshake, CalendarDays, Mail,
+  KanbanSquare, HandCoins, ChevronsLeft, ChevronsRight, Sparkles, Mic, GraduationCap, Plane, Sprout, Gem, Handshake, CalendarDays, Mail, Receipt,
 } from 'lucide-react';
 
 import { C, SPANISH_LABELS, isAgencyRole } from './admin/constants';
@@ -57,6 +57,7 @@ const CrmGoalsView        = lazy(() => import('./admin/views/crm/CrmGoalsView'))
 const CrmRemindersView    = lazy(() => import('./admin/views/crm/CrmRemindersView'));
 const CrmCommissionsView  = lazy(() => import('./admin/views/crm/CrmCommissionsView'));
 const CrmIngresosView     = lazy(() => import('./admin/views/crm/CrmIngresosView'));
+const CrmCobranzaView     = lazy(() => import('./admin/views/crm/CrmCobranzaView'));
 const CrmQuoteView        = lazy(() => import('./admin/views/crm/CrmQuoteView'));
 const CrmMejoresLeadsView = lazy(() => import('./admin/views/crm/CrmMejoresLeadsView'));
 const HealthView          = lazy(() => import('./admin/views/HealthView'));
@@ -135,6 +136,7 @@ export default function AdminPanel() {
     { id: 'crm-polizas',      label: 'Pólizas',                       icon: FileText   },
     { id: 'crm-graficas',     label: 'Gráficas',                      icon: PieChart   },
     { id: 'crm-ingresos',     label: 'Ingresos',                      icon: HandCoins  },
+    { id: 'crm-cobranza',     label: 'Cobranza',                      icon: Receipt    },
     { id: 'crm-campanas',     label: 'Campañas',                      icon: Plane      },
     { id: 'crm-metas',        label: 'Metas & Forecast',              icon: Target     },
     { id: 'crm-recordatorios', label: 'Recordatorios',                icon: Bell       },
@@ -149,7 +151,7 @@ export default function AdminPanel() {
     { id: 'divider-mkt',      label: '── Marketing & Web ──',         icon: null       },
     { id: 'visitas',          label: 'Visitas',                       icon: Eye        },
     { id: 'leads',            label: 'Leads Web',                     icon: Users      },
-    { id: 'campaigns',        label: 'Campañas Ads',                  icon: Megaphone  },
+    { id: 'whatsapp',         label: 'WhatsApp Leads',                icon: MessageCircle },
     { id: 'divider-2',        label: '── Administración ──',          icon: null       },
     { id: 'team',             label: SPANISH_LABELS.team,             icon: Settings   },
     { id: 'health',           label: 'Salud del sistema',             icon: Activity   },
@@ -160,8 +162,9 @@ export default function AdminPanel() {
     if (item.id === 'crm-prospectos') return esSocioProspectos;
     if (item.id === 'crm-calendarios') return esSocioProspectos;
     if (item.id === 'crm-correos') return esAdminCorreos;
-    // Marketing & Web (Visitas, Leads, Campañas Ads): SOLO administración
-    if (['divider-mkt', 'visitas', 'leads', 'campaigns'].includes(item.id)) return canManageTeam;
+    if (item.id === 'crm-cobranza') return canManageTeam; // cobranza global + mailing: solo administración
+    // Marketing & Web (Visitas, Leads Web, WhatsApp Leads): SOLO administración
+    if (['divider-mkt', 'visitas', 'leads', 'whatsapp'].includes(item.id)) return canManageTeam;
     return (item.id !== 'team' && item.id !== 'divider-2') || canManageTeam;
   });
 
@@ -363,7 +366,7 @@ export default function AdminPanel() {
                 <ChatView messages={messages} onSendMessage={handleSendMessage} messageInputRef={messageInputRef} />}
               {!loading && activeView === 'visitas' && canManageTeam &&
                 <VisitasView />}
-              {activeView === 'whatsapp' &&
+              {activeView === 'whatsapp' && canManageTeam &&
                 <WhatsAppView onOpenMenu={() => setMobileMenuOpen(o => !o)} />}
               {!loading && activeView === 'team' && canManageTeam &&
                 <TeamView userRole={user?.role} currentUserId={user?.id} />}
@@ -381,6 +384,7 @@ export default function AdminPanel() {
               {!loading && activeView === 'crm-polizas' && <CrmPoliciesView isAgency={userSeesAllCrm} />}
               {!loading && activeView === 'crm-graficas' && <CrmGraficasView />}
               {!loading && activeView === 'crm-ingresos' && <CrmIngresosView isAgency={userSeesAllCrm} />}
+              {!loading && activeView === 'crm-cobranza' && <CrmCobranzaView />}
               {/* Ruta directa conservada: la vista de comisiones vive también como pestaña de Ingresos */}
               {!loading && activeView === 'crm-comisiones' && <CrmCommissionsView isAgency={userSeesAllCrm} />}
               {!loading && activeView === 'crm-metas' && <CrmGoalsView isAgency={userSeesAllCrm} />}
