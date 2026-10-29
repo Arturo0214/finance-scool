@@ -3672,11 +3672,15 @@ function cobranzaVencPendiente(fechaRenov, fechaPago, forma, hoy) {
   if (!base) return null;
   const periods = COBRANZA_PERIODS[String(forma || 'anual').toLowerCase()] || 1;
   const stepMeses = 12 / periods;
-  // El recibo pendiente es el aniversario del CICLO VIGENTE = el más cercano a hoy
-  // (puede estar unos días adelante o atrás). fecha_renovacion suele ser el próximo;
-  // el ciclo anterior (base - 1 periodo) gana cuando el próximo queda muy lejos.
-  const prev = new Date(base); prev.setMonth(prev.getMonth() - stepMeses);
-  return Math.abs(base - hoy) <= Math.abs(prev - hoy) ? base : prev;
+  // El recibo pendiente es la ocurrencia del ciclo (cada stepMeses) MÁS CERCANA a
+  // hoy. fecha_renovacion suele venir en el futuro (incluso 2027); para mensual hay
+  // que retroceder varios pasos, no solo uno. Se baja hasta <= hoy y se compara con
+  // el inmediato siguiente para quedarse con el más próximo (atrás o adelante).
+  const d = new Date(base);
+  let g = 0;
+  while (d > hoy && g++ < 500) d.setMonth(d.getMonth() - stepMeses);
+  const next = new Date(d); next.setMonth(next.getMonth() + stepMeses);
+  return Math.abs(d - hoy) <= Math.abs(next - hoy) ? d : next;
 }
 
 /* GET /api/crm/cobranza — datos de la sección (admin ve todo; asesor ve lo suyo) */
