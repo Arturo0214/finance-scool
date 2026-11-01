@@ -16,7 +16,7 @@ import {
   MessageCircle, Link as LinkIcon, Zap, Eye, Settings,
   Activity, Filter, PieChart, Megaphone, Briefcase,
   UserCheck, Bot, LayoutDashboard, Contact, FileText, Target, Bell,
-  KanbanSquare, HandCoins, ChevronsLeft, ChevronsRight, Sparkles, Mic, GraduationCap, Plane, Sprout, Gem, Handshake, CalendarDays, Mail, Receipt,
+  KanbanSquare, HandCoins, ChevronsLeft, ChevronsRight, Sparkles, Mic, GraduationCap, Plane, Sprout, Gem, Handshake, CalendarDays, Mail, Receipt, CheckSquare,
 } from 'lucide-react';
 
 import { C, SPANISH_LABELS, isAgencyRole } from './admin/constants';
@@ -52,6 +52,7 @@ const CrmConsultoresView  = lazy(() => import('./admin/views/crm/CrmConsultoresV
 const CrmPoliciesView     = lazy(() => import('./admin/views/crm/CrmPoliciesView'));
 const CrmGraficasView     = lazy(() => import('./admin/views/crm/CrmGraficasView'));
 const CrmCalendariosView  = lazy(() => import('./admin/views/crm/CrmCalendariosView'));
+const CrmEntregasView     = lazy(() => import('./admin/views/crm/CrmEntregasView'));
 const CrmCorreosView      = lazy(() => import('./admin/views/crm/CrmCorreosView'));
 const CrmGoalsView        = lazy(() => import('./admin/views/crm/CrmGoalsView'));
 const CrmRemindersView    = lazy(() => import('./admin/views/crm/CrmRemindersView'));
@@ -147,6 +148,7 @@ export default function AdminPanel() {
     { id: 'crm-mejores-leads', label: 'Mejores Leads',                icon: Gem        },
     { id: 'crm-prospectos',   label: 'Prospectos',                    icon: Handshake  },
     { id: 'crm-calendarios',  label: 'Calendarios',                   icon: CalendarDays },
+    { id: 'crm-entregas',     label: 'Entregas',                      icon: CheckSquare },
     { id: 'crm-correos',      label: 'Correos',                       icon: Mail       },
     { id: 'divider-mkt',      label: '── Marketing & Web ──',         icon: null       },
     { id: 'visitas',          label: 'Visitas',                       icon: Eye        },
@@ -161,6 +163,7 @@ export default function AdminPanel() {
     if (item.id === 'crm-mejores-leads') return canManageTeam; // base Tesipedia: solo administración
     if (item.id === 'crm-prospectos') return esSocioProspectos;
     if (item.id === 'crm-calendarios') return esSocioProspectos;
+    if (item.id === 'crm-entregas') return esSocioProspectos;
     if (item.id === 'crm-correos') return esAdminCorreos;
     if (item.id === 'crm-cobranza') return canManageTeam; // cobranza global + mailing: solo administración
     // Marketing & Web (Visitas, Leads Web, WhatsApp Leads): SOLO administración
@@ -397,6 +400,7 @@ export default function AdminPanel() {
               {!loading && activeView === 'crm-mejores-leads' && canManageTeam && <CrmMejoresLeadsView />}
               {!loading && activeView === 'crm-prospectos' && esSocioProspectos && <CrmProspectosView />}
               {!loading && activeView === 'crm-calendarios' && esSocioProspectos && <CrmCalendariosView />}
+              {!loading && activeView === 'crm-entregas' && esSocioProspectos && <CrmEntregasView />}
               {!loading && activeView === 'crm-correos' && esAdminCorreos && <CrmCorreosView />}
               {!loading && activeView === 'health' && userIsAgency && <HealthView />}
             </Suspense>

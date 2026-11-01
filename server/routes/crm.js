@@ -3881,4 +3881,200 @@ router.post('/cobranza/notificar', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ════════════════════════════════════════════════════════════════════
+// ENTREGAS — pendientes administrativos de los socios (Arturo/Ingrid/Flavio)
+// con evidencias (Cloudinary) y notas. Cada entrega puede enlazar un evento
+// real de Google Calendar (el front lo crea vía /google/socio-events y guarda
+// el evento_google_id/meet_link aquí).
+// ════════════════════════════════════════════════════════════════════
+const ENTREGAS_SOCIO_POR_EMAIL = {
+  'admin@financescool.com': 'arturo',
+  'osvaldosuarezcruz@gmail.com': 'arturo',
+  'ingrid.escobar@grupointegraccion.com': 'ingrid',
+  'flavio.r@grupointegraccion.com': 'flavio',
+  'flavio.rodriguez@grupointegraccion.com': 'flavio',
+};
+const socioDeUsuario = (req) => ENTREGAS_SOCIO_POR_EMAIL[String(req.user?.email || '').toLowerCase()] || null;
+const puedeEntregas = (req) => isAgency(req.user?.role) || !!socioDeUsuario(req);
+const SOCIOS_VALIDOS = ['arturo', 'ingrid', 'flavio'];
+
+function guardEntregas(req, res) {
+  if (!puedeEntregas(req)) { res.status(403).json({ error: 'Las Entregas son solo para los socios.' }); return false; }
+  return true;
+}
+// Puede editar/borrar: agencia, o el socio dueño de la entrega
+function puedeEditarEntrega(req, entrega) {
+  return isAgency(req.user?.role) || socioDeUsuario(req) === entrega.socio;
+}
+
+// LISTA
+router.get('/entregas', async (req, res) => {
+  if (!guardEntregas(req, res)) return;
+  const db = getDB();
+  try {
+    const rows = await fetchAllRows(() => {
+      let q = db.from('crm_entregas').select('*').order('fecha_entrega', { ascending: true });
+      if (req.query.socio && SOCIOS_VALIDOS.includes(req.query.socio)) q = q.eq('socio', req.query.socio);
+      if (req.query.estado) q = q.eq('estado', req.query.estado);
+      return q;
+    });
+    const ids = rows.map(r => r.id);
+    const evCount = {}, ntCount = {};
+    if (ids.length) {
+      const { data: ev } = await db.from('crm_entregas_evidencias').select('entrega_id').in('entrega_id', ids);
+      (ev || []).forEach(e => { evCount[e.entrega_id] = (evCount[e.entrega_id] || 0) + 1; });
+      const { data: nt } = await db.from('crm_entregas_notas').select('entrega_id').in('entrega_id', ids);
+      (nt || []).forEach(n => { ntCount[n.entrega_id] = (ntCount[n.entrega_id] || 0) + 1; });
+    }
+    res.json({ entregas: rows.map(r => ({ ...r, n_evidencias: evCount[r.id] || 0, n_notas: ntCount[r.id] || 0 })) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// DETALLE (+ evidencias con URL firmada + notas)
+router.get('/entregas/:id', async (req, res) => {
+  if (!guardEntregas(req, res)) return;
+  const db = getDB();
+  try {
+    const { data: entrega } = await db.from('crm_entregas').select('*').eq('id', req.params.id).maybeSingle();
+    if (!entrega) return res.status(404).json({ error: 'Entrega no encontrada' });
+    const { data: evid } = await db.from('crm_entregas_evidencias').select('*').eq('entrega_id', entrega.id).order('created_at', { ascending: false });
+    const { data: notas } = await db.from('crm_entregas_notas').select('*').eq('entrega_id', entrega.id).order('created_at', { ascending: true });
+    res.json({
+      entrega,
+      evidencias: (evid || []).map(f => ({ ...f, url: signedFileUrl(f) })),
+      notas: notas || [],
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// CREAR
+router.post('/entregas', async (req, res) => {
+  if (!guardEntregas(req, res)) return;
+  const b = req.body || {};
+  if (!b.titulo || !b.titulo.trim()) return res.status(400).json({ error: 'El título es requerido' });
+  if (!b.fecha_entrega) return res.status(400).json({ error: 'La fecha de entrega es requerida' });
+  const socio = SOCIOS_VALIDOS.includes(b.socio) ? b.socio : socioDeUsuario(req);
+  if (!socio) return res.status(400).json({ error: 'Socio inválido' });
+  const db = getDB();
+  const { data, error } = await db.from('crm_entregas').insert([{
+    socio, titulo: b.titulo.trim(), descripcion: b.descripcion || null,
+    prioridad: ['low', 'normal', 'high'].includes(b.prioridad) ? b.prioridad : 'normal',
+    estado: 'pendiente', fecha_entrega: b.fecha_entrega,
+    created_by: req.user.id, created_by_name: req.user.name,
+  }]).select();
+  if (error) return res.status(500).json({ error: error.message });
+  logActivity(req, 'crear', 'entrega', data[0].id, data[0].titulo);
+  res.status(201).json({ entrega: data[0] });
+});
+
+// ACTUALIZAR (datos, estado, o enlace de evento Google)
+router.put('/entregas/:id', async (req, res) => {
+  if (!guardEntregas(req, res)) return;
+  const db = getDB();
+  const { data: existing } = await db.from('crm_entregas').select('*').eq('id', req.params.id).maybeSingle();
+  if (!existing) return res.status(404).json({ error: 'Entrega no encontrada' });
+  if (!puedeEditarEntrega(req, existing)) return res.status(403).json({ error: 'Solo el socio dueño puede editar esta entrega' });
+  const b = req.body || {};
+  const patch = {};
+  if ('titulo' in b) patch.titulo = String(b.titulo || '').trim();
+  if ('descripcion' in b) patch.descripcion = b.descripcion || null;
+  if ('fecha_entrega' in b && b.fecha_entrega) patch.fecha_entrega = b.fecha_entrega;
+  if ('prioridad' in b && ['low', 'normal', 'high'].includes(b.prioridad)) patch.prioridad = b.prioridad;
+  if ('socio' in b && SOCIOS_VALIDOS.includes(b.socio)) patch.socio = b.socio;
+  if ('estado' in b && ['pendiente', 'en_proceso', 'entregado', 'cancelado'].includes(b.estado)) {
+    patch.estado = b.estado;
+    patch.completed_at = b.estado === 'entregado' ? new Date().toISOString() : null;
+  }
+  if ('evento_google_id' in b) patch.evento_google_id = b.evento_google_id || null;
+  if ('evento_calendar_id' in b) patch.evento_calendar_id = b.evento_calendar_id || null;
+  if ('meet_link' in b) patch.meet_link = b.meet_link || null;
+  patch.updated_at = new Date().toISOString();
+  const { data, error } = await db.from('crm_entregas').update(patch).eq('id', req.params.id).select();
+  if (error) return res.status(500).json({ error: error.message });
+  logActivity(req, 'editar', 'entrega', req.params.id, patch.estado || patch.titulo || null);
+  res.json({ entrega: data[0] });
+});
+
+// BORRAR (+ limpia evidencias de Cloudinary)
+router.delete('/entregas/:id', async (req, res) => {
+  if (!guardEntregas(req, res)) return;
+  const db = getDB();
+  const { data: existing } = await db.from('crm_entregas').select('*').eq('id', req.params.id).maybeSingle();
+  if (!existing) return res.status(404).json({ error: 'Entrega no encontrada' });
+  if (!puedeEditarEntrega(req, existing)) return res.status(403).json({ error: 'Solo el socio dueño puede borrar esta entrega' });
+  const { data: evid } = await db.from('crm_entregas_evidencias').select('public_id, resource_type').eq('entrega_id', existing.id);
+  for (const f of (evid || [])) {
+    if (f.public_id) await cloudinary.uploader.destroy(f.public_id, { resource_type: f.resource_type || 'raw', type: 'authenticated' }).catch(() => {});
+  }
+  const { error } = await db.from('crm_entregas').delete().eq('id', req.params.id);
+  if (error) return res.status(500).json({ error: error.message });
+  logActivity(req, 'borrar', 'entrega', req.params.id, existing.titulo);
+  res.json({ ok: true });
+});
+
+// SUBIR EVIDENCIA
+router.post('/entregas/:id/evidencia', upload.single('file'), async (req, res) => {
+  if (!guardEntregas(req, res)) return;
+  if (!req.file) return res.status(400).json({ error: 'Archivo requerido' });
+  const db = getDB();
+  const { data: entrega } = await db.from('crm_entregas').select('id').eq('id', req.params.id).maybeSingle();
+  if (!entrega) return res.status(404).json({ error: 'Entrega no encontrada' });
+  try {
+    const subida = await new Promise((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        { folder: 'fsc-entregas', resource_type: 'auto', type: 'authenticated', use_filename: true, filename_override: req.file.originalname },
+        (err, r) => (err ? reject(err) : resolve(r))
+      );
+      stream.end(req.file.buffer);
+    });
+    const { data, error } = await db.from('crm_entregas_evidencias').insert([{
+      entrega_id: entrega.id, nombre: req.file.originalname, url: subida.secure_url, public_id: subida.public_id,
+      formato: subida.format || req.file.mimetype, bytes: subida.bytes || req.file.size,
+      resource_type: subida.resource_type || 'raw', uploaded_by: req.user.id, uploaded_by_name: req.user.name,
+    }]).select();
+    if (error) return res.status(500).json({ error: error.message });
+    logActivity(req, 'subir', 'entrega-evidencia', entrega.id, req.file.originalname);
+    res.status(201).json({ evidencia: { ...data[0], url: signedFileUrl(data[0]) } });
+  } catch (e) { res.status(500).json({ error: 'Error al subir: ' + e.message }); }
+});
+
+// BORRAR EVIDENCIA
+router.delete('/entregas/:id/evidencia/:evId', async (req, res) => {
+  if (!guardEntregas(req, res)) return;
+  const db = getDB();
+  const { data: ev } = await db.from('crm_entregas_evidencias').select('*').eq('id', req.params.evId).maybeSingle();
+  if (!ev) return res.status(404).json({ error: 'Evidencia no encontrada' });
+  if (ev.public_id) await cloudinary.uploader.destroy(ev.public_id, { resource_type: ev.resource_type || 'raw', type: 'authenticated' }).catch(() => {});
+  const { error } = await db.from('crm_entregas_evidencias').delete().eq('id', req.params.evId);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ok: true });
+});
+
+// AGREGAR NOTA
+router.post('/entregas/:id/nota', async (req, res) => {
+  if (!guardEntregas(req, res)) return;
+  const texto = String((req.body || {}).texto || '').trim();
+  if (!texto) return res.status(400).json({ error: 'Nota vacía' });
+  const db = getDB();
+  const { data: entrega } = await db.from('crm_entregas').select('id').eq('id', req.params.id).maybeSingle();
+  if (!entrega) return res.status(404).json({ error: 'Entrega no encontrada' });
+  const { data, error } = await db.from('crm_entregas_notas').insert([{
+    entrega_id: entrega.id, usuario_id: req.user.id, usuario_name: req.user.name, texto,
+  }]).select();
+  if (error) return res.status(500).json({ error: error.message });
+  res.status(201).json({ nota: data[0] });
+});
+
+// BORRAR NOTA
+router.delete('/entregas/:id/nota/:notaId', async (req, res) => {
+  if (!guardEntregas(req, res)) return;
+  const db = getDB();
+  const { data: nota } = await db.from('crm_entregas_notas').select('usuario_id').eq('id', req.params.notaId).maybeSingle();
+  if (!nota) return res.status(404).json({ error: 'Nota no encontrada' });
+  if (!isAgency(req.user?.role) && nota.usuario_id !== req.user.id) return res.status(403).json({ error: 'Solo puedes borrar tus notas' });
+  const { error } = await db.from('crm_entregas_notas').delete().eq('id', req.params.notaId);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ok: true });
+});
+
 module.exports = router;

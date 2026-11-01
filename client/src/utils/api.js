@@ -148,6 +148,24 @@ export const api = {
   calCreateEvent: (data) => request('/google/socio-events', { method: 'POST', body: JSON.stringify(data) }),
   calUpdateEvent: (id, data) => request(`/google/socio-events/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   calDeleteEvent: (id, socio, calendarId) => request(`/google/socio-events/${id}?socio=${socio}&calendarId=${encodeURIComponent(calendarId || 'primary')}`, { method: 'DELETE' }),
+
+  // Entregas (pendientes de los socios: tablero + evidencias + notas)
+  crmEntregas: (socio) => request(`/crm/entregas${socio && socio !== 'todos' ? `?socio=${socio}` : ''}`),
+  crmEntregaDetalle: (id) => request(`/crm/entregas/${id}`),
+  crmEntregaCrear: (data) => request('/crm/entregas', { method: 'POST', body: JSON.stringify(data) }),
+  crmEntregaActualizar: (id, data) => request(`/crm/entregas/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  crmEntregaBorrar: (id) => request(`/crm/entregas/${id}`, { method: 'DELETE' }),
+  crmEntregaSubirEvidencia: async (id, file) => {
+    const fd = new FormData(); fd.append('file', file);
+    const res = await fetch(`${API}/crm/entregas/${id}/evidencia`, {
+      method: 'POST', credentials: 'include',
+      headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {}, body: fd,
+    });
+    const data = await res.json(); if (!res.ok) throw new Error(data.error || 'Error al subir'); return data;
+  },
+  crmEntregaBorrarEvidencia: (id, evId) => request(`/crm/entregas/${id}/evidencia/${evId}`, { method: 'DELETE' }),
+  crmEntregaAgregarNota: (id, texto) => request(`/crm/entregas/${id}/nota`, { method: 'POST', body: JSON.stringify({ texto }) }),
+  crmEntregaBorrarNota: (id, notaId) => request(`/crm/entregas/${id}/nota/${notaId}`, { method: 'DELETE' }),
   // Bandeja de Correos (admin-only)
   correosBuzones: () => request('/google/correos/buzones'),
   correosList: (socio, opts = {}) => request(`/google/correos?socio=${socio}${opts.q ? '&q=' + encodeURIComponent(opts.q) : ''}${opts.prudential ? '&prudential=1' : ''}`),
