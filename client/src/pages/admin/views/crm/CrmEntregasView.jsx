@@ -12,7 +12,7 @@ import { C } from '../../constants';
 import {
   CheckSquare, Plus, Search, RefreshCw, X, Flag, Pencil, Trash2, Check,
   PlayCircle, RotateCcw, ArrowLeft, Paperclip, MessageSquare, Upload, FileText,
-  Download, Send, CalendarDays, Video, Link2,
+  Download, Send, CalendarDays, Video, Link2, ChevronLeft, ChevronRight, List,
 } from 'lucide-react';
 
 const SOCIOS = [
@@ -80,6 +80,7 @@ export default function CrmEntregasView() {
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
   const [selId, setSelId] = useState(null);
+  const [vista, setVista] = useState('lista'); // 'lista' | 'cal'
 
   const toast = (msg, type = 'ok') => { setFlash({ msg, type }); setTimeout(() => setFlash(null), 4000); };
 
@@ -192,6 +193,10 @@ export default function CrmEntregasView() {
           <p>Pendientes administrativos de los socios · con evidencias y evento en Google Calendar</p>
         </div>
         <div className="ent-head-actions">
+          <div className="ent-seg">
+            <button className={vista === 'lista' ? 'on' : ''} onClick={() => setVista('lista')}><List size={14} /> Lista</button>
+            <button className={vista === 'cal' ? 'on' : ''} onClick={() => setVista('cal')}><CalendarDays size={14} /> Calendario</button>
+          </div>
           <button className="ent-btn-primary" onClick={() => setForm(emptyForm(miSocio))}><Plus size={15} /> Entrega</button>
           <button className="ent-icon-btn" onClick={load} title="Actualizar"><RefreshCw size={15} className={loading ? 'ent-spin' : ''} /></button>
         </div>
@@ -211,13 +216,15 @@ export default function CrmEntregasView() {
       </div>
 
       {/* Búsqueda */}
-      <div className="ent-search">
-        <Search size={15} color={C.textLight} />
-        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar entrega o detalle…" />
-        {q && <button onClick={() => setQ('')}><X size={14} color={C.textLight} /></button>}
-      </div>
+      {vista === 'lista' && (
+        <div className="ent-search">
+          <Search size={15} color={C.textLight} />
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar entrega o detalle…" />
+          {q && <button onClick={() => setQ('')}><X size={14} color={C.textLight} /></button>}
+        </div>
+      )}
 
-      {/* Filtros socio + estado */}
+      {/* Filtros socio (+ estado solo en lista) */}
       <div className="ent-chips">
         <button className={`ent-chip ${socioF === 'todos' ? 'on' : ''}`} onClick={() => setSocioF('todos')}>Todos</button>
         {SOCIOS.map(s => (
@@ -225,12 +232,16 @@ export default function CrmEntregasView() {
             <span className="ent-dot" style={{ background: s.color }} />{s.label}{s.key === miSocio ? ' (yo)' : ''}
           </button>
         ))}
-        <span className="ent-sep" />
-        {CHIPS.map(c => <button key={c.k} className={`ent-chip subtle ${estadoF === c.k ? 'on' : ''}`} onClick={() => setEstadoF(c.k)}>{c.t}</button>)}
+        {vista === 'lista' && <>
+          <span className="ent-sep" />
+          {CHIPS.map(c => <button key={c.k} className={`ent-chip subtle ${estadoF === c.k ? 'on' : ''}`} onClick={() => setEstadoF(c.k)}>{c.t}</button>)}
+        </>}
       </div>
 
+      {vista === 'cal' && <CalendarioEntregas entregas={universo} socioF={socioF} onOpen={setSelId} />}
+
       {/* Tabla */}
-      {loading ? (
+      {vista === 'lista' && (loading ? (
         <div className="ent-loading"><span className="ent-spinner" /> Cargando…</div>
       ) : filas.length === 0 ? (
         <div className="ent-empty">
@@ -289,7 +300,7 @@ export default function CrmEntregasView() {
             </tbody>
           </table>
         </div>
-      )}
+      ))}
 
       {form && <FormModal form={form} setForm={setForm} saving={saving} miSocio={miSocio} onClose={() => setForm(null)} onSave={guardar} />}
     </div>
@@ -446,8 +457,142 @@ function FormModal({ form, setForm, saving, miSocio, onClose, onSave }) {
   );
 }
 
+// ══════════════════ CALENDARIO (entregas + agenda real de Google) ══════════════════
+const CAL_DAYS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+const CAL_MONTHS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+const evDate = (ev) => ev.start?.dateTime ? new Date(ev.start.dateTime) : parseLocal(ev.start?.date);
+
+function CalendarioEntregas({ entregas, socioF, onOpen }) {
+  const [cur, setCur] = useState(new Date());
+  const [gev, setGev] = useState([]);
+  const [gloading, setGloading] = useState(false);
+  const [gerror, setGerror] = useState('');
+  const [sel, setSel] = useState(null);
+  const year = cur.getFullYear(), month = cur.getMonth();
+
+  useEffect(() => {
+    let cancel = false;
+    (async () => {
+      setGloading(true); setGerror('');
+      const timeMin = new Date(year, month, 1 - 7).toISOString();
+      const timeMax = new Date(year, month + 1, 7).toISOString();
+      const socios = socioF === 'todos' ? SOCIOS.map(s => s.key) : [socioF];
+      const all = []; let anyErr = false;
+      await Promise.all(socios.map(async k => {
+        try { const r = await api.calSocioEvents(k, timeMin, timeMax); (r.items || []).forEach(ev => all.push({ ...ev, socio: k })); }
+        catch { anyErr = true; }
+      }));
+      if (cancel) return;
+      setGev(all); setGloading(false);
+      if (anyErr) setGerror('Algún calendario de Google no se pudo leer (¿socio conectado en Calendarios?).');
+    })();
+    return () => { cancel = true; };
+  }, [year, month, socioF]);
+
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const today = new Date();
+  const entregasDia = (d) => entregas.filter(e => { const f = parseLocal(e.fecha_entrega); return f && f.getFullYear() === year && f.getMonth() === month && f.getDate() === d; });
+  const googleDia = (d) => gev.filter(ev => { const f = evDate(ev); return f && f.getFullYear() === year && f.getMonth() === month && f.getDate() === d; });
+  const selEnt = sel ? entregasDia(sel) : [];
+  const selGoogle = sel ? googleDia(sel).sort((a, b) => evDate(a) - evDate(b)) : [];
+
+  return (
+    <div className="ent-cal-wrap">
+      <div className="ent-cal">
+        <div className="ent-cal-head">
+          <h3>{CAL_MONTHS[month]} {year}</h3>
+          <div className="ent-cal-nav">
+            {gloading && <span className="ent-spinner" />}
+            <button onClick={() => setCur(new Date(year, month - 1, 1))}><ChevronLeft size={18} /></button>
+            <button onClick={() => setCur(new Date(year, month + 1, 1))}><ChevronRight size={18} /></button>
+          </div>
+        </div>
+        <div className="ent-cal-grid ent-cal-dow">{CAL_DAYS.map(d => <div key={d}>{d}</div>)}</div>
+        <div className="ent-cal-grid">
+          {Array.from({ length: firstDay }).map((_, i) => <div key={'x' + i} />)}
+          {Array.from({ length: daysInMonth }).map((_, i) => {
+            const d = i + 1; const ents = entregasDia(d); const gs = googleDia(d);
+            const isToday = today.getFullYear() === year && today.getMonth() === month && today.getDate() === d;
+            const owners = socioF === 'todos' ? [...new Set([...ents.map(e => e.socio), ...gs.map(g => g.socio)])] : [];
+            return (
+              <button key={d} className={`ent-cal-day ${isToday ? 'today' : ''} ${sel === d ? 'sel' : ''}`} onClick={() => setSel(d === sel ? null : d)}>
+                <span>{d}</span>
+                <div className="ent-cal-dots">
+                  {socioF === 'todos'
+                    ? owners.slice(0, 3).map(o => <i key={o} style={{ background: socioInfo(o).color }} />)
+                    : <>
+                      {ents.slice(0, 2).map((e, j) => <i key={'e' + j} style={{ background: urgStyle(urg(e)).bar }} />)}
+                      {gs.length > 0 && <i style={{ background: C.textLight }} />}
+                    </>}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+        <div className="ent-cal-legend">
+          {socioF === 'todos'
+            ? SOCIOS.map(s => <span key={s.key}><i style={{ background: s.color }} />{s.label}</span>)
+            : <span><i style={{ background: C.textLight }} /> Eventos Google &nbsp; <i style={{ background: C.red }} /> entrega vencida</span>}
+          {gerror && <span className="ent-cal-err">{gerror}</span>}
+        </div>
+      </div>
+
+      <div className="ent-cal-side">
+        <div className="ent-card">
+          <div className="ent-card-head"><CalendarDays size={16} color={C.gold} /> {sel ? `${sel} de ${CAL_MONTHS[month]}` : 'Selecciona un día'}</div>
+          {!sel ? <p className="ent-muted">Haz clic en un día para ver sus entregas y la agenda real.</p> : (
+            <>
+              <div className="ent-cal-block-title">Entregas</div>
+              {selEnt.length === 0 ? <p className="ent-muted">Sin entregas este día.</p> : selEnt.map(e => (
+                <div key={e.id} className="ent-cal-item" onClick={() => onOpen(e.id)} role="button">
+                  <span className="ent-bar" style={{ background: urgStyle(urg(e)).bar }} />
+                  <div><div className="ent-cal-item-t">{e.titulo}</div><div className="ent-cal-item-s"><span className="ent-dot" style={{ background: socioInfo(e.socio).color }} />{socioInfo(e.socio).label} · {ESTADO_LABEL[e.estado]}</div></div>
+                </div>
+              ))}
+              <div className="ent-cal-block-title">Agenda real · Google</div>
+              {selGoogle.length === 0 ? <p className="ent-muted">Sin eventos este día.</p> : selGoogle.map((ev, idx) => (
+                <div key={idx} className="ent-cal-item">
+                  <span className="ent-bar" style={{ background: socioInfo(ev.socio).color }} />
+                  <div><div className="ent-cal-item-t">{ev.summary || '(sin título)'}</div><div className="ent-cal-item-s">{ev.start?.dateTime ? evDate(ev).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }) : 'Todo el día'} · {socioInfo(ev.socio).label}{ev.hangoutLink ? ' · Meet' : ''}</div></div>
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const ENT_CSS = `
 .ent { max-width:1180px; margin:0 auto; font-family:'Inter',system-ui,sans-serif; color:${C.text}; }
+.ent-seg { display:flex; gap:2px; padding:3px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.18); border-radius:10px; }
+.ent-seg button { display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border:none; background:none; color:rgba(242,228,200,.65); font-size:12.5px; font-weight:600; border-radius:7px; cursor:pointer; }
+.ent-seg button.on { background:rgba(242,228,200,.16); color:#F2E4C8; }
+.ent-cal-wrap { display:grid; grid-template-columns:1fr 320px; gap:16px; }
+@media(max-width:900px){ .ent-cal-wrap { grid-template-columns:1fr; } }
+.ent-cal { background:#fff; border:1px solid ${C.border}; border-radius:16px; padding:18px 20px; }
+.ent-cal-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+.ent-cal-head h3 { font-family:'Fraunces',Georgia,serif; font-size:18px; color:${C.ink}; margin:0; }
+.ent-cal-nav { display:flex; align-items:center; gap:6px; }
+.ent-cal-nav button { background:none; border:1px solid ${C.border}; border-radius:8px; padding:5px; color:${C.textMuted}; cursor:pointer; display:flex; }
+.ent-cal-nav button:hover { background:${C.bg}; }
+.ent-cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:4px; }
+.ent-cal-dow div { text-align:center; font-size:10.5px; font-weight:700; color:${C.textLight}; text-transform:uppercase; padding:4px 0; }
+.ent-cal-day { position:relative; min-height:48px; border:1px solid transparent; border-radius:10px; background:none; cursor:pointer; font-size:13px; color:${C.text}; padding:5px; display:flex; flex-direction:column; align-items:center; gap:3px; }
+.ent-cal-day:hover { background:${C.bg}; } .ent-cal-day.today { background:${C.blueBg}; color:${C.blue}; font-weight:700; } .ent-cal-day.sel { border-color:${C.primary}; background:${C.blueBg}; }
+.ent-cal-dots { display:flex; gap:2px; flex-wrap:wrap; justify-content:center; }
+.ent-cal-dots i { width:6px; height:6px; border-radius:50%; display:block; }
+.ent-cal-legend { display:flex; flex-wrap:wrap; gap:14px; margin-top:14px; padding-top:12px; border-top:1px solid ${C.border}; font-size:11.5px; color:${C.textMuted}; }
+.ent-cal-legend span { display:inline-flex; align-items:center; gap:5px; } .ent-cal-legend i { width:9px; height:9px; border-radius:50%; display:inline-block; }
+.ent-cal-err { color:${C.amber}; flex-basis:100%; }
+.ent-cal-side .ent-card { position:sticky; top:12px; }
+.ent-cal-block-title { font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:${C.textLight}; margin:12px 0 8px; }
+.ent-cal-item { display:flex; gap:9px; padding:8px; border:1px solid ${C.border}; border-radius:10px; margin-bottom:7px; cursor:pointer; }
+.ent-cal-item:hover { background:${C.bg}; }
+.ent-cal-item-t { font-size:13px; color:${C.text}; font-weight:500; }
+.ent-cal-item-s { font-size:11px; color:${C.textMuted}; display:flex; align-items:center; gap:5px; margin-top:2px; }
 .ent-plaque { display:flex; align-items:center; justify-content:space-between; gap:14px; margin-bottom:16px; padding:18px 24px; border-radius:16px; background:radial-gradient(130% 170% at 8% 0%, #14315E 0%, ${C.ink} 55%, #081324 100%); box-shadow:0 14px 36px -22px rgba(4,12,26,.6); }
 .ent-plaque h1 { font-family:'Fraunces',Georgia,serif; font-size:25px; font-weight:600; margin:0; color:#F2E4C8; display:flex; align-items:center; gap:10px; }
 .ent-plaque p { font-size:12px; color:rgba(233,240,250,.6); margin:3px 0 0; }
