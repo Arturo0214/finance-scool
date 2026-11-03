@@ -388,7 +388,7 @@ router.post('/agents', async (req, res) => {
 router.put('/agents/:id', async (req, res) => {
   if (!isAgency(req.user.role)) return res.status(403).json({ error: 'Solo administración puede editar asesores' });
   const allowed = ['clave', 'nombre', 'cuaderno', 'fecha_inicio_calculos', 'estatus', 'telefono', 'email', 'user_id', 'fireflies_api_key',
-    'alta_pru', 'alta_il', 'activo_fsc', 'clasificacion'];
+    'alta_pru', 'alta_il', 'activo_fsc', 'clasificacion', 'clave_estatus'];
   const patch = {};
   for (const k of allowed) if (k in req.body) patch[k] = req.body[k];
   patch.updated_at = new Date().toISOString();
@@ -4075,6 +4075,142 @@ router.delete('/entregas/:id/nota/:notaId', async (req, res) => {
   const { error } = await db.from('crm_entregas_notas').delete().eq('id', req.params.notaId);
   if (error) return res.status(500).json({ error: error.message });
   res.json({ ok: true });
+});
+
+/* ───────────────────────────────────────────────────────────────────────────
+   REPORTE DIARIO DE AGENTES (Telegram @agentefsc_bot + correo opcional)
+   Pedido de Flavio (junta 2026-11-02): reporte diario de agentes con cobros
+   pendientes y avances insuficientes. Reutiliza la lógica de /cobranza.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+// Agrega cobros pendientes/vencidos por consultor (toda la agencia). Reutiliza
+// los helpers puros de cobranza (COBRANZA_PERIODS, cobranzaVencPendiente).
+async function buildAgentReport(db) {
+  const data = await fetchAllRows(() => db.from('crm_policies')
+    .select('poliza, prima, forma_pago, fecha_renovacion, fecha_pago, estatus, pago_manual_at, crm_clients(nombre), crm_agents(clave, nombre, email, activo_fsc)')
+    .in('estatus', ['pagada', 'pendiente_pago', 'en_tramite']));
+  const rows = decryptRows(data, 'crm_policies');
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+
+  const porClave = new Map();
+  let pendTotalMonto = 0, pendTotalCount = 0, vencTotalMonto = 0, vencTotalCount = 0;
+
+  for (const p of rows) {
+    const ag = p.crm_agents || {};
+    if (ag.activo_fsc === false) continue;
+    const clave = ag.clave || 'SIN-CLAVE';
+    const primaAnual = Number(p.prima) || 0;
+    const periods = COBRANZA_PERIODS[String(p.forma_pago || 'anual').toLowerCase()] || 1;
+    const montoRecibo = primaAnual / periods;
+    if (!porClave.has(clave)) {
+      porClave.set(clave, { clave, nombre: ag.nombre || 'Sin asignar', email: ag.email || null,
+        polizas: 0, pendientesCount: 0, pendienteMonto: 0, vencidosCount: 0, vencidoMonto: 0, maxDias: 0 });
+    }
+    const c = porClave.get(clave);
+    c.polizas++;
+    if (p.estatus === 'pendiente_pago') {
+      const venc = cobranzaVencPendiente(p.fecha_renovacion, p.fecha_pago, p.forma_pago, hoy);
+      const dias = venc ? Math.floor((hoy - venc) / 86400000) : null; // >0 = vencido
+      c.pendientesCount++; c.pendienteMonto += montoRecibo;
+      pendTotalCount++; pendTotalMonto += montoRecibo;
+      if (dias != null && dias > 0) {
+        c.vencidosCount++; c.vencidoMonto += montoRecibo;
+        if (dias > c.maxDias) c.maxDias = dias;
+        vencTotalCount++; vencTotalMonto += montoRecibo;
+      }
+    }
+  }
+
+  // Solo consultores con algo pendiente; vencidos primero, luego por monto.
+  const consultores = [...porClave.values()]
+    .filter(c => c.pendientesCount > 0)
+    .sort((a, b) => (b.vencidoMonto - a.vencidoMonto) || (b.pendienteMonto - a.pendienteMonto));
+
+  return {
+    hoy: hoy.toISOString().slice(0, 10),
+    consultores,
+    totales: { pendTotalMonto, pendTotalCount, vencTotalMonto, vencTotalCount, agentesConPendiente: consultores.length },
+  };
+}
+
+// Envía un mensaje al grupo de Telegram @agentefsc_bot (mismo canal que las
+// alertas de leads). Devuelve {ok} o {skipped}. Fire-and-forget tolerante.
+async function sendTelegram(text) {
+  const token = process.env.AGENTE_BOT_TOKEN, chat = process.env.AGENTE_CHAT_ID;
+  if (!token || !chat) return { ok: false, skipped: 'telegram_no_config' };
+  try {
+    const resp = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chat, parse_mode: 'HTML', disable_web_page_preview: true, text }),
+    });
+    const j = await resp.json().catch(() => ({}));
+    return resp.ok && j.ok ? { ok: true } : { ok: false, error: j.description || `HTTP ${resp.status}` };
+  } catch (e) { return { ok: false, error: e.message }; }
+}
+
+const _fmtMXN = n => '$' + Math.round(Number(n) || 0).toLocaleString('es-MX');
+
+function formatAgentReportTelegram(report) {
+  const { totales, consultores, hoy } = report;
+  const fecha = new Date(hoy + 'T00:00:00').toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' });
+  const L = [];
+  L.push(`<b>📊 Reporte diario de agentes · Finance S-Cool</b>`);
+  L.push(`<i>${fecha}</i>`);
+  L.push('');
+  L.push(`💰 Por cobrar: <b>${_fmtMXN(totales.pendTotalMonto)}</b> (${totales.pendTotalCount} recibos)`);
+  L.push(`🔴 Vencido: <b>${_fmtMXN(totales.vencTotalMonto)}</b> (${totales.vencTotalCount} recibos)`);
+  L.push(`👥 Agentes con pendientes: <b>${totales.agentesConPendiente}</b>`);
+  if (!consultores.length) {
+    L.push('');
+    L.push('✅ Sin cobros pendientes hoy. ¡Cartera al corriente!');
+    return L.join('\n');
+  }
+  L.push('');
+  L.push('<b>Agentes con cobros pendientes</b>');
+  const top = consultores.slice(0, 15);
+  for (const c of top) {
+    const flag = c.vencidosCount > 0 ? '🔴' : '🟡';
+    const vencTxt = c.vencidosCount > 0
+      ? ` · <b>vencido ${_fmtMXN(c.vencidoMonto)}</b> (${c.vencidosCount}, hasta ${c.maxDias}d)`
+      : '';
+    L.push(`${flag} <b>${c.nombre}</b> — ${_fmtMXN(c.pendienteMonto)} en ${c.pendientesCount} recibo${c.pendientesCount === 1 ? '' : 's'}${vencTxt}`);
+  }
+  if (consultores.length > top.length) L.push(`…y ${consultores.length - top.length} agente${consultores.length - top.length === 1 ? '' : 's'} más.`);
+  L.push('');
+  L.push('🔴 = con recibos vencidos · 🟡 = pendiente por vencer');
+  return L.join('\n');
+}
+
+// POST /agent-report — manual (admin) o cron. Cron requiere CRM_AGENT_REPORT_ENABLED=true.
+router.post('/agent-report', async (req, res) => {
+  if (!isAgency(req.user.role)) return res.status(403).json({ error: 'Solo administración envía el reporte de agentes' });
+  const isCron = req.user && req.user.email === 'cron@internal';
+  if (isCron && process.env.CRM_AGENT_REPORT_ENABLED !== 'true') {
+    return res.json({ ok: false, skipped: 'CRM_AGENT_REPORT_ENABLED != true' });
+  }
+  try {
+    const db = getDB();
+    const report = await buildAgentReport(db);
+    const text = formatAgentReportTelegram(report);
+    const tg = await sendTelegram(text);
+
+    // Correo opcional a administración (CRM_AGENT_REPORT_EMAIL, coma-separado).
+    let mail = { ok: false, skipped: 'no_email_config' };
+    if (process.env.CRM_AGENT_REPORT_EMAIL) {
+      try {
+        const { sendMail } = require('../utils/crmMailer');
+        const plano = text.replace(/<[^>]+>/g, '');
+        await sendMail({
+          to: process.env.CRM_AGENT_REPORT_EMAIL.split(',').map(s => s.trim()).filter(Boolean),
+          subject: `Reporte diario de agentes — ${report.hoy} · ${_fmtMXN(report.totales.vencTotalMonto)} vencido`,
+          text: plano,
+        });
+        mail = { ok: true };
+      } catch (e) { mail = { ok: false, error: e.message }; }
+    }
+
+    res.json({ ok: true, telegram: tg, email: mail, resumen: report.totales, preview: text });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 module.exports = router;

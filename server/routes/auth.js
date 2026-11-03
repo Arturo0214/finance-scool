@@ -4,6 +4,17 @@ const { queryOne, runQuery, getDB } = require('../models/database');
 const { generateToken, verifyToken } = require('../middleware/auth');
 const router = express.Router();
 
+// Estatus de clave del agente (T=formación, C=cédula/CRM). Solo aplica a
+// asesores; para administración regresa null (acceso completo). Se consulta en
+// vivo (no se hornea en el JWT) para reflejar la promoción T→C al instante.
+async function agentClaveEstatus(user) {
+  if (!user || user.role !== 'asesor') return { clave_estatus: null, clave: null };
+  try {
+    const { data } = await getDB().from('crm_agents').select('clave_estatus, clave').eq('user_id', user.id).maybeSingle();
+    return { clave_estatus: data?.clave_estatus || 'C', clave: data?.clave || null };
+  } catch { return { clave_estatus: 'C', clave: null }; }
+}
+
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -27,7 +38,8 @@ router.post('/login', async (req, res) => {
     // Bitácora de sesiones (fire-and-forget)
     getDB().from('crm_activity').insert([{ user_id: user.id, user_name: user.name, user_role: user.role, action: 'login', entity: 'sesion' }])
       .then(({ error: e }) => { if (e) console.error('activity log:', e.message); });
-    res.json({ success: true, token, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
+    const ag = await agentClaveEstatus({ id: user.id, role: user.role });
+    res.json({ success: true, token, user: { id: user.id, name: user.name, email: user.email, role: user.role, clave_estatus: ag.clave_estatus, clave: ag.clave } });
   } catch (err) {
     console.error('Login error:', err);
     res.status(500).json({ error: 'Error en login' });
@@ -39,8 +51,9 @@ router.post('/logout', (req, res) => {
   res.json({ success: true });
 });
 
-router.get('/me', verifyToken, (req, res) => {
-  res.json({ user: req.user });
+router.get('/me', verifyToken, async (req, res) => {
+  const ag = await agentClaveEstatus(req.user);
+  res.json({ user: { ...req.user, clave_estatus: ag.clave_estatus, clave: ag.clave } });
 });
 
 router.post('/register', verifyToken, async (req, res) => {

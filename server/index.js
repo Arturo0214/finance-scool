@@ -138,6 +138,10 @@ cron.schedule('30 8 1 * *', () => cronFetch('monthly-reports', 'CRM monthly repo
 // CRM: alertas de rehabilitación urgente por correo — diario 8:15, requiere CRM_REHAB_ALERTS_ENABLED=true
 cron.schedule('15 8 * * *', () => cronFetch('ingresos/rehab-alerts', 'CRM rehab alerts', 'crm'));
 
+// CRM: reporte diario de agentes (cobros pendientes/vencidos) → Telegram @agentefsc_bot
+// 14:00 UTC = 8:00am CDMX, L-S. Requiere CRM_AGENT_REPORT_ENABLED=true + AGENTE_BOT_TOKEN/CHAT_ID.
+cron.schedule('0 14 * * 1-6', () => cronFetch('agent-report', 'CRM agent report', 'crm'));
+
 app.listen(PORT, () => {
   console.log(`🚀 Finance SCool API running at http://localhost:${PORT}`);
   console.log('📅 Cron jobs active: reminders(15m), no-show(30m), post-cita(6h)');

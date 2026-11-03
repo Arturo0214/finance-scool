@@ -58,6 +58,24 @@ export default function CrmCobranzaView() {
   };
   useEffect(() => { load(); }, []);
 
+  const [reportSending, setReportSending] = useState(false);
+  const enviarReporteTelegram = async () => {
+    setReportSending(true); setSendMsg(null);
+    try {
+      const r = await api.crmAgentReportSend();
+      const t = r?.resumen || {};
+      const okTg = r?.telegram?.ok;
+      setSendMsg({
+        ok: !!okTg,
+        text: okTg
+          ? `Reporte enviado a Telegram · ${t.agentesConPendiente || 0} agentes con pendientes, ${money(t.vencTotalMonto || 0)} vencido.`
+          : `No se pudo enviar a Telegram (${r?.telegram?.skipped || r?.telegram?.error || 'sin canal configurado'}).`,
+      });
+    } catch (e) {
+      setSendMsg({ ok: false, text: e.message || 'Error al enviar el reporte' });
+    } finally { setReportSending(false); }
+  };
+
   const pendientes = useMemo(() => {
     const list = (data?.pendientes || []);
     return filtroConsultor ? list.filter(p => p.clave === filtroConsultor) : list;
@@ -136,6 +154,9 @@ export default function CrmCobranzaView() {
           <p className="view-subtitle">Cobros pendientes y flujo de caja anticipado · correos de cobranza por consultor</p>
         </div>
         <div className="crm-toolbar-right">
+          <button className="crm-btn" disabled={reportSending} onClick={enviarReporteTelegram} title="Envía al grupo de Telegram el resumen de agentes con cobros pendientes/vencidos">
+            {reportSending ? <Loader2 size={15} className="spin" /> : <Send size={15} />} Reporte a Telegram
+          </button>
           <button className="crm-btn crm-btn-primary" disabled={sending || (bulk && bulk.loading)} onClick={openBulk}>
             {bulk && bulk.loading ? <Loader2 size={15} className="spin" /> : <Send size={15} />} Enviar a todos
           </button>

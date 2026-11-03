@@ -240,6 +240,7 @@ export const api = {
   crmCobranzaPreviewTodos: (dias) => request(`/crm/cobranza/preview-todos${dias ? `?dias=${dias}` : ''}`),
   crmCobranzaNotificarClaves: (claves) => request('/crm/cobranza/notificar', { method: 'POST', body: JSON.stringify({ claves }) }),
   crmCobranzaNotificar: (clave, dias) => request('/crm/cobranza/notificar', { method: 'POST', body: JSON.stringify({ ...(clave ? { clave } : {}), ...(dias ? { dias } : {}) }) }),
+  crmAgentReportSend: () => request('/crm/agent-report', { method: 'POST', body: JSON.stringify({}) }),
   crmLastImport: () => request('/crm/polizas/last-import'),
   /* Marcar póliza pagada: comprobante (imagen/PDF) OBLIGATORIO */
   crmMarcarPagada: async (policyId, file) => {

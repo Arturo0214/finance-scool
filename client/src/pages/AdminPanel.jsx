@@ -42,6 +42,7 @@ const FSCConversationsView = lazy(() => import('./admin/views/FSCConversationsVi
 const CrmMiDiaView        = lazy(() => import('./admin/views/crm/CrmMiDiaView'));
 const CrmCitasView        = lazy(() => import('./admin/views/crm/CrmCitasView'));
 const CrmIncubadoraView   = lazy(() => import('./admin/views/crm/CrmIncubadoraView'));
+const EscuelaView         = lazy(() => import('./admin/views/crm/EscuelaView'));
 const CrmCampanasView     = lazy(() => import('./admin/views/crm/CrmCampanasView'));
 const CrmSemillasView     = lazy(() => import('./admin/views/crm/CrmSemillasView'));
 const CrmProspectosView   = lazy(() => import('./admin/views/crm/CrmProspectosView'));
@@ -115,6 +116,9 @@ export default function AdminPanel() {
   const canManageTeam   = ['superadmin', 'agencia', 'admin'].includes(user?.role);
   // Admins ven el CRM completo de todos los consultores (Sofía Bot sigue solo agencia)
   const userSeesAllCrm  = canManageTeam;
+  // Gating Clave T→C: un asesor en formación (Clave T) solo ve la Escuela + coach;
+  // al obtener Clave C se desbloquea el CRM completo. Administración nunca es 'T'.
+  const claveT = user?.role === 'asesor' && user?.clave_estatus === 'T';
 
   /* ── Navegación del sidebar ──
      Solo el CRM Incubadora S-COOL + gestión de usuarios. Las vistas
@@ -128,6 +132,7 @@ export default function AdminPanel() {
   const esAdminCorreos = CORREOS_EMAILS.includes(String(user?.email || '').toLowerCase());
 
   const navItems = [
+    { id: 'crm-escuela',      label: 'Escuela S-Cool',                icon: GraduationCap },
     { id: 'divider-crm',      label: '── Productividad Comercial ──',  icon: null       },
     { id: 'crm-mi-dia',       label: 'Mi Día',                        icon: Sparkles   },
     { id: 'crm',              label: 'Tableros CRM',                  icon: LayoutDashboard },
@@ -158,6 +163,10 @@ export default function AdminPanel() {
     { id: 'team',             label: SPANISH_LABELS.team,             icon: Settings   },
     { id: 'health',           label: 'Salud del sistema',             icon: Activity   },
   ].filter(item => {
+    // Clave T (formación): el asesor SOLO ve la Escuela. Clave C / admin: la Escuela
+    // se oculta del menú (el CRM es su casa).
+    if (claveT) return item.id === 'crm-escuela';
+    if (item.id === 'crm-escuela') return false;
     if (item.id === 'health') return userIsAgency;
     if (item.id === 'crm-semillas') return ['superadmin', 'agencia'].includes(user?.role);
     if (item.id === 'crm-mejores-leads') return canManageTeam; // base Tesipedia: solo administración
@@ -175,8 +184,10 @@ export default function AdminPanel() {
   useEffect(() => {
     if (authLoading) return; // Wait for auth check to finish before deciding
     if (!user) { navigate('/login'); return; }
+    // Clave T: su única casa es la Escuela; cualquier otra vista lo regresa ahí.
+    if (claveT && activeView !== 'crm-escuela') { navigate('/admin/crm-escuela', { replace: true }); return; }
     // El CRM es ahora la vista principal para todos
-    if (activeView === 'dashboard') navigate('/admin/crm', { replace: true });
+    if (!claveT && activeView === 'dashboard') navigate('/admin/crm', { replace: true });
     loadData();
   }, [user, authLoading, navigate]); // eslint-disable-line
 
@@ -337,6 +348,9 @@ export default function AdminPanel() {
             {loading && activeView !== 'whatsapp' && <div className="loading-wrap"><div className="spinner" /><p>Cargando...</p></div>}
 
             <Suspense fallback={<ViewSpinner />}>
+              {claveT ? (
+                !loading && <EscuelaView />
+              ) : (<>
               {/* ── Vistas — todos ven lo mismo ── */}
               {!loading && activeView === 'agency-dashboard' &&
                 <AgencyDashboardView stats={agencyStats || stats} leads={leads} />}
@@ -403,6 +417,7 @@ export default function AdminPanel() {
               {!loading && activeView === 'crm-entregas' && esSocioProspectos && <CrmEntregasView />}
               {!loading && activeView === 'crm-correos' && esAdminCorreos && <CrmCorreosView />}
               {!loading && activeView === 'health' && userIsAgency && <HealthView />}
+              </>)}
             </Suspense>
           </main>
         </div>
