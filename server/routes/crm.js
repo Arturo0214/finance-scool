@@ -2243,12 +2243,16 @@ router.get('/ingresos/rehab-pdf/:clave', async (req, res) => {
 router.post('/cobranza-mailing', async (req, res) => {
   if (!isAgency(req.user.role)) return res.status(403).json({ error: 'Solo administración puede enviar el mailing de cobranza' });
   try {
-    const { sendMail } = require('../utils/crmMailer');
+    const { sendMailVia } = require('../utils/crmMailer');
     const db = getDB();
     const [pir, personalizaPlanes, { agentes, primas, polizas }] = await Promise.all([getPirTablas(), getPersonalizaPlanes(), fetchIngresosData(null)]);
     const { data: crmAgents } = await db.from('crm_agents').select('clave, email, nombre, activo_fsc');
     const emailPorClave = new Map((crmAgents || []).filter(a => a.clave && a.email && a.activo_fsc !== false).map(a => [a.clave, a]));
     const soloClave = req.body.clave || null; // opcional: enviar a uno solo
+    // Flavio pidió ir en copia de todos los correos de cobranza. Configurable
+    // por env (CRM_COBRANZA_CC, admite varios separados por coma).
+    const COBRANZA_CC = process.env.CRM_COBRANZA_CC || 'flavio.r@grupointegraccion.com';
+    const sender = await getCobranzaSender();
     const sent = [], failed = [], skipped = [];
 
     for (const a of agentes) {
@@ -2279,12 +2283,14 @@ router.post('/cobranza-mailing', async (req, res) => {
         rehab.length ? `♻️ AÚN REHABILITABLES (por etapa — el plazo corre desde la cancelación):` : null,
         ...rehab.slice(0, 10).map(p => `  · Póliza ${p.poliza} — ${money(p.monto)} · ${p.etapa_label} (${p.metodo}) · ${p.dias_para_vencer_etapa} días para vencer esta etapa · recuperaría +${pctTxt(p.impacto_indice)}${p.urgencia === 'EXTREMA' ? ' · ⚠️ EXTREMADAMENTE URGENTE' : p.urgencia === 'ALTA' ? ' · ⚠️ urgente' : ''}`),
         '',
+        `⚠️ ¿Alguna de estas pólizas YA está pagada? Por favor avísanos a contacto@grupointegraccion.com para actualizar el registro y que deje de aparecerte por cobrar.`,
+        '',
         `Cada cobro cuenta para tus bonos PIR del trimestre. Entra al CRM → Ingresos para simular tu índice y registrar avances.`,
         '',
         '— Incubadora S-COOL',
       ].filter(l => l !== null);
       try {
-        await sendMail({ to: dest.email, subject: `Tu cartera por cobrar y tu índice de conservación — ${a.nombre}`, text: lineas.join('\n') });
+        await sendMailVia(sender?.smtp, { from: sender?.from, to: dest.email, cc: COBRANZA_CC, replyTo: 'contacto@grupointegraccion.com', subject: `Tu cartera por cobrar y tu índice de conservación — ${a.nombre}`, text: lineas.join('\n') });
         sent.push(a.clave);
       } catch (e) { failed.push(`${a.clave}: ${e.message}`); }
     }
@@ -3813,7 +3819,7 @@ function cobranzaFormatMensaje(ag, items, diasVentana) {
     'Finance S-Cool · Incubadora S-COOL',
     '',
     '— — — — —',
-    'Nota: este correo fue generado automáticamente por la plataforma de Finance S-Cool (asistido por IA) para facilitar tu labor de cobranza. Si ya realizaste estos cobros, infórmanos y haz caso omiso de este mensaje.',
+    'Nota: este correo fue generado automáticamente por la plataforma de Finance S-Cool (asistido por IA) para facilitar tu labor de cobranza. ⚠️ Si alguna de estas pólizas YA está pagada, por favor notifícalo a contacto@grupointegraccion.com para actualizar el registro, y haz caso omiso de este mensaje.',
   ].join('\n');
   return { subject: `Tus cobranzas próximas a vencer — ${items.length} recibos · ${cobranzaFmtMoney(total)}`, text, total, count: items.length };
 }
@@ -3856,22 +3862,93 @@ router.get('/cobranza/preview-todos', async (req, res) => {
 /* POST /api/crm/cobranza/notificar — manda la cobranza por correo. Acepta:
    {clave} (uno), {claves:[...]} (subconjunto seleccionado), o nada (todos con
    correo). El admin lo dispara manualmente. */
+/* Remitente configurable de cobranza (crm_mail_config): el correo que conectó
+   Flavio / un cobranza@dominio. Si no hay config válida, regresa null y el
+   mailer cae al remitente por defecto (EMAIL_USER/EMAIL_PASS). */
+async function getCobranzaSender() {
+  const { decryptValue } = require('../utils/cryptoFields');
+  const { data } = await getDB().from('crm_mail_config').select('*').eq('id', 'cobranza').maybeSingle();
+  if (!data || !data.smtp_user || !data.smtp_pass) return null;
+  return {
+    smtp: { host: data.smtp_host, port: data.smtp_port, secure: data.smtp_secure, user: data.smtp_user, pass: decryptValue(data.smtp_pass) },
+    from: `"${data.from_name || 'Cobranza · Finance S-Cool'}" <${data.smtp_user}>`,
+  };
+}
+
+/* Apartado "Remitente de cobranza" (admin). GET sin contraseña. */
+router.get('/mail-config', async (req, res) => {
+  if (!isAgency(req.user.role)) return res.status(403).json({ error: 'Solo administración' });
+  const { data } = await getDB().from('crm_mail_config').select('*').eq('id', 'cobranza').maybeSingle();
+  res.json({
+    from_name: data?.from_name || 'Cobranza · Finance S-Cool',
+    smtp_host: data?.smtp_host || 'smtp.gmail.com',
+    smtp_port: data?.smtp_port || 465,
+    smtp_secure: data?.smtp_secure ?? true,
+    smtp_user: data?.smtp_user || '',
+    has_pass: !!data?.smtp_pass,
+    updated_by: data?.updated_by || null,
+    updated_at: data?.updated_at || null,
+  });
+});
+
+/* Guarda la config (cifra la contraseña; si viene vacía conserva la actual). */
+router.put('/mail-config', async (req, res) => {
+  if (!isAgency(req.user.role)) return res.status(403).json({ error: 'Solo administración' });
+  const { encryptValue } = require('../utils/cryptoFields');
+  const b = req.body || {};
+  const patch = {
+    id: 'cobranza',
+    from_name: (b.from_name || '').trim() || 'Cobranza · Finance S-Cool',
+    smtp_host: (b.smtp_host || '').trim() || 'smtp.gmail.com',
+    smtp_port: Number(b.smtp_port) || 465,
+    smtp_secure: b.smtp_secure !== false,
+    smtp_user: (b.smtp_user || '').trim() || null,
+    updated_by: req.user.name || req.user.email,
+    updated_at: new Date().toISOString(),
+  };
+  if (b.smtp_pass && String(b.smtp_pass).trim()) patch.smtp_pass = encryptValue(String(b.smtp_pass).trim());
+  const { error } = await getDB().from('crm_mail_config').upsert(patch, { onConflict: 'id' });
+  if (error) return res.status(500).json({ error: error.message });
+  logActivity(req, 'configurar', 'cobranza-remitente', null, patch.smtp_user || '');
+  res.json({ ok: true });
+});
+
+/* Envía un correo de prueba con la config guardada (para validar antes de disparar). */
+router.post('/mail-config/test', async (req, res) => {
+  if (!isAgency(req.user.role)) return res.status(403).json({ error: 'Solo administración' });
+  const { sendMailVia } = require('../utils/crmMailer');
+  const to = String(req.body?.to || req.user.email || '').trim();
+  if (!to) return res.status(400).json({ error: 'Indica un correo de prueba' });
+  try {
+    const sender = await getCobranzaSender();
+    await sendMailVia(sender?.smtp, {
+      from: sender?.from, to, replyTo: 'contacto@grupointegraccion.com',
+      subject: 'Prueba de remitente de cobranza — Finance S-Cool',
+      text: 'Este es un correo de prueba del remitente de cobranza.\n\nSi lo recibes, el envío quedó configurado correctamente y ya puedes disparar los correos de cobranza desde este remitente.\n\n— Finance S-Cool',
+    });
+    res.json({ ok: true, enviadoA: to, remitente: sender ? sender.from : `(por defecto) ${process.env.EMAIL_USER || 'SIN CONFIGURAR'}` });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 router.post('/cobranza/notificar', async (req, res) => {
   if (!isAgency(req.user.role)) return res.status(403).json({ error: 'Solo administración puede enviar la cobranza' });
   try {
-    const { sendMail } = require('../utils/crmMailer');
+    const { sendMailVia } = require('../utils/crmMailer');
     const soloClave = req.body && req.body.clave ? String(req.body.clave) : null;
     const claves = Array.isArray(req.body && req.body.claves) ? req.body.claves.map(String) : null;
     const clavesSet = claves && claves.length ? new Set(claves) : null;
     const diasVentana = Math.min(120, Math.max(7, parseInt(req.body && req.body.dias, 10) || 45));
     const buckets = await cobranzaBuildBuckets({ soloClave, clavesSet, diasVentana, conCorreo: true });
+    // Flavio en copia de todos los correos de cobranza (configurable por env).
+    const COBRANZA_CC = process.env.CRM_COBRANZA_CC || 'flavio.r@grupointegraccion.com';
+    const sender = await getCobranzaSender();
 
     const enviados = [], sinItems = [], fallidos = [];
     for (const { ag, items } of buckets.values()) {
       if (!items.length) { sinItems.push(ag.clave); continue; }
       const msg = cobranzaFormatMensaje(ag, items, diasVentana);
       try {
-        await sendMail({ to: ag.email, subject: msg.subject, text: msg.text });
+        await sendMailVia(sender?.smtp, { from: sender?.from, to: ag.email, cc: COBRANZA_CC, replyTo: 'contacto@grupointegraccion.com', subject: msg.subject, text: msg.text });
         enviados.push(ag.clave);
       } catch (e) { fallidos.push(`${ag.clave}: ${e.message}`); }
     }

@@ -28,6 +28,9 @@ const COBRANZA_CSS = `
 @keyframes cbspin{to{transform:rotate(360deg)}}
 `;
 
+const lblS = { display: 'block', fontSize: 12, fontWeight: 600, color: '#5B6B84', margin: '10px 0 4px' };
+const inpS = { width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid #E4E8F0', fontSize: 13, marginBottom: 4, boxSizing: 'border-box' };
+
 /* Semáforo por días (positivo = vencido) */
 function semaforo(dias) {
   if (dias == null) return { label: 'Sin fecha', bg: C.border, text: C.textMuted };
@@ -49,6 +52,33 @@ export default function CrmCobranzaView() {
   const [preview, setPreview] = useState(null);   // { clave, loading, data, error }
   const [bulk, setBulk]       = useState(null);    // { loading, list, error }
   const [selected, setSelected] = useState(() => new Set());
+  const [mailCfg, setMailCfg] = useState(null);   // null=cerrado | objeto con el form
+
+  const abrirRemitente = async () => {
+    setMailCfg({ loading: true });
+    try {
+      const c = await api.crmMailConfigGet();
+      setMailCfg({ ...c, smtp_pass: '', testTo: '', saving: false, testing: false, msg: null });
+    } catch (e) { setMailCfg({ error: e.message }); }
+  };
+  const guardarRemitente = async () => {
+    setMailCfg(m => ({ ...m, saving: true, msg: null }));
+    try {
+      await api.crmMailConfigSave({
+        from_name: mailCfg.from_name, smtp_user: mailCfg.smtp_user, smtp_pass: mailCfg.smtp_pass,
+        smtp_host: mailCfg.smtp_host, smtp_port: mailCfg.smtp_port, smtp_secure: mailCfg.smtp_secure,
+      });
+      setMailCfg(m => ({ ...m, saving: false, has_pass: m.has_pass || !!m.smtp_pass, smtp_pass: '', msg: { ok: true, text: 'Remitente guardado. Ahora envía una prueba para validarlo.' } }));
+    } catch (e) { setMailCfg(m => ({ ...m, saving: false, msg: { ok: false, text: e.message } })); }
+  };
+  const probarRemitente = async () => {
+    if (!mailCfg.testTo) { setMailCfg(m => ({ ...m, msg: { ok: false, text: 'Escribe un correo para la prueba.' } })); return; }
+    setMailCfg(m => ({ ...m, testing: true, msg: null }));
+    try {
+      const r = await api.crmMailConfigTest(mailCfg.testTo);
+      setMailCfg(m => ({ ...m, testing: false, msg: { ok: true, text: `Prueba enviada a ${r.enviadoA} desde ${r.remitente}.` } }));
+    } catch (e) { setMailCfg(m => ({ ...m, testing: false, msg: { ok: false, text: e.message } })); }
+  };
 
   const load = async () => {
     setLoading(true); setErr(null);
@@ -154,6 +184,9 @@ export default function CrmCobranzaView() {
           <p className="view-subtitle">Cobros pendientes y flujo de caja anticipado · correos de cobranza por consultor</p>
         </div>
         <div className="crm-toolbar-right">
+          <button className="crm-btn" onClick={abrirRemitente} title="Configura el correo desde el que salen los cobros (el de Flavio o un cobranza@dominio)">
+            <Mail size={15} /> Remitente
+          </button>
           <button className="crm-btn" disabled={reportSending} onClick={enviarReporteTelegram} title="Envía al grupo de Telegram el resumen de agentes con cobros pendientes/vencidos">
             {reportSending ? <Loader2 size={15} className="spin" /> : <Send size={15} />} Reporte a Telegram
           </button>
@@ -345,6 +378,61 @@ export default function CrmCobranzaView() {
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {mailCfg && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,23,48,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 16 }} onClick={() => setMailCfg(null)}>
+          <div className="crm-card" style={{ width: '100%', maxWidth: 520, padding: 0, maxHeight: '92vh', overflow: 'auto' }} onClick={e => e.stopPropagation()}>
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid #E4E8F0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <h3 style={{ margin: 0, fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}><Mail size={18} color={C.primary} /> Remitente de cobranza</h3>
+              <button className="crm-btn" style={{ padding: '4px 8px' }} onClick={() => setMailCfg(null)}><X size={16} /></button>
+            </div>
+            <div style={{ padding: 20 }}>
+              {mailCfg.loading ? <p style={{ color: C.textMuted }}><Loader2 size={15} className="spin" /> Cargando…</p>
+                : mailCfg.error ? <p style={{ color: C.red }}>{mailCfg.error}</p>
+                  : (<>
+                    <p style={{ fontSize: 13, color: C.textMuted, marginTop: 0 }}>Conecta el correo desde el que salen los cobros (el de Flavio o un <b>cobranza@tudominio</b>). Con Gmail usa una <b>contraseña de aplicación</b>, no la normal.</p>
+                    <label style={lblS}>Nombre del remitente</label>
+                    <input style={inpS} value={mailCfg.from_name || ''} onChange={e => setMailCfg(m => ({ ...m, from_name: e.target.value }))} placeholder="Cobranza · Finance S-Cool" />
+                    <label style={lblS}>Correo (usuario SMTP)</label>
+                    <input style={inpS} value={mailCfg.smtp_user || ''} onChange={e => setMailCfg(m => ({ ...m, smtp_user: e.target.value }))} placeholder="cobranza@grupointegraccion.com" />
+                    <label style={lblS}>Contraseña {mailCfg.has_pass ? '(guardada — deja vacío para conservarla)' : '(de aplicación)'}</label>
+                    <input style={inpS} type="password" value={mailCfg.smtp_pass || ''} onChange={e => setMailCfg(m => ({ ...m, smtp_pass: e.target.value }))} placeholder={mailCfg.has_pass ? '••••••••' : 'contraseña de aplicación'} />
+                    <div style={{ display: 'flex', gap: 10 }}>
+                      <div style={{ flex: 2 }}>
+                        <label style={lblS}>Servidor SMTP</label>
+                        <input style={inpS} value={mailCfg.smtp_host || ''} onChange={e => setMailCfg(m => ({ ...m, smtp_host: e.target.value }))} placeholder="smtp.gmail.com" />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <label style={lblS}>Puerto</label>
+                        <input style={inpS} value={mailCfg.smtp_port || ''} onChange={e => setMailCfg(m => ({ ...m, smtp_port: e.target.value }))} placeholder="465" />
+                      </div>
+                    </div>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, margin: '10px 0' }}>
+                      <input type="checkbox" checked={mailCfg.smtp_secure !== false} onChange={e => setMailCfg(m => ({ ...m, smtp_secure: e.target.checked }))} /> Conexión segura (SSL/TLS)
+                    </label>
+                    <button className="crm-btn crm-btn-primary" disabled={mailCfg.saving} onClick={guardarRemitente}>
+                      {mailCfg.saving ? <Loader2 size={15} className="spin" /> : <CheckCircle2 size={15} />} Guardar remitente
+                    </button>
+                    <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #E4E8F0' }}>
+                      <label style={lblS}>Enviar prueba a</label>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <input style={{ ...inpS, marginBottom: 0 }} value={mailCfg.testTo || ''} onChange={e => setMailCfg(m => ({ ...m, testTo: e.target.value }))} placeholder="tu-correo@ejemplo.com" />
+                        <button className="crm-btn" disabled={mailCfg.testing} onClick={probarRemitente} style={{ whiteSpace: 'nowrap' }}>
+                          {mailCfg.testing ? <Loader2 size={15} className="spin" /> : <Send size={15} />} Probar
+                        </button>
+                      </div>
+                      <p style={{ fontSize: 11.5, color: C.textMuted, margin: '6px 0 0' }}>Guarda primero; la prueba usa la configuración guardada.</p>
+                    </div>
+                    {mailCfg.msg && (
+                      <div style={{ marginTop: 14, padding: '9px 12px', borderRadius: 9, background: mailCfg.msg.ok ? C.greenBg : C.redBg, color: mailCfg.msg.ok ? C.green : C.red, fontSize: 13, display: 'flex', gap: 8, alignItems: 'center' }}>
+                        {mailCfg.msg.ok ? <CheckCircle2 size={15} /> : <AlertTriangle size={15} />} {mailCfg.msg.text}
+                      </div>
+                    )}
+                  </>)}
+            </div>
           </div>
         </div>
       )}
