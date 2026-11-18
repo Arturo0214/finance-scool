@@ -55,13 +55,14 @@ export default function CrmCobranzaView() {
   const [mailCfg, setMailCfg] = useState(null);   // null=cerrado | objeto con el form
   const [correos, setCorreos] = useState(null);   // { loading, list, error } — todos los correos a enviar
 
-  useEffect(() => {
-    if (tab !== 'correos' || correos) return;
+  const loadCorreos = () => {
     setCorreos({ loading: true });
     api.crmCobranzaPreviewTodos()
       .then(d => setCorreos({ list: d.consultores || [], diasVentana: d.diasVentana }))
       .catch(e => setCorreos({ error: e.message }));
-  }, [tab]); // eslint-disable-line
+  };
+  // Recarga cada vez que se entra a la pestaña (no se queda con datos viejos).
+  useEffect(() => { if (tab === 'correos') loadCorreos(); }, [tab]); // eslint-disable-line
 
   const abrirRemitente = async () => {
     setMailCfg({ loading: true });
@@ -313,7 +314,12 @@ export default function CrmCobranzaView() {
               <div style={{ fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', gap: 8 }}><Mail size={16} color={C.primary} /> Correos que se enviarán</div>
               <div style={{ fontSize: 12, color: C.textMuted, marginTop: 2 }}>Vista previa del correo que recibirá cada consultor. Revísalos antes de disparar con “Enviar a todos”.</div>
             </div>
-            {correos?.list && <div style={{ fontSize: 12.5, color: C.textMuted }}>{correos.list.filter(c => !c.sinCorreo).length} con correo · {correos.list.filter(c => c.sinCorreo).length} sin correo</div>}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              {correos?.list && <div style={{ fontSize: 12.5, color: C.textMuted }}>{correos.list.filter(c => !c.sinCorreo).length} con correo · {correos.list.filter(c => c.sinCorreo).length} sin correo</div>}
+              <button className="crm-btn" disabled={correos?.loading} onClick={loadCorreos} title="Volver a generar la vista previa">
+                {correos?.loading ? <Loader2 size={14} className="spin" /> : <Mail size={14} />} Actualizar
+              </button>
+            </div>
           </div>
           {correos?.loading ? <p style={{ padding: 24, color: C.textMuted }}><Loader2 size={15} className="spin" /> Generando correos…</p>
             : correos?.error ? <p style={{ padding: 24, color: C.red }}>⚠️ {correos.error}</p>
