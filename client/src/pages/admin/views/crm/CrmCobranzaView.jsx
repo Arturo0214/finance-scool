@@ -53,6 +53,15 @@ export default function CrmCobranzaView() {
   const [bulk, setBulk]       = useState(null);    // { loading, list, error }
   const [selected, setSelected] = useState(() => new Set());
   const [mailCfg, setMailCfg] = useState(null);   // null=cerrado | objeto con el form
+  const [correos, setCorreos] = useState(null);   // { loading, list, error } — todos los correos a enviar
+
+  useEffect(() => {
+    if (tab !== 'correos' || correos) return;
+    setCorreos({ loading: true });
+    api.crmCobranzaPreviewTodos()
+      .then(d => setCorreos({ list: d.consultores || [], diasVentana: d.diasVentana }))
+      .catch(e => setCorreos({ error: e.message }));
+  }, [tab]); // eslint-disable-line
 
   const abrirRemitente = async () => {
     setMailCfg({ loading: true });
@@ -212,7 +221,7 @@ export default function CrmCobranzaView() {
       </div>
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 18 }}>
-        {[['flujo', 'Flujo de caja'], ['pendientes', `Cobros pendientes (${t.pendientesCount || 0})`], ['consultores', 'Por consultor']].map(([id, label]) => (
+        {[['flujo', 'Flujo de caja'], ['pendientes', `Cobros pendientes (${t.pendientesCount || 0})`], ['consultores', 'Por consultor'], ['correos', 'Correos']].map(([id, label]) => (
           <button key={id} className={`f-tab${tab === id ? ' active' : ''}`} onClick={() => setTab(id)}>{label}</button>
         ))}
       </div>
@@ -294,6 +303,42 @@ export default function CrmCobranzaView() {
               </button>
             </div>
           ))}
+        </div>
+      )}
+
+      {tab === 'correos' && (
+        <div className="crm-card" style={{ padding: 0, overflow: 'hidden' }}>
+          <div style={{ padding: '14px 18px', borderBottom: '1px solid #E4E8F0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', gap: 8 }}><Mail size={16} color={C.primary} /> Correos que se enviarán</div>
+              <div style={{ fontSize: 12, color: C.textMuted, marginTop: 2 }}>Vista previa del correo que recibirá cada consultor. Revísalos antes de disparar con “Enviar a todos”.</div>
+            </div>
+            {correos?.list && <div style={{ fontSize: 12.5, color: C.textMuted }}>{correos.list.filter(c => !c.sinCorreo).length} con correo · {correos.list.filter(c => c.sinCorreo).length} sin correo</div>}
+          </div>
+          {correos?.loading ? <p style={{ padding: 24, color: C.textMuted }}><Loader2 size={15} className="spin" /> Generando correos…</p>
+            : correos?.error ? <p style={{ padding: 24, color: C.red }}>⚠️ {correos.error}</p>
+              : !correos?.list?.length ? <p style={{ padding: 24, color: C.textMuted }}>No hay cobranzas por enviar en la ventana actual.</p>
+                : (
+                  <div style={{ maxHeight: '70vh', overflow: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    {correos.list.map(c => (
+                      <div key={c.clave} style={{ border: `1px solid ${c.sinCorreo ? C.redBg : '#E4E8F0'}`, borderRadius: 12, overflow: 'hidden' }}>
+                        <div style={{ padding: '10px 14px', background: '#F7F9FC', borderBottom: '1px solid #EEF1F6', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+                          <div>
+                            <div style={{ fontWeight: 700, fontSize: 13.5 }}>{c.nombre} <span style={{ color: C.textMuted, fontWeight: 500 }}>· {c.clave}</span></div>
+                            <div style={{ fontSize: 12, color: c.sinCorreo ? C.red : C.textMuted }}>
+                              {c.sinCorreo ? '⚠️ Sin correo registrado — no se le enviará' : `Para: ${c.email}`} · CC: Flavio
+                            </div>
+                          </div>
+                          <div style={{ fontSize: 12.5, fontWeight: 700, color: C.primary }}>{money(c.total)} · {c.count} recibos</div>
+                        </div>
+                        <div style={{ padding: '10px 14px' }}>
+                          <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 6 }}>Asunto: <span style={{ fontWeight: 500 }}>{c.subject}</span></div>
+                          <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'inherit', fontSize: 12.5, color: '#2A3850', lineHeight: 1.5, background: '#FCFDFE', border: '1px solid #EEF1F6', borderRadius: 8, padding: '10px 12px' }}>{c.body}</pre>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
         </div>
       )}
 

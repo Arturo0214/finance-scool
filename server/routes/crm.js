@@ -3853,7 +3853,7 @@ router.get('/cobranza/preview-todos', async (req, res) => {
     const buckets = await cobranzaBuildBuckets({ diasVentana });
     const consultores = [...buckets.values()].map(({ ag, items }) => {
       const msg = cobranzaFormatMensaje(ag, items, diasVentana);
-      return { clave: ag.clave, nombre: ag.nombre, email: ag.email || null, sinCorreo: !ag.email, count: msg.count, total: msg.total };
+      return { clave: ag.clave, nombre: ag.nombre, email: ag.email || null, sinCorreo: !ag.email, count: msg.count, total: msg.total, subject: msg.subject, body: msg.text };
     }).sort((a, b) => b.total - a.total);
     res.json({ consultores, diasVentana });
   } catch (e) { res.status(500).json({ error: e.message }); }
