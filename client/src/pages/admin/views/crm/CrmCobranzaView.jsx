@@ -342,8 +342,8 @@ export default function CrmCobranzaView() {
               : !correos?.list?.length ? <p style={{ padding: 24, color: C.textMuted }}>No hay cobranzas por enviar en la ventana actual.</p>
                 : (
                   <div style={{ maxHeight: '70vh', overflow: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    {correos.list.map(c => (
-                      <div key={c.clave} style={{ border: `1px solid ${c.sinCorreo ? C.redBg : '#E4E8F0'}`, borderRadius: 12, overflow: 'hidden' }}>
+                    {correos.list.map((c, idx) => (
+                      <div key={c.clave || `row-${idx}`} style={{ flexShrink: 0, border: `1px solid ${c.sinCorreo ? C.redBg : '#E4E8F0'}`, borderRadius: 12, overflow: 'hidden' }}>
                         <div style={{ padding: '10px 14px', background: '#F7F9FC', borderBottom: '1px solid #EEF1F6', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
                           <div>
                             <div style={{ fontWeight: 700, fontSize: 13.5 }}>{c.nombre} <span style={{ color: C.textMuted, fontWeight: 500 }}>· {c.clave}</span></div>
