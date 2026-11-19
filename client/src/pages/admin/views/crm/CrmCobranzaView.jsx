@@ -55,11 +55,27 @@ export default function CrmCobranzaView() {
   const [mailCfg, setMailCfg] = useState(null);   // null=cerrado | objeto con el form
   const [correos, setCorreos] = useState(null);   // { loading, list, error } — todos los correos a enviar
 
-  const loadCorreos = () => {
+  const loadCorreos = async () => {
     setCorreos({ loading: true });
-    api.crmCobranzaPreviewTodos()
-      .then(d => setCorreos({ list: d.consultores || [], diasVentana: d.diasVentana }))
-      .catch(e => setCorreos({ error: e.message }));
+    try {
+      const d = await api.crmCobranzaPreviewTodos();
+      const base = (d.consultores || []).filter(Boolean);
+      // Muestra la lista de inmediato; el cuerpo de cada correo se trae con el
+      // endpoint por-clave (ya desplegado) para no depender de preview-todos.body.
+      setCorreos({ list: base, diasVentana: d.diasVentana });
+      const pend = base.filter(c => !c.sinCorreo && !c.body);
+      const CONC = 4;
+      for (let i = 0; i < pend.length; i += CONC) {
+        const lote = pend.slice(i, i + CONC);
+        const res = await Promise.all(lote.map(async c => {
+          try { const p = await api.crmCobranzaPreview(c.clave); return { clave: c.clave, subject: p.subject, body: p.body }; }
+          catch { return { clave: c.clave }; }
+        }));
+        setCorreos(prev => (prev && prev.list)
+          ? { ...prev, list: prev.list.map(c => { const u = res.find(r => r.clave === c.clave); return (u && u.body) ? { ...c, subject: u.subject, body: u.body } : c; }) }
+          : prev);
+      }
+    } catch (e) { setCorreos({ error: e.message }); }
   };
   // Recarga cada vez que se entra a la pestaña (no se queda con datos viejos).
   useEffect(() => { if (tab === 'correos') loadCorreos(); }, [tab]); // eslint-disable-line
@@ -338,8 +354,14 @@ export default function CrmCobranzaView() {
                           <div style={{ fontSize: 12.5, fontWeight: 700, color: C.primary }}>{money(c.total)} · {c.count} recibos</div>
                         </div>
                         <div style={{ padding: '10px 14px' }}>
-                          <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 6 }}>Asunto: <span style={{ fontWeight: 500 }}>{c.subject}</span></div>
-                          <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'inherit', fontSize: 12.5, color: '#2A3850', lineHeight: 1.5, background: '#FCFDFE', border: '1px solid #EEF1F6', borderRadius: 8, padding: '10px 12px' }}>{c.body}</pre>
+                          {c.sinCorreo ? (
+                            <div style={{ fontSize: 12.5, color: C.textMuted }}>Este consultor no tiene correo registrado — no se le enviará.</div>
+                          ) : !c.body ? (
+                            <div style={{ fontSize: 12.5, color: C.textMuted, display: 'flex', alignItems: 'center', gap: 6 }}><Loader2 size={13} className="spin" /> Cargando cuerpo del correo…</div>
+                          ) : (<>
+                            <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 6 }}>Asunto: <span style={{ fontWeight: 500 }}>{c.subject}</span></div>
+                            <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'inherit', fontSize: 12.5, color: '#2A3850', lineHeight: 1.5, background: '#FCFDFE', border: '1px solid #EEF1F6', borderRadius: 8, padding: '10px 12px' }}>{c.body}</pre>
+                          </>)}
                         </div>
                       </div>
                     ))}
