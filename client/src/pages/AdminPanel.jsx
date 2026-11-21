@@ -59,11 +59,15 @@ const CrmGoalsView        = lazy(() => import('./admin/views/crm/CrmGoalsView'))
 const CrmRemindersView    = lazy(() => import('./admin/views/crm/CrmRemindersView'));
 const CrmCommissionsView  = lazy(() => import('./admin/views/crm/CrmCommissionsView'));
 const CrmIngresosView     = lazy(() => import('./admin/views/crm/CrmIngresosView'));
+const CrmSocioIngresosView = lazy(() => import('./admin/views/crm/CrmSocioIngresosView'));
 const CrmCobranzaView     = lazy(() => import('./admin/views/crm/CrmCobranzaView'));
 const CrmQuoteView        = lazy(() => import('./admin/views/crm/CrmQuoteView'));
 const CrmMejoresLeadsView = lazy(() => import('./admin/views/crm/CrmMejoresLeadsView'));
 const HealthView          = lazy(() => import('./admin/views/HealthView'));
 const CrmChatWidget       = lazy(() => import('../components/CrmChatWidget'));
+
+/* Business Partner (socio): solo estas vistas. Ingresos se muestra al 10% de prima nueva. */
+const SOCIO_VIEWS = ['crm-mi-dia', 'crm-pipeline', 'crm-metas', 'crm-citas', 'crm-recordatorios', 'crm-ingresos'];
 
 /* ── Spinner de suspense ── */
 function ViewSpinner() {
@@ -119,6 +123,9 @@ export default function AdminPanel() {
   // Gating Clave T→C: un asesor en formación (Clave T) solo ve la Escuela + coach;
   // al obtener Clave C se desbloquea el CRM completo. Administración nunca es 'T'.
   const claveT = user?.role === 'asesor' && user?.clave_estatus === 'T';
+  // Business Partner (Prospera): asesor marcado es_socio → solo ve SOCIO_VIEWS,
+  // con Ingresos recortado a su participación (10% de prima nueva).
+  const esSocio = !!user?.es_socio;
 
   /* ── Navegación del sidebar ──
      Solo el CRM Incubadora S-COOL + gestión de usuarios. Las vistas
@@ -166,6 +173,8 @@ export default function AdminPanel() {
     // Clave T (formación): el asesor SOLO ve la Escuela. Clave C / admin: la Escuela
     // se oculta del menú (el CRM es su casa).
     if (claveT) return item.id === 'crm-escuela';
+    // Business Partner: menú acotado a sus vistas (sin Escuela, Tableros, etc.)
+    if (esSocio) return SOCIO_VIEWS.includes(item.id);
     if (item.id === 'crm-escuela') return false;
     if (item.id === 'health') return userIsAgency;
     if (item.id === 'crm-semillas') return ['superadmin', 'agencia'].includes(user?.role);
@@ -186,6 +195,8 @@ export default function AdminPanel() {
     if (!user) { navigate('/login'); return; }
     // Clave T: su única casa es la Escuela; cualquier otra vista lo regresa ahí.
     if (claveT && activeView !== 'crm-escuela') { navigate('/admin/crm-escuela', { replace: true }); return; }
+    // Business Partner: fuera de sus vistas lo regresamos a Mi Día.
+    if (esSocio && !SOCIO_VIEWS.includes(activeView)) { navigate('/admin/crm-mi-dia', { replace: true }); return; }
     // El CRM es ahora la vista principal para todos
     if (!claveT && activeView === 'dashboard') navigate('/admin/crm', { replace: true });
     loadData();
@@ -400,7 +411,9 @@ export default function AdminPanel() {
               {!loading && activeView === 'crm-clientes' && <CrmConsultoresView isAgency={userSeesAllCrm} />}
               {!loading && activeView === 'crm-polizas' && <CrmPoliciesView isAgency={userSeesAllCrm} />}
               {!loading && activeView === 'crm-graficas' && <CrmGraficasView />}
-              {!loading && activeView === 'crm-ingresos' && <CrmIngresosView isAgency={userSeesAllCrm} />}
+              {!loading && activeView === 'crm-ingresos' && (esSocio
+                ? <CrmSocioIngresosView participacionPct={user?.participacion_pct || 10} />
+                : <CrmIngresosView isAgency={userSeesAllCrm} />)}
               {!loading && activeView === 'crm-cobranza' && <CrmCobranzaView />}
               {/* Ruta directa conservada: la vista de comisiones vive también como pestaña de Ingresos */}
               {!loading && activeView === 'crm-comisiones' && <CrmCommissionsView isAgency={userSeesAllCrm} />}

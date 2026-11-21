@@ -3772,12 +3772,15 @@ router.get('/cobranza', async (req, res) => {
    soloClave: limita a un consultor. conCorreo: exige email (para enviar). */
 async function cobranzaBuildBuckets({ soloClave = null, clavesSet = null, diasVentana = 45, conCorreo = false }) {
   const db = getDB();
+  // Cobranza = SOLO pólizas con pago pendiente (deuda real). Las 'pagada' ya se
+  // cobraron y las 'cancelada' no aplican. Antes se proyectaba la renovación de
+  // TODAS por fecha y aparecían pólizas ya pagadas (p. ej. una renovación futura
+  // de una póliza 'pagada') — eso era el error.
   const data = await fetchAllRows(() => db.from('crm_policies')
     .select('poliza, prima, forma_pago, fecha_renovacion, fecha_pago, estatus, pago_manual_at, crm_clients(nombre), crm_agents(clave, nombre, email)')
-    .in('estatus', ['pagada', 'pendiente_pago', 'en_tramite']));
+    .eq('estatus', 'pendiente_pago'));
   const rows = decryptRows(data, 'crm_policies');
   const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
-  const hasta = new Date(hoy.getTime() + diasVentana * 86400000);
   const porClave = new Map();
   for (const p of rows) {
     const ag = p.crm_agents || {};
@@ -3785,43 +3788,58 @@ async function cobranzaBuildBuckets({ soloClave = null, clavesSet = null, diasVe
     if (conCorreo && !ag.email) continue;
     if (soloClave && ag.clave !== soloClave) continue;
     if (clavesSet && !clavesSet.has(ag.clave)) continue;
-    const recibos = cobranzaProyectarRecibos(Number(p.prima) || 0, p.forma_pago, p.fecha_renovacion, hoy, hasta);
-    const pendienteYa = p.estatus === 'pendiente_pago';
-    if (!recibos.length && !pendienteYa) continue;
+    const periods = COBRANZA_PERIODS[String(p.forma_pago || 'anual').toLowerCase()] || 1;
+    const montoRecibo = (Number(p.prima) || 0) / periods;
+    if (montoRecibo <= 0) continue;
+    // Recibo pendiente: la ocurrencia del ciclo más cercana a hoy. Si es anterior
+    // a hoy, está VENCIDA (prioridad); si cae este mes/próximos días, por vencer.
+    const venc = cobranzaVencPendiente(p.fecha_renovacion, p.fecha_pago, p.forma_pago, hoy);
     if (!porClave.has(ag.clave)) porClave.set(ag.clave, { ag, items: [] });
-    const bucket = porClave.get(ag.clave);
-    const montoRecibo = (Number(p.prima) || 0) / (COBRANZA_PERIODS[String(p.forma_pago || 'anual').toLowerCase()] || 1);
-    if (pendienteYa) {
-      const venc = cobranzaVencPendiente(p.fecha_renovacion, p.fecha_pago, p.forma_pago, hoy);
-      bucket.items.push({ poliza: p.poliza, cliente: (p.crm_clients && p.crm_clients.nombre) || '—', fecha: venc, monto: montoRecibo, vencido: true });
-    }
-    for (const r of recibos) bucket.items.push({ poliza: p.poliza, cliente: (p.crm_clients && p.crm_clients.nombre) || '—', fecha: r.fecha, monto: r.monto, vencido: false });
+    porClave.get(ag.clave).items.push({
+      poliza: p.poliza,
+      cliente: (p.crm_clients && p.crm_clients.nombre) || '—',
+      fecha: venc,
+      monto: montoRecibo,
+      vencido: venc ? venc < hoy : false,
+    });
   }
   return porClave;
 }
 
 /* Arma el correo (asunto + cuerpo) para un consultor a partir de sus items. */
-function cobranzaFormatMensaje(ag, items, diasVentana) {
-  items.sort((a, b) => (a.fecha ? a.fecha.getTime() : 0) - (b.fecha ? b.fecha.getTime() : 0));
+function cobranzaFormatMensaje(ag, items) {
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+  // Prioridad: las VENCIDAS primero (más atrasadas arriba), luego las por vencer.
+  items.sort((a, b) => {
+    if (!!a.vencido !== !!b.vencido) return a.vencido ? -1 : 1;
+    return (a.fecha ? a.fecha.getTime() : 0) - (b.fecha ? b.fecha.getTime() : 0);
+  });
   const total = items.reduce((s, i) => s + i.monto, 0);
+  const vencidas = items.filter(i => i.vencido);
   const fmtF = (d) => d ? d.toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }) : 'sin fecha';
+  const diasV = (d) => d ? Math.max(0, Math.floor((hoy - d) / 86400000)) : 0;
   const text = [
     `Hola ${String(ag.nombre || '').split(' ')[0]},`,
     '',
-    `Estas son tus cobranzas próximas a vencer (siguientes ${diasVentana} días):`,
+    vencidas.length
+      ? `Tienes ${vencidas.length} cobranza(s) VENCIDA(s) que requieren atención inmediata${items.length > vencidas.length ? ', además de otras por vencer' : ''}:`
+      : 'Estas son tus cobranzas pendientes de pago:',
     '',
-    ...items.map(i => `• ${fmtF(i.fecha)} — ${i.cliente} (Póliza ${i.poliza}): ${cobranzaFmtMoney(i.monto)}${i.vencido ? '  ⚠️ PENDIENTE DE PAGO' : ''}`),
+    ...items.map(i => `• ${fmtF(i.fecha)} — ${i.cliente} (Póliza ${i.poliza}): ${cobranzaFmtMoney(i.monto)}${i.vencido ? `  ⚠️ VENCIDA (${diasV(i.fecha)} días)` : ''}`),
     '',
-    `Total por cobrar en la ventana: ${cobranzaFmtMoney(total)} (${items.length} recibos).`,
+    `Total pendiente de cobro: ${cobranzaFmtMoney(total)} (${items.length} recibo(s)${vencidas.length ? ` · ${vencidas.length} vencido(s)` : ''}).`,
     '',
-    'Contacta a tus clientes con anticipación para asegurar la renovación y conservar tu cartera.',
+    'Contacta a tus clientes cuanto antes para regularizar el pago y conservar tu cartera.',
     '',
     'Finance S-Cool · Incubadora S-COOL',
     '',
     '— — — — —',
-    'Nota: este correo fue generado automáticamente por la plataforma de Finance S-Cool (asistido por IA) para facilitar tu labor de cobranza. ⚠️ Si alguna de estas pólizas YA está pagada, por favor notifícalo a contacto@grupointegraccion.com para actualizar el registro, y haz caso omiso de este mensaje.',
+    'Nota: este correo fue generado automáticamente por la plataforma de Finance S-Cool (asistido por IA) para apoyar tu labor de cobranza. ⚠️ Si alguna de estas pólizas YA está pagada, por favor notifícalo a contacto@grupointegraccion.com para actualizar el registro, y haz caso omiso de este mensaje.',
   ].join('\n');
-  return { subject: `Tus cobranzas próximas a vencer — ${items.length} recibos · ${cobranzaFmtMoney(total)}`, text, total, count: items.length };
+  const subject = vencidas.length
+    ? `Cobranza: ${vencidas.length} vencida(s)${items.length > vencidas.length ? ` + ${items.length - vencidas.length} por vencer` : ''} — ${cobranzaFmtMoney(total)}`
+    : `Cobranza pendiente — ${items.length} recibo(s) · ${cobranzaFmtMoney(total)}`;
+  return { subject, text, total, count: items.length };
 }
 
 /* GET /api/crm/cobranza/preview?clave=X — devuelve el correo que se enviaría

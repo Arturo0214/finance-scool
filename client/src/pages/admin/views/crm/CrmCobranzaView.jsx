@@ -8,7 +8,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { api } from '../../../../utils/api';
 import { C } from '../../constants';
 import { getCrmCSS, fmtDate } from './crmShared';
-import { Receipt, TrendingUp, AlertTriangle, Users, Mail, Send, Loader2, CheckCircle2, X } from 'lucide-react';
+import { Receipt, TrendingUp, AlertTriangle, Users, Mail, Send, Loader2, CheckCircle2, X, ChevronDown, ChevronRight } from 'lucide-react';
 
 const money = (n) => `$${(Math.round(Number(n) || 0)).toLocaleString('es-MX')}`;
 
@@ -54,6 +54,8 @@ export default function CrmCobranzaView() {
   const [selected, setSelected] = useState(() => new Set());
   const [mailCfg, setMailCfg] = useState(null);   // null=cerrado | objeto con el form
   const [correos, setCorreos] = useState(null);   // { loading, list, error } — todos los correos a enviar
+  const [openCorreos, setOpenCorreos] = useState(() => new Set()); // claves de correos desplegados (arrancan colapsados)
+  const toggleCorreo = (clave) => setOpenCorreos(prev => { const n = new Set(prev); n.has(clave) ? n.delete(clave) : n.add(clave); return n; });
 
   const loadCorreos = async () => {
     setCorreos({ loading: true });
@@ -330,8 +332,18 @@ export default function CrmCobranzaView() {
               <div style={{ fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', gap: 8 }}><Mail size={16} color={C.primary} /> Correos que se enviarán</div>
               <div style={{ fontSize: 12, color: C.textMuted, marginTop: 2 }}>Vista previa del correo que recibirá cada consultor. Revísalos antes de disparar con “Enviar a todos”.</div>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
               {correos?.list && <div style={{ fontSize: 12.5, color: C.textMuted }}>{correos.list.filter(c => !c.sinCorreo).length} con correo · {correos.list.filter(c => c.sinCorreo).length} sin correo</div>}
+              {correos?.list?.length > 0 && (
+                <>
+                  <button className="crm-btn" style={{ padding: '6px 10px' }} onClick={() => setOpenCorreos(new Set(correos.list.map(c => c.clave)))} title="Desplegar todos los correos">
+                    <ChevronDown size={14} /> Expandir todos
+                  </button>
+                  <button className="crm-btn" style={{ padding: '6px 10px' }} onClick={() => setOpenCorreos(new Set())} title="Colapsar todos los correos">
+                    <ChevronRight size={14} /> Colapsar todos
+                  </button>
+                </>
+              )}
               <button className="crm-btn" disabled={correos?.loading} onClick={loadCorreos} title="Volver a generar la vista previa">
                 {correos?.loading ? <Loader2 size={14} className="spin" /> : <Mail size={14} />} Actualizar
               </button>
@@ -342,17 +354,23 @@ export default function CrmCobranzaView() {
               : !correos?.list?.length ? <p style={{ padding: 24, color: C.textMuted }}>No hay cobranzas por enviar en la ventana actual.</p>
                 : (
                   <div style={{ maxHeight: '70vh', overflow: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    {correos.list.map((c, idx) => (
+                    {correos.list.map((c, idx) => {
+                      const abierto = openCorreos.has(c.clave);
+                      return (
                       <div key={c.clave || `row-${idx}`} style={{ flexShrink: 0, border: `1px solid ${c.sinCorreo ? C.redBg : '#E4E8F0'}`, borderRadius: 12, overflow: 'hidden' }}>
-                        <div style={{ padding: '10px 14px', background: '#F7F9FC', borderBottom: '1px solid #EEF1F6', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
-                          <div>
-                            <div style={{ fontWeight: 700, fontSize: 13.5 }}>{c.nombre} <span style={{ color: C.textMuted, fontWeight: 500 }}>· {c.clave}</span></div>
-                            <div style={{ fontSize: 12, color: c.sinCorreo ? C.red : C.textMuted }}>
-                              {c.sinCorreo ? '⚠️ Sin correo registrado — no se le enviará' : `Para: ${c.email}`} · CC: Flavio
+                        <div onClick={() => toggleCorreo(c.clave)} style={{ padding: '10px 14px', background: '#F7F9FC', borderBottom: abierto ? '1px solid #EEF1F6' : 'none', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6, cursor: 'pointer', userSelect: 'none' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                            {abierto ? <ChevronDown size={16} color={C.textMuted} style={{ flexShrink: 0 }} /> : <ChevronRight size={16} color={C.textMuted} style={{ flexShrink: 0 }} />}
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontWeight: 700, fontSize: 13.5 }}>{c.nombre} <span style={{ color: C.textMuted, fontWeight: 500 }}>· {c.clave}</span></div>
+                              <div style={{ fontSize: 12, color: c.sinCorreo ? C.red : C.textMuted }}>
+                                {c.sinCorreo ? '⚠️ Sin correo registrado — no se le enviará' : `Para: ${c.email}`} · CC: Flavio
+                              </div>
                             </div>
                           </div>
-                          <div style={{ fontSize: 12.5, fontWeight: 700, color: C.primary }}>{money(c.total)} · {c.count} recibos</div>
+                          <div style={{ fontSize: 12.5, fontWeight: 700, color: C.primary, whiteSpace: 'nowrap' }}>{money(c.total)} · {c.count} recibos</div>
                         </div>
+                        {abierto && (
                         <div style={{ padding: '10px 14px' }}>
                           {c.sinCorreo ? (
                             <div style={{ fontSize: 12.5, color: C.textMuted }}>Este consultor no tiene correo registrado — no se le enviará.</div>
@@ -363,8 +381,10 @@ export default function CrmCobranzaView() {
                             <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'inherit', fontSize: 12.5, color: '#2A3850', lineHeight: 1.5, background: '#FCFDFE', border: '1px solid #EEF1F6', borderRadius: 8, padding: '10px 12px' }}>{c.body}</pre>
                           </>)}
                         </div>
+                        )}
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
         </div>
