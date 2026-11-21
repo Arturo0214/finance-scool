@@ -2251,7 +2251,7 @@ router.post('/cobranza-mailing', async (req, res) => {
     const soloClave = req.body.clave || null; // opcional: enviar a uno solo
     // Flavio pidió ir en copia de todos los correos de cobranza. Configurable
     // por env (CRM_COBRANZA_CC, admite varios separados por coma).
-    const COBRANZA_CC = process.env.CRM_COBRANZA_CC || 'flavio.r@grupointegraccion.com';
+    const COBRANZA_CC = null; // CC a Flavio retirado a pedido del usuario
     const sender = await getCobranzaSender();
     const sent = [], failed = [], skipped = [];
 
@@ -4022,7 +4022,7 @@ router.post('/cobranza/notificar', async (req, res) => {
     const diasVentana = Math.min(120, Math.max(7, parseInt(req.body && req.body.dias, 10) || 45));
     const buckets = await cobranzaBuildBuckets({ soloClave, clavesSet, diasVentana, conCorreo: true });
     // Flavio en copia de todos los correos de cobranza (configurable por env).
-    const COBRANZA_CC = process.env.CRM_COBRANZA_CC || 'flavio.r@grupointegraccion.com';
+    const COBRANZA_CC = null; // CC a Flavio retirado a pedido del usuario
     const sender = await getCobranzaSender();
 
     const enviados = [], sinItems = [], fallidos = [];
