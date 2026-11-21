@@ -48,12 +48,13 @@ function buildTransporter(smtp) {
 
 /* Envía usando una config SMTP dada (si trae user+pass); si no, cae al
    remitente por defecto (EMAIL_USER/EMAIL_PASS del entorno). */
-async function sendMailVia(smtp, { from, to, cc, replyTo, subject, text }) {
+async function sendMailVia(smtp, { from, to, cc, replyTo, subject, text, html }) {
   const usar = smtp && smtp.user && smtp.pass;
   const transport = usar ? buildTransporter(smtp) : getTransporter();
   const fromAddr = from || `"Incubadora S-COOL CRM" <${process.env.EMAIL_USER}>`;
   return transport.sendMail({
     from: fromAddr, to, subject, text,
+    ...(html ? { html } : {}),
     ...(cc ? { cc } : {}),
     ...(replyTo ? { replyTo } : {}),
   });

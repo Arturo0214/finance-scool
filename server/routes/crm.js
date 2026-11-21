@@ -3839,7 +3839,71 @@ function cobranzaFormatMensaje(ag, items) {
   const subject = vencidas.length
     ? `Cobranza: ${vencidas.length} vencida(s)${items.length > vencidas.length ? ` + ${items.length - vencidas.length} por vencer` : ''} — ${cobranzaFmtMoney(total)}`
     : `Cobranza pendiente — ${items.length} recibo(s) · ${cobranzaFmtMoney(total)}`;
-  return { subject, text, total, count: items.length };
+  const html = cobranzaFormatHtml(ag, items, { total, vencidas: vencidas.length, fmtF, diasV });
+  return { subject, text, html, total, count: items.length };
+}
+
+/* Versión HTML del correo de cobranza (diseño de marca: navy + oro, tabla con
+   badges de VENCIDA). Compatible con clientes de correo (tablas + estilos inline). */
+function cobranzaFormatHtml(ag, items, { total, vencidas, fmtF, diasV }) {
+  const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const NAVY = '#0A1730', GOLD = '#C1975B', RED = '#DC2626', INK = '#0A1730', MUTE = '#5B6B84', LINE = '#EEF1F6';
+  const rows = items.map((i, idx) => {
+    const bg = idx % 2 ? '#FBFCFE' : '#FFFFFF';
+    const estado = i.vencido
+      ? `<span style="display:inline-block;background:#FEE2E2;color:${RED};font-size:11px;font-weight:bold;padding:2px 8px;border-radius:20px;white-space:nowrap;">VENCIDA · ${diasV(i.fecha)}d</span>`
+      : `<span style="display:inline-block;background:#E6F0FF;color:#1D4ED8;font-size:11px;font-weight:bold;padding:2px 8px;border-radius:20px;white-space:nowrap;">Por vencer</span>`;
+    return `<tr style="background:${bg};">
+      <td style="padding:10px 12px;border-bottom:1px solid ${LINE};color:${INK};white-space:nowrap;font-size:13px;">${esc(fmtF(i.fecha))}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid ${LINE};color:${INK};font-size:13px;">${esc(i.cliente)}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid ${LINE};color:${MUTE};font-size:12.5px;white-space:nowrap;">${esc(i.poliza)}</td>
+      <td align="center" style="padding:10px 12px;border-bottom:1px solid ${LINE};">${estado}</td>
+      <td align="right" style="padding:10px 12px;border-bottom:1px solid ${LINE};color:${INK};font-weight:bold;white-space:nowrap;font-size:13px;">${esc(cobranzaFmtMoney(i.monto))}</td>
+    </tr>`;
+  }).join('');
+  const alerta = vencidas
+    ? `<table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 18px;"><tr><td style="background:#FEF2F2;border-left:4px solid ${RED};border-radius:8px;padding:12px 16px;font-size:13px;color:#991B1B;line-height:1.5;"><b>${vencidas} cobranza${vencidas === 1 ? '' : 's'} vencida${vencidas === 1 ? '' : 's'}</b> requiere${vencidas === 1 ? '' : 'n'} atención inmediata. Contacta a esos clientes hoy mismo.</td></tr></table>`
+    : '';
+  const intro = vencidas
+    ? `Estas son tus cobranzas pendientes. Las <b style="color:${RED};">vencidas</b> aparecen primero.`
+    : 'Estas son tus cobranzas pendientes de pago:';
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#F2F4F8;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#F2F4F8;padding:24px 12px;font-family:Arial,Helvetica,sans-serif;"><tr><td align="center">
+  <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#FFFFFF;border-radius:16px;overflow:hidden;box-shadow:0 4px 16px rgba(10,23,48,.10);">
+    <tr><td style="background:${NAVY};padding:22px 28px;">
+      <table width="100%" cellpadding="0" cellspacing="0"><tr>
+        <td style="color:#FFFFFF;font-size:19px;font-weight:bold;letter-spacing:.3px;">Finance <span style="color:${GOLD};">S-Cool</span></td>
+        <td align="right" style="color:${GOLD};font-size:12px;font-weight:bold;text-transform:uppercase;letter-spacing:1.5px;">Cobranza</td>
+      </tr></table>
+    </td></tr>
+    <tr><td style="padding:28px 28px 8px;">
+      <p style="margin:0 0 16px;font-size:15px;color:${INK};">Hola <b>${esc(String(ag.nombre || '').split(' ')[0])}</b>,</p>
+      ${alerta}
+      <p style="margin:0 0 18px;font-size:14px;color:#3A4A63;line-height:1.55;">${intro}</p>
+      <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid ${LINE};border-radius:10px;overflow:hidden;">
+        <tr style="background:#F7F9FC;">
+          <th align="left" style="padding:10px 12px;color:${MUTE};font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid #E4E8F0;">Vence</th>
+          <th align="left" style="padding:10px 12px;color:${MUTE};font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid #E4E8F0;">Cliente</th>
+          <th align="left" style="padding:10px 12px;color:${MUTE};font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid #E4E8F0;">Póliza</th>
+          <th align="center" style="padding:10px 12px;color:${MUTE};font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid #E4E8F0;">Estado</th>
+          <th align="right" style="padding:10px 12px;color:${MUTE};font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid #E4E8F0;">Monto</th>
+        </tr>
+        ${rows}
+        <tr style="background:#F7F9FC;"><td colspan="4" align="right" style="padding:13px 12px;font-weight:bold;color:${INK};font-size:13px;">Total pendiente de cobro</td>
+          <td align="right" style="padding:13px 12px;font-weight:bold;color:${NAVY};font-size:15px;white-space:nowrap;">${esc(cobranzaFmtMoney(total))}</td></tr>
+      </table>
+      <p style="margin:20px 0 4px;font-size:13.5px;color:#3A4A63;line-height:1.55;">Contacta a tus clientes cuanto antes para regularizar el pago y conservar tu cartera.</p>
+    </td></tr>
+    <tr><td style="padding:8px 28px 24px;">
+      <p style="margin:0;font-size:13px;color:${MUTE};">Finance S-Cool · Incubadora S-COOL</p>
+    </td></tr>
+    <tr><td style="background:#F7F9FC;padding:16px 28px;border-top:1px solid #E4E8F0;">
+      <p style="margin:0;font-size:11px;color:#8A97AB;line-height:1.55;">Correo generado automáticamente por la plataforma de Finance S-Cool (asistido por IA) para apoyar tu labor de cobranza. ⚠️ Si alguna de estas pólizas <b>ya está pagada</b>, notifícalo a <a href="mailto:contacto@grupointegraccion.com" style="color:${GOLD};text-decoration:none;">contacto@grupointegraccion.com</a> para actualizar el registro y haz caso omiso de este mensaje.</p>
+    </td></tr>
+  </table>
+</td></tr></table>
+</body></html>`;
 }
 
 /* GET /api/crm/cobranza/preview?clave=X — devuelve el correo que se enviaría
@@ -3966,7 +4030,7 @@ router.post('/cobranza/notificar', async (req, res) => {
       if (!items.length) { sinItems.push(ag.clave); continue; }
       const msg = cobranzaFormatMensaje(ag, items, diasVentana);
       try {
-        await sendMailVia(sender?.smtp, { from: sender?.from, to: ag.email, cc: COBRANZA_CC, replyTo: 'contacto@grupointegraccion.com', subject: msg.subject, text: msg.text });
+        await sendMailVia(sender?.smtp, { from: sender?.from, to: ag.email, cc: COBRANZA_CC, replyTo: 'contacto@grupointegraccion.com', subject: msg.subject, text: msg.text, html: msg.html });
         enviados.push(ag.clave);
       } catch (e) { fallidos.push(`${ag.clave}: ${e.message}`); }
     }
