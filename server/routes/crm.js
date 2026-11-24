@@ -3781,6 +3781,15 @@ async function cobranzaBuildBuckets({ soloClave = null, clavesSet = null, diasVe
     .eq('estatus', 'pendiente_pago'));
   const rows = decryptRows(data, 'crm_policies');
   const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+  // Método de pago oficial (Prudential) por póliza. "Billing Priority" (tarjeta /
+  // Two-stage autopay) se cobra MENSUAL al cliente aunque la frecuencia registrada
+  // sea anual/semestral → el recibo a cobrar es la mensualidad (prima anual ÷ 12).
+  const metodoPorPoliza = new Map();
+  try {
+    const pru = await fetchAllRows(() => getDB().from('crm_pru_polizas_indice').select('poliza, forma_pago'));
+    for (const r of pru) { if (r.poliza != null && !metodoPorPoliza.has(String(r.poliza))) metodoPorPoliza.set(String(r.poliza), r.forma_pago); }
+  } catch { /* si falla, se usa la frecuencia de crm_policies */ }
+  const esBillingPriority = (m) => /billing priority/i.test(String(m || ''));
   const porClave = new Map();
   for (const p of rows) {
     const ag = p.crm_agents || {};
@@ -3788,7 +3797,10 @@ async function cobranzaBuildBuckets({ soloClave = null, clavesSet = null, diasVe
     if (conCorreo && !ag.email) continue;
     if (soloClave && ag.clave !== soloClave) continue;
     if (clavesSet && !clavesSet.has(ag.clave)) continue;
-    const periods = COBRANZA_PERIODS[String(p.forma_pago || 'anual').toLowerCase()] || 1;
+    // Billing Priority → mensual (÷12); si no, por la frecuencia registrada.
+    const periods = esBillingPriority(metodoPorPoliza.get(String(p.poliza)))
+      ? 12
+      : (COBRANZA_PERIODS[String(p.forma_pago || 'anual').toLowerCase()] || 1);
     const montoRecibo = (Number(p.prima) || 0) / periods;
     if (montoRecibo <= 0) continue;
     // Recibo pendiente: la ocurrencia del ciclo más cercana a hoy. Si es anterior
@@ -3830,6 +3842,8 @@ function cobranzaFormatMensaje(ag, items) {
     `Total pendiente de cobro: ${cobranzaFmtMoney(total)} (${items.length} recibo(s)${vencidas.length ? ` · ${vencidas.length} vencido(s)` : ''}).`,
     '',
     'Contacta a tus clientes cuanto antes para regularizar el pago y conservar tu cartera.',
+    '',
+    '📌 Si alguno de estos montos YA está pagado, haz caso omiso de este mensaje.',
     '',
     'Finance S-Cool · Incubadora S-COOL',
     '',
@@ -3894,6 +3908,7 @@ function cobranzaFormatHtml(ag, items, { total, vencidas, fmtF, diasV }) {
           <td align="right" style="padding:13px 12px;font-weight:bold;color:${NAVY};font-size:15px;white-space:nowrap;">${esc(cobranzaFmtMoney(total))}</td></tr>
       </table>
       <p style="margin:20px 0 4px;font-size:13.5px;color:#3A4A63;line-height:1.55;">Contacta a tus clientes cuanto antes para regularizar el pago y conservar tu cartera.</p>
+      <table width="100%" cellpadding="0" cellspacing="0" style="margin:10px 0 2px;"><tr><td style="background:#FFF8EC;border:1px solid #F0E0C0;border-radius:8px;padding:10px 14px;font-size:12.5px;color:#7A5B1E;">📌 <b>Si alguno de estos montos ya está pagado</b>, haz caso omiso de este mensaje.</td></tr></table>
     </td></tr>
     <tr><td style="padding:8px 28px 24px;">
       <p style="margin:0;font-size:13px;color:${MUTE};">Finance S-Cool · Incubadora S-COOL</p>
